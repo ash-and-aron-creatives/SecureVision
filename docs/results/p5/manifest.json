@@ -1,0 +1,12 @@
+﻿{
+    "test_positives":  122,
+    "paired_diff_ci":  [
+                           -0.0081,
+                           0.0045
+                       ],
+    "brier_score":  0.001996,
+    "test_rows":  61611,
+    "test_pr_auc":  0.0114,
+    "paired_diff_mean":  -0.0004,
+    "cvss_pr_auc_mean":  0.0117
+}

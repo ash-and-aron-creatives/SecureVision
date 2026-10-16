@@ -1,0 +1,38 @@
+=== SECUREVISION REPRODUCIBLE PIPELINE (P4/P5) ===
+
+--- A1: 2026 POSITIVES RECONCILIATION ---
+Total 2026 Positives in Master: 142
+1. Rogue gap > 30 days (1 CVE): ['CVE-2026-42271']
+2. Censored published post-cutoff (19 CVEs): ['CVE-2026-87491', 'CVE-2026-85102', 'CVE-2026-85706', 'CVE-2026-76461', 'CVE-2026-58704', 'CVE-2026-76460', 'CVE-2026-87886', 'CVE-2026-93952', 'CVE-2026-93616', 'CVE-2026-94127', 'CVE-2026-87902', 'CVE-2026-88771', 'CVE-2026-88772', 'CVE-2026-86950', 'CVE-2026-76504', 'CVE-2026-102489', 'CVE-2026-102490', 'CVE-2026-104286', 'CVE-2026-88779']
+Overlap between rogue and censored: []
+3. Subtraction: 142 - 1 (gap>30) - 19 (censored) + 0 (overlap) = 122
+Actual Test Positives on disk: 122 (Reconciled: True)
+
+--- A1: PLAUSIBILITY & BOUNDARY CHECKS ---
+Daily master counts (Aug 25 to Sep 12):
+  2026-08-25: 750
+  2026-08-26: 396
+  2026-08-27: 365
+  2026-08-28: 582
+  2026-08-29: 64
+  2026-08-30: 91
+  2026-08-31: 360
+  2026-09-01: 450
+  2026-09-02: 342
+  2026-09-03: 349
+  2026-09-04: 554
+  2026-09-05: 143
+  2026-09-06: 90
+  2026-09-07: 255
+  2026-09-08: 1559
+  2026-09-09: 655
+  2026-09-10: 381
+  2026-09-11: 708
+Test Min Published Date: 2026-01-01 00:15:40.797000+00:00
+Test Max Published Date: 2026-09-08 23:17:30.083000+00:00
+Rows after cutoff (must be 0): 0
+Positives with gap > 30 (must be 0): 0
+Test Positives by Month: {1: 10, 2: 15, 3: 8, 4: 10, 5: 15, 6: 20, 7: 16, 8: 17, 9: 11}
+
+Total Headline Feature Columns: 152 (Base: 2, Comp: 29, CWE: 21, Text: 100)
+frozen_config.json written. Config SHA-256: 15ea96d149675c830677f4bed9a505ca5e5fe293b043df4f17ef44603c9e7fec

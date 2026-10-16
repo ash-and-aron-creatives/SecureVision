@@ -1,0 +1,40 @@
+=== SECUREVISION REPRODUCIBLE PIPELINE ===
+
+--- 1. DATASET & LABELS ---
+Train (2022-2024): Rows=93842, Positives=270
+Val (2025)       : Rows=48152, Positives=126
+
+--- 2. SENSITIVITY (VALIDATION SET) ---
+Known at pub : Pos=49, Neg=48026 | No-Skill=0.0010 | PR-AUC=0.0031
+1-30d After  : Pos=77, Neg=48026 | No-Skill=0.0016 | PR-AUC=0.0134
+
+--- 3. NLP BLACKLIST & FEATURES ---
+Automated Blacklist Test: Violations found: [] -> PASS
+
+--- 4. CUMULATIVE ABLATION (LR & XGB, 3 Seeds) ---
+Model    | Stage                | Seed | Tr PR  | Val PR
+LogReg   | 1_CVSS               | 42   | 0.0082 | 0.0148
+LogReg   | 1_CVSS               | 100  | 0.0082 | 0.0148
+LogReg   | 1_CVSS               | 200  | 0.0082 | 0.0148
+  -> LogReg 1_CVSS Mean Val PR: 0.0148 +/- 0.0000
+
+LogReg   | 4_Text_Masked        | 42   | 0.0326 | 0.0241
+LogReg   | 4_Text_Masked        | 100  | 0.0326 | 0.0241
+LogReg   | 4_Text_Masked        | 200  | 0.0326 | 0.0241
+  -> LogReg 4_Text_Masked Mean Val PR: 0.0241 +/- 0.0000
+
+XGB      | 1_CVSS               | 42   | 0.0105 | 0.0152
+XGB      | 1_CVSS               | 100  | 0.0105 | 0.0152
+XGB      | 1_CVSS               | 200  | 0.0105 | 0.0152
+  -> XGB 1_CVSS Mean Val PR: 0.0152 +/- 0.0000
+
+XGB      | 4_Text_Masked        | 42   | 0.1497 | 0.0540
+XGB      | 4_Text_Masked        | 100  | 0.1497 | 0.0540
+XGB      | 4_Text_Masked        | 200  | 0.1497 | 0.0540
+  -> XGB 4_Text_Masked Mean Val PR: 0.0540 +/- 0.0000
+
+
+--- 5. PAIRED BOOTSTRAP (1000 Resamples) ---
+Diff Mean: 0.0374 | 95% CI: [0.0068, 0.0721]
+
+--- 6. CALIBRATION TABLE ---

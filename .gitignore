@@ -1,0 +1,10 @@
+# Python / Environment
+venv/
+__pycache__/
+*.pyc
+
+# Data (Strictly do not commit raw or processed datasets)
+data/
+
+# Environment variables
+.env

@@ -1,0 +1,321 @@
+in_kev,internet,crit,epss,cvss,priority
+True,True,1,High (>0.95),Crit (9.0+),Critical
+True,True,1,High (>0.95),High (7.0-8.9),Critical
+True,True,1,High (>0.95),Med (4.0-6.9),Critical
+True,True,1,High (>0.95),Low (0.0-3.9),Critical
+True,True,1,Med (0.2-0.95),Crit (9.0+),Critical
+True,True,1,Med (0.2-0.95),High (7.0-8.9),Critical
+True,True,1,Med (0.2-0.95),Med (4.0-6.9),Critical
+True,True,1,Med (0.2-0.95),Low (0.0-3.9),Critical
+True,True,1,Low (<0.2),Crit (9.0+),Critical
+True,True,1,Low (<0.2),High (7.0-8.9),Critical
+True,True,1,Low (<0.2),Med (4.0-6.9),Critical
+True,True,1,Low (<0.2),Low (0.0-3.9),Critical
+True,True,1,Missing,Crit (9.0+),Critical
+True,True,1,Missing,High (7.0-8.9),Critical
+True,True,1,Missing,Med (4.0-6.9),Critical
+True,True,1,Missing,Low (0.0-3.9),Critical
+True,True,2,High (>0.95),Crit (9.0+),Critical
+True,True,2,High (>0.95),High (7.0-8.9),Critical
+True,True,2,High (>0.95),Med (4.0-6.9),Critical
+True,True,2,High (>0.95),Low (0.0-3.9),Critical
+True,True,2,Med (0.2-0.95),Crit (9.0+),Critical
+True,True,2,Med (0.2-0.95),High (7.0-8.9),Critical
+True,True,2,Med (0.2-0.95),Med (4.0-6.9),Critical
+True,True,2,Med (0.2-0.95),Low (0.0-3.9),Critical
+True,True,2,Low (<0.2),Crit (9.0+),Critical
+True,True,2,Low (<0.2),High (7.0-8.9),Critical
+True,True,2,Low (<0.2),Med (4.0-6.9),Critical
+True,True,2,Low (<0.2),Low (0.0-3.9),Critical
+True,True,2,Missing,Crit (9.0+),Critical
+True,True,2,Missing,High (7.0-8.9),Critical
+True,True,2,Missing,Med (4.0-6.9),Critical
+True,True,2,Missing,Low (0.0-3.9),Critical
+True,True,3,High (>0.95),Crit (9.0+),Critical
+True,True,3,High (>0.95),High (7.0-8.9),Critical
+True,True,3,High (>0.95),Med (4.0-6.9),Critical
+True,True,3,High (>0.95),Low (0.0-3.9),Critical
+True,True,3,Med (0.2-0.95),Crit (9.0+),Critical
+True,True,3,Med (0.2-0.95),High (7.0-8.9),Critical
+True,True,3,Med (0.2-0.95),Med (4.0-6.9),Critical
+True,True,3,Med (0.2-0.95),Low (0.0-3.9),Critical
+True,True,3,Low (<0.2),Crit (9.0+),Critical
+True,True,3,Low (<0.2),High (7.0-8.9),Critical
+True,True,3,Low (<0.2),Med (4.0-6.9),Critical
+True,True,3,Low (<0.2),Low (0.0-3.9),Critical
+True,True,3,Missing,Crit (9.0+),Critical
+True,True,3,Missing,High (7.0-8.9),Critical
+True,True,3,Missing,Med (4.0-6.9),Critical
+True,True,3,Missing,Low (0.0-3.9),Critical
+True,True,4,High (>0.95),Crit (9.0+),Critical
+True,True,4,High (>0.95),High (7.0-8.9),Critical
+True,True,4,High (>0.95),Med (4.0-6.9),Critical
+True,True,4,High (>0.95),Low (0.0-3.9),Critical
+True,True,4,Med (0.2-0.95),Crit (9.0+),Critical
+True,True,4,Med (0.2-0.95),High (7.0-8.9),Critical
+True,True,4,Med (0.2-0.95),Med (4.0-6.9),Critical
+True,True,4,Med (0.2-0.95),Low (0.0-3.9),Critical
+True,True,4,Low (<0.2),Crit (9.0+),Critical
+True,True,4,Low (<0.2),High (7.0-8.9),Critical
+True,True,4,Low (<0.2),Med (4.0-6.9),Critical
+True,True,4,Low (<0.2),Low (0.0-3.9),Critical
+True,True,4,Missing,Crit (9.0+),Critical
+True,True,4,Missing,High (7.0-8.9),Critical
+True,True,4,Missing,Med (4.0-6.9),Critical
+True,True,4,Missing,Low (0.0-3.9),Critical
+True,True,5,High (>0.95),Crit (9.0+),Critical
+True,True,5,High (>0.95),High (7.0-8.9),Critical
+True,True,5,High (>0.95),Med (4.0-6.9),Critical
+True,True,5,High (>0.95),Low (0.0-3.9),Critical
+True,True,5,Med (0.2-0.95),Crit (9.0+),Critical
+True,True,5,Med (0.2-0.95),High (7.0-8.9),Critical
+True,True,5,Med (0.2-0.95),Med (4.0-6.9),Critical
+True,True,5,Med (0.2-0.95),Low (0.0-3.9),Critical
+True,True,5,Low (<0.2),Crit (9.0+),Critical
+True,True,5,Low (<0.2),High (7.0-8.9),Critical
+True,True,5,Low (<0.2),Med (4.0-6.9),Critical
+True,True,5,Low (<0.2),Low (0.0-3.9),Critical
+True,True,5,Missing,Crit (9.0+),Critical
+True,True,5,Missing,High (7.0-8.9),Critical
+True,True,5,Missing,Med (4.0-6.9),Critical
+True,True,5,Missing,Low (0.0-3.9),Critical
+True,False,1,High (>0.95),Crit (9.0+),High
+True,False,1,High (>0.95),High (7.0-8.9),High
+True,False,1,High (>0.95),Med (4.0-6.9),High
+True,False,1,High (>0.95),Low (0.0-3.9),High
+True,False,1,Med (0.2-0.95),Crit (9.0+),High
+True,False,1,Med (0.2-0.95),High (7.0-8.9),High
+True,False,1,Med (0.2-0.95),Med (4.0-6.9),High
+True,False,1,Med (0.2-0.95),Low (0.0-3.9),High
+True,False,1,Low (<0.2),Crit (9.0+),High
+True,False,1,Low (<0.2),High (7.0-8.9),High
+True,False,1,Low (<0.2),Med (4.0-6.9),High
+True,False,1,Low (<0.2),Low (0.0-3.9),High
+True,False,1,Missing,Crit (9.0+),High
+True,False,1,Missing,High (7.0-8.9),High
+True,False,1,Missing,Med (4.0-6.9),High
+True,False,1,Missing,Low (0.0-3.9),High
+True,False,2,High (>0.95),Crit (9.0+),High
+True,False,2,High (>0.95),High (7.0-8.9),High
+True,False,2,High (>0.95),Med (4.0-6.9),High
+True,False,2,High (>0.95),Low (0.0-3.9),High
+True,False,2,Med (0.2-0.95),Crit (9.0+),High
+True,False,2,Med (0.2-0.95),High (7.0-8.9),High
+True,False,2,Med (0.2-0.95),Med (4.0-6.9),High
+True,False,2,Med (0.2-0.95),Low (0.0-3.9),High
+True,False,2,Low (<0.2),Crit (9.0+),High
+True,False,2,Low (<0.2),High (7.0-8.9),High
+True,False,2,Low (<0.2),Med (4.0-6.9),High
+True,False,2,Low (<0.2),Low (0.0-3.9),High
+True,False,2,Missing,Crit (9.0+),High
+True,False,2,Missing,High (7.0-8.9),High
+True,False,2,Missing,Med (4.0-6.9),High
+True,False,2,Missing,Low (0.0-3.9),High
+True,False,3,High (>0.95),Crit (9.0+),High
+True,False,3,High (>0.95),High (7.0-8.9),High
+True,False,3,High (>0.95),Med (4.0-6.9),High
+True,False,3,High (>0.95),Low (0.0-3.9),High
+True,False,3,Med (0.2-0.95),Crit (9.0+),High
+True,False,3,Med (0.2-0.95),High (7.0-8.9),High
+True,False,3,Med (0.2-0.95),Med (4.0-6.9),High
+True,False,3,Med (0.2-0.95),Low (0.0-3.9),High
+True,False,3,Low (<0.2),Crit (9.0+),High
+True,False,3,Low (<0.2),High (7.0-8.9),High
+True,False,3,Low (<0.2),Med (4.0-6.9),High
+True,False,3,Low (<0.2),Low (0.0-3.9),High
+True,False,3,Missing,Crit (9.0+),High
+True,False,3,Missing,High (7.0-8.9),High
+True,False,3,Missing,Med (4.0-6.9),High
+True,False,3,Missing,Low (0.0-3.9),High
+True,False,4,High (>0.95),Crit (9.0+),Critical
+True,False,4,High (>0.95),High (7.0-8.9),Critical
+True,False,4,High (>0.95),Med (4.0-6.9),Critical
+True,False,4,High (>0.95),Low (0.0-3.9),Critical
+True,False,4,Med (0.2-0.95),Crit (9.0+),Critical
+True,False,4,Med (0.2-0.95),High (7.0-8.9),Critical
+True,False,4,Med (0.2-0.95),Med (4.0-6.9),Critical
+True,False,4,Med (0.2-0.95),Low (0.0-3.9),Critical
+True,False,4,Low (<0.2),Crit (9.0+),Critical
+True,False,4,Low (<0.2),High (7.0-8.9),Critical
+True,False,4,Low (<0.2),Med (4.0-6.9),Critical
+True,False,4,Low (<0.2),Low (0.0-3.9),Critical
+True,False,4,Missing,Crit (9.0+),Critical
+True,False,4,Missing,High (7.0-8.9),Critical
+True,False,4,Missing,Med (4.0-6.9),Critical
+True,False,4,Missing,Low (0.0-3.9),Critical
+True,False,5,High (>0.95),Crit (9.0+),Critical
+True,False,5,High (>0.95),High (7.0-8.9),Critical
+True,False,5,High (>0.95),Med (4.0-6.9),Critical
+True,False,5,High (>0.95),Low (0.0-3.9),Critical
+True,False,5,Med (0.2-0.95),Crit (9.0+),Critical
+True,False,5,Med (0.2-0.95),High (7.0-8.9),Critical
+True,False,5,Med (0.2-0.95),Med (4.0-6.9),Critical
+True,False,5,Med (0.2-0.95),Low (0.0-3.9),Critical
+True,False,5,Low (<0.2),Crit (9.0+),Critical
+True,False,5,Low (<0.2),High (7.0-8.9),Critical
+True,False,5,Low (<0.2),Med (4.0-6.9),Critical
+True,False,5,Low (<0.2),Low (0.0-3.9),Critical
+True,False,5,Missing,Crit (9.0+),Critical
+True,False,5,Missing,High (7.0-8.9),Critical
+True,False,5,Missing,Med (4.0-6.9),Critical
+True,False,5,Missing,Low (0.0-3.9),Critical
+False,True,1,High (>0.95),Crit (9.0+),Critical
+False,True,1,High (>0.95),High (7.0-8.9),Critical
+False,True,1,High (>0.95),Med (4.0-6.9),Critical
+False,True,1,High (>0.95),Low (0.0-3.9),Critical
+False,True,1,Med (0.2-0.95),Crit (9.0+),Critical
+False,True,1,Med (0.2-0.95),High (7.0-8.9),Medium
+False,True,1,Med (0.2-0.95),Med (4.0-6.9),Medium
+False,True,1,Med (0.2-0.95),Low (0.0-3.9),Medium
+False,True,1,Low (<0.2),Crit (9.0+),Critical
+False,True,1,Low (<0.2),High (7.0-8.9),Medium
+False,True,1,Low (<0.2),Med (4.0-6.9),Low
+False,True,1,Low (<0.2),Low (0.0-3.9),Low
+False,True,1,Missing,Crit (9.0+),Critical
+False,True,1,Missing,High (7.0-8.9),Medium
+False,True,1,Missing,Med (4.0-6.9),Low
+False,True,1,Missing,Low (0.0-3.9),Low
+False,True,2,High (>0.95),Crit (9.0+),Critical
+False,True,2,High (>0.95),High (7.0-8.9),Critical
+False,True,2,High (>0.95),Med (4.0-6.9),Critical
+False,True,2,High (>0.95),Low (0.0-3.9),Critical
+False,True,2,Med (0.2-0.95),Crit (9.0+),Critical
+False,True,2,Med (0.2-0.95),High (7.0-8.9),Medium
+False,True,2,Med (0.2-0.95),Med (4.0-6.9),Medium
+False,True,2,Med (0.2-0.95),Low (0.0-3.9),Medium
+False,True,2,Low (<0.2),Crit (9.0+),Critical
+False,True,2,Low (<0.2),High (7.0-8.9),Medium
+False,True,2,Low (<0.2),Med (4.0-6.9),Low
+False,True,2,Low (<0.2),Low (0.0-3.9),Low
+False,True,2,Missing,Crit (9.0+),Critical
+False,True,2,Missing,High (7.0-8.9),Medium
+False,True,2,Missing,Med (4.0-6.9),Low
+False,True,2,Missing,Low (0.0-3.9),Low
+False,True,3,High (>0.95),Crit (9.0+),Critical
+False,True,3,High (>0.95),High (7.0-8.9),Critical
+False,True,3,High (>0.95),Med (4.0-6.9),Critical
+False,True,3,High (>0.95),Low (0.0-3.9),Critical
+False,True,3,Med (0.2-0.95),Crit (9.0+),Critical
+False,True,3,Med (0.2-0.95),High (7.0-8.9),Medium
+False,True,3,Med (0.2-0.95),Med (4.0-6.9),Medium
+False,True,3,Med (0.2-0.95),Low (0.0-3.9),Medium
+False,True,3,Low (<0.2),Crit (9.0+),Critical
+False,True,3,Low (<0.2),High (7.0-8.9),Medium
+False,True,3,Low (<0.2),Med (4.0-6.9),Low
+False,True,3,Low (<0.2),Low (0.0-3.9),Low
+False,True,3,Missing,Crit (9.0+),Critical
+False,True,3,Missing,High (7.0-8.9),Medium
+False,True,3,Missing,Med (4.0-6.9),Low
+False,True,3,Missing,Low (0.0-3.9),Low
+False,True,4,High (>0.95),Crit (9.0+),Critical
+False,True,4,High (>0.95),High (7.0-8.9),Critical
+False,True,4,High (>0.95),Med (4.0-6.9),Critical
+False,True,4,High (>0.95),Low (0.0-3.9),Critical
+False,True,4,Med (0.2-0.95),Crit (9.0+),Critical
+False,True,4,Med (0.2-0.95),High (7.0-8.9),High
+False,True,4,Med (0.2-0.95),Med (4.0-6.9),High
+False,True,4,Med (0.2-0.95),Low (0.0-3.9),High
+False,True,4,Low (<0.2),Crit (9.0+),Critical
+False,True,4,Low (<0.2),High (7.0-8.9),Medium
+False,True,4,Low (<0.2),Med (4.0-6.9),Low
+False,True,4,Low (<0.2),Low (0.0-3.9),Low
+False,True,4,Missing,Crit (9.0+),Critical
+False,True,4,Missing,High (7.0-8.9),Medium
+False,True,4,Missing,Med (4.0-6.9),Low
+False,True,4,Missing,Low (0.0-3.9),Low
+False,True,5,High (>0.95),Crit (9.0+),Critical
+False,True,5,High (>0.95),High (7.0-8.9),Critical
+False,True,5,High (>0.95),Med (4.0-6.9),Critical
+False,True,5,High (>0.95),Low (0.0-3.9),Critical
+False,True,5,Med (0.2-0.95),Crit (9.0+),Critical
+False,True,5,Med (0.2-0.95),High (7.0-8.9),High
+False,True,5,Med (0.2-0.95),Med (4.0-6.9),High
+False,True,5,Med (0.2-0.95),Low (0.0-3.9),High
+False,True,5,Low (<0.2),Crit (9.0+),Critical
+False,True,5,Low (<0.2),High (7.0-8.9),Medium
+False,True,5,Low (<0.2),Med (4.0-6.9),Low
+False,True,5,Low (<0.2),Low (0.0-3.9),Low
+False,True,5,Missing,Crit (9.0+),Critical
+False,True,5,Missing,High (7.0-8.9),Medium
+False,True,5,Missing,Med (4.0-6.9),Low
+False,True,5,Missing,Low (0.0-3.9),Low
+False,False,1,High (>0.95),Crit (9.0+),High
+False,False,1,High (>0.95),High (7.0-8.9),High
+False,False,1,High (>0.95),Med (4.0-6.9),High
+False,False,1,High (>0.95),Low (0.0-3.9),High
+False,False,1,Med (0.2-0.95),Crit (9.0+),Medium
+False,False,1,Med (0.2-0.95),High (7.0-8.9),Medium
+False,False,1,Med (0.2-0.95),Med (4.0-6.9),Medium
+False,False,1,Med (0.2-0.95),Low (0.0-3.9),Medium
+False,False,1,Low (<0.2),Crit (9.0+),Medium
+False,False,1,Low (<0.2),High (7.0-8.9),Medium
+False,False,1,Low (<0.2),Med (4.0-6.9),Low
+False,False,1,Low (<0.2),Low (0.0-3.9),Low
+False,False,1,Missing,Crit (9.0+),Medium
+False,False,1,Missing,High (7.0-8.9),Medium
+False,False,1,Missing,Med (4.0-6.9),Low
+False,False,1,Missing,Low (0.0-3.9),Low
+False,False,2,High (>0.95),Crit (9.0+),High
+False,False,2,High (>0.95),High (7.0-8.9),High
+False,False,2,High (>0.95),Med (4.0-6.9),High
+False,False,2,High (>0.95),Low (0.0-3.9),High
+False,False,2,Med (0.2-0.95),Crit (9.0+),Medium
+False,False,2,Med (0.2-0.95),High (7.0-8.9),Medium
+False,False,2,Med (0.2-0.95),Med (4.0-6.9),Medium
+False,False,2,Med (0.2-0.95),Low (0.0-3.9),Medium
+False,False,2,Low (<0.2),Crit (9.0+),Medium
+False,False,2,Low (<0.2),High (7.0-8.9),Medium
+False,False,2,Low (<0.2),Med (4.0-6.9),Low
+False,False,2,Low (<0.2),Low (0.0-3.9),Low
+False,False,2,Missing,Crit (9.0+),Medium
+False,False,2,Missing,High (7.0-8.9),Medium
+False,False,2,Missing,Med (4.0-6.9),Low
+False,False,2,Missing,Low (0.0-3.9),Low
+False,False,3,High (>0.95),Crit (9.0+),High
+False,False,3,High (>0.95),High (7.0-8.9),High
+False,False,3,High (>0.95),Med (4.0-6.9),High
+False,False,3,High (>0.95),Low (0.0-3.9),High
+False,False,3,Med (0.2-0.95),Crit (9.0+),Medium
+False,False,3,Med (0.2-0.95),High (7.0-8.9),Medium
+False,False,3,Med (0.2-0.95),Med (4.0-6.9),Medium
+False,False,3,Med (0.2-0.95),Low (0.0-3.9),Medium
+False,False,3,Low (<0.2),Crit (9.0+),Medium
+False,False,3,Low (<0.2),High (7.0-8.9),Medium
+False,False,3,Low (<0.2),Med (4.0-6.9),Low
+False,False,3,Low (<0.2),Low (0.0-3.9),Low
+False,False,3,Missing,Crit (9.0+),Medium
+False,False,3,Missing,High (7.0-8.9),Medium
+False,False,3,Missing,Med (4.0-6.9),Low
+False,False,3,Missing,Low (0.0-3.9),Low
+False,False,4,High (>0.95),Crit (9.0+),Critical
+False,False,4,High (>0.95),High (7.0-8.9),Critical
+False,False,4,High (>0.95),Med (4.0-6.9),Critical
+False,False,4,High (>0.95),Low (0.0-3.9),Critical
+False,False,4,Med (0.2-0.95),Crit (9.0+),High
+False,False,4,Med (0.2-0.95),High (7.0-8.9),High
+False,False,4,Med (0.2-0.95),Med (4.0-6.9),High
+False,False,4,Med (0.2-0.95),Low (0.0-3.9),High
+False,False,4,Low (<0.2),Crit (9.0+),High
+False,False,4,Low (<0.2),High (7.0-8.9),Medium
+False,False,4,Low (<0.2),Med (4.0-6.9),Low
+False,False,4,Low (<0.2),Low (0.0-3.9),Low
+False,False,4,Missing,Crit (9.0+),High
+False,False,4,Missing,High (7.0-8.9),Medium
+False,False,4,Missing,Med (4.0-6.9),Low
+False,False,4,Missing,Low (0.0-3.9),Low
+False,False,5,High (>0.95),Crit (9.0+),Critical
+False,False,5,High (>0.95),High (7.0-8.9),Critical
+False,False,5,High (>0.95),Med (4.0-6.9),Critical
+False,False,5,High (>0.95),Low (0.0-3.9),Critical
+False,False,5,Med (0.2-0.95),Crit (9.0+),High
+False,False,5,Med (0.2-0.95),High (7.0-8.9),High
+False,False,5,Med (0.2-0.95),Med (4.0-6.9),High
+False,False,5,Med (0.2-0.95),Low (0.0-3.9),High
+False,False,5,Low (<0.2),Crit (9.0+),High
+False,False,5,Low (<0.2),High (7.0-8.9),Medium
+False,False,5,Low (<0.2),Med (4.0-6.9),Low
+False,False,5,Low (<0.2),Low (0.0-3.9),Low
+False,False,5,Missing,Crit (9.0+),High
+False,False,5,Missing,High (7.0-8.9),Medium
+False,False,5,Missing,Med (4.0-6.9),Low
+False,False,5,Missing,Low (0.0-3.9),Low

@@ -1,0 +1,70 @@
+=== P5: FINAL SINGLE TEST SET EVALUATION ===
+Execution Time (UTC): 2026-10-11T12:57:39.916329Z
+Loaded Frozen Config: frozen_config.json
+Target Model File   : headline_model_calibrated.joblib
+Config Model SHA-256: 1390b1e65ff9bbf9dc3a3f37659a577c32af0f7aac9bb47711f8394331bc8ed1
+Disk Model SHA-256  : 1390b1e65ff9bbf9dc3a3f37659a577c32af0f7aac9bb47711f8394331bc8ed1
+
+--- C1: REFERENCE LINE (VALIDATION 2025 SET) ---
+[REFERENCE LINE - VAL 2025] PR-AUC: 0.0352 | P@100: 0.0700 (R@100: 0.0556) | P@500: 0.0320 (R@500: 0.1270)
+
+--- C4: BOUNDARY & KEV TIMELINE AUDIT ---
+KEV Snapshot Modified Time (Local): 2026-10-08T11:01:04.942832
+
+--- OPENING TEST SET (2026 SINGLE PASS) ---
+Test Partition: Rows=61611 | Positives=122
+Sep 8 Boundary CVEs: Total=1559 | Positives=3
+
+--- 1. PRIMARY METRICS ON TEST SET ---
+XGBoost Calibrated Model | Test PR-AUC: 0.0114
+  P@50 : 0.0000 | R@50 : 0.0000
+  P@100: 0.0000 | R@100: 0.0000
+  P@500: 0.0060 | R@500: 0.0246
+
+--- 2. BASELINE COMPARISONS ---
+CVSS Baseline (100 tie-breaks) | Test PR-AUC: 0.0117 +/- 0.0018
+  P@50 : 0.0454 | R@50 : 0.0186
+  P@100: 0.0428 | R@100: 0.0351
+  P@500: 0.0243 | R@500: 0.0995
+EPSS Hindsight Snapshot       | Test PR-AUC: 0.3124
+  P@50 : 0.5000 | R@50 : 0.2049
+  P@100: 0.4000 | R@100: 0.3279
+  P@500: 0.1500 | R@500: 0.6148
+
+--- 3. PAIRED BOOTSTRAP (1,000 RESAMPLES, TEST SET) ---
+PR-AUC Difference  | Mean: -0.0004 | 95% CI: [-0.0081, 0.0045]
+P@100 Difference   | Mean: -0.0306 | 95% CI: [-0.0700, 0.0000]
+P@500 Difference   | Mean: -0.0178 | 95% CI: [-0.0340, -0.0040]
+
+--- 4. SUB-GROUP ANALYSIS (ISOLATED POSITIVES) ---
+1-30 Days Post-Pub Exploitation | Positives=83 | No-Skill=0.0013
+  Model PR-AUC: 0.0074 | CVSS PR-AUC: 0.0082
+Same-day / Earlier (Known)      | Positives=39 | No-Skill=0.0006
+  Model PR-AUC: 0.0043 | CVSS PR-AUC: 0.0024
+
+--- 5. SENSITIVITY ANALYSIS (EXCLUDING SEP 8) ---
+Excluding Sep 8 Boundary | Rows=60052 | Positives=119
+  Model PR-AUC: 0.0115 | CVSS PR-AUC: 0.0103
+  P@100: 0.0000 | P@500: 0.0060
+
+--- 6. OUT-OF-SAMPLE CALIBRATION TABLE (TEST SET) ---
+Brier Score on Test Set: 0.001996
+                      Mean_Pred  True_Frac      N  Positives
+bin                                                         
+(-0.001, 0.000481]     0.000370   0.000000  12322          0
+(0.000481, 0.000793]   0.000624   0.000406  12329          5
+(0.000793, 0.0014]     0.001045   0.000568  12315          7
+(0.0014, 0.00432]      0.002389   0.001461  12323         18
+(0.00432, 0.00516]     0.004718   0.004870   1232          6
+(0.00516, 0.0062]      0.005683   0.001622   1233          2
+(0.0062, 0.00727]      0.006779   0.001625   1231          2
+(0.00727, 0.00876]     0.007937   0.005673   1234          7
+(0.00876, 0.0106]      0.009658   0.005686   1231          7
+(0.0106, 0.0131]       0.011794   0.004858   1235          6
+(0.0131, 0.0166]       0.014617   0.005696   1229          7
+(0.0166, 0.0231]       0.019667   0.005682   1232          7
+(0.0231, 0.0371]       0.029143   0.025974   1232         32
+(0.0371, 1.001]        0.048417   0.012976   1233         16
+Total Test N Sum: 61611 (Matches Test Rows: 61611)
+
+P5 Evaluation Complete. Manifest saved to docs/results/p5/manifest.json

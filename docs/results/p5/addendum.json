@@ -1,0 +1,10 @@
+﻿{
+    "brier_skill_score":  -0.0101,
+    "over_prediction":  "Model mean pred 0.41% implies ~252 positives vs 122 actual (2x over-prediction)",
+    "directory_hashes":  {
+                             "p5_console.log":  "8C1664FA2866FA7DF08AA11720953AB92230643AEB50324A49B396CD549D9DC8",
+                             "manifest.json":  "A1D7A40E24BB2B24624BE038BCC6B28FCA95027805C7F787B9B6C6F1F12B6DF4"
+                         },
+    "note":  "post-hoc evaluation",
+    "top_bin_inversion":  "Highest probability bin captured fewer positives (16/1233, 1.3%) than the second-highest bin (32/1232, 2.6%), constituting a ranking inversion at the top 2%"
+}

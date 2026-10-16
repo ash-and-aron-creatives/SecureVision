@@ -1,0 +1,52 @@
+=== SECUREVISION FINAL P4 PIPELINE ===
+Train Positives: 270 | Val Positives: 126
+
+--- B1: STAGE VERIFICATION ---
+Stage 1_CVSS: 2 features. First 10: ['cvss_score', 'cvss_missing']
+Stage 2_CVSS+Comp: 17 features. First 10: ['cvss_score', 'cvss_missing', 'AV_A', 'AV_L', 'AV_MISSING', 'AV_N', 'AV_P', 'AC_H', 'AC_L', 'AC_MISSING']
+Stage 3_CVSS+Comp+CWE: 38 features. First 10: ['cvss_score', 'cvss_missing', 'AV_A', 'AV_L', 'AV_MISSING', 'AV_N', 'AV_P', 'AC_H', 'AC_L', 'AC_MISSING']
+Stage 4a_Text_Sens: 138 features. First 10: ['cvss_score', 'cvss_missing', 'AV_A', 'AV_L', 'AV_MISSING', 'AV_N', 'AV_P', 'AC_H', 'AC_L', 'AC_MISSING']
+Stage 4b_Text_Head: 138 features. First 10: ['cvss_score', 'cvss_missing', 'AV_A', 'AV_L', 'AV_MISSING', 'AV_N', 'AV_P', 'AC_H', 'AC_L', 'AC_MISSING']
+
+--- B1: BASELINES ---
+CVSS Baseline | PR-AUC: 0.0183 | P@50: 0.0462 | P@100: 0.0534 | P@500: 0.0311
+EPSS (Hindsight)| PR-AUC: 0.2830 | P@50: 0.5600 | P@100: 0.3800 | P@500: 0.1320
+
+--- B1/B4: CUMULATIVE ABLATION (3 Seeds) ---
+Model  | Stage              | Tr PR          | Val PR         | P@100          | P@500         
+LogReg | 1_CVSS             | 0.0082+/-0.0000 | 0.0148+/-0.0000 | 0.0500+/-0.0000 | 0.0280+/-0.0000
+LogReg | 2_CVSS+Comp        | 0.0089+/-0.0000 | 0.0132+/-0.0000 | 0.0300+/-0.0000 | 0.0340+/-0.0000
+LogReg | 3_CVSS+Comp+CWE    | 0.0122+/-0.0000 | 0.0104+/-0.0000 | 0.0100+/-0.0000 | 0.0140+/-0.0000
+LogReg | 4a_Text_Sens       | 0.0311+/-0.0000 | 0.0226+/-0.0000 | 0.0300+/-0.0000 | 0.0400+/-0.0000
+LogReg | 4b_Text_Head       | 0.0325+/-0.0000 | 0.0213+/-0.0000 | 0.0300+/-0.0000 | 0.0440+/-0.0000
+XGB    | 1_CVSS             | 0.0105+/-0.0000 | 0.0152+/-0.0000 | 0.0500+/-0.0000 | 0.0360+/-0.0000
+XGB    | 2_CVSS+Comp        | 0.0132+/-0.0000 | 0.0160+/-0.0000 | 0.0500+/-0.0000 | 0.0300+/-0.0000
+XGB    | 3_CVSS+Comp+CWE    | 0.0204+/-0.0000 | 0.0140+/-0.0000 | 0.0300+/-0.0000 | 0.0260+/-0.0000
+XGB    | 4a_Text_Sens       | 0.1549+/-0.0000 | 0.0353+/-0.0000 | 0.0700+/-0.0000 | 0.0460+/-0.0000
+XGB    | 4b_Text_Head       | 0.1794+/-0.0000 | 0.0473+/-0.0000 | 0.0500+/-0.0000 | 0.0420+/-0.0000
+
+--- B5: TOP TOKENS (HEADLINE MODEL) ---
+Top Tokens by XGB Gain: ['authenticated', 'allow', 'security', 'sql injection', 'remote', 'used', 'linux', 'vulnerability', 'interaction', 'file', 'input', 'contain', 'open', 'overflow', 'cross']
+
+--- B3: CALIBRATION TABLE (Fitted on Val, Scored on Val) ---
+                      Mean_Pred  True_Frac     N  Positives
+bin                                                        
+(-0.001, 0.0003]       0.000239   0.000000  9630          0
+(0.0003, 0.000521]     0.000403   0.000104  9637          1
+(0.000521, 0.000912]   0.000698   0.000725  9654          7
+(0.000912, 0.00213]    0.001351   0.001875  9601         18
+(0.00213, 0.00243]     0.002307   0.003122   961          3
+(0.00243, 0.00303]     0.002710   0.003112   964          3
+(0.00303, 0.00368]     0.003305   0.004149   964          4
+(0.00368, 0.00474]     0.004152   0.004162   961          4
+(0.00474, 0.00624]     0.005491   0.011111   990         11
+(0.00624, 0.00805]     0.007081   0.001056   947          1
+(0.00805, 0.0107]      0.009595   0.005123   976          5
+(0.0107, 0.0165]       0.013130   0.017932   948         17
+(0.0165, 0.0258]       0.020777   0.020899   957         20
+(0.0258, 1.001]        0.035653   0.033264   962         32
+
+--- B4/G5: PAIRED BOOTSTRAP (1000 Resamples) ---
+PR-AUC Diff | Mean: 0.0317 | 95% CI: [0.0031, 0.0696]
+Conclusion: Modest evidence of a higher PR-AUC; no detectable improvement in top 100 or 500.
+frozen_config.json successfully written. Model SHA256: 3466b5b3232325f152ff3c93a252223be170ad961869367ef7c66626f6f0a028
