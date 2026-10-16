@@ -12,3 +12,24 @@ def get_db():
         yield db
     finally:
         db.close()
+
+from sqlalchemy import event
+
+@event.listens_for(engine, "connect")
+def _install_sqlite_audit_triggers(dbapi_conn, connection_record):
+    cursor = dbapi_conn.cursor()
+    cursor.execute('''
+        CREATE TRIGGER IF NOT EXISTS prevent_audit_update
+        BEFORE UPDATE ON audit_logs
+        BEGIN
+            SELECT RAISE(ABORT, 'Database Trigger: AuditLog records are strictly immutable.');
+        END;
+    ''')
+    cursor.execute('''
+        CREATE TRIGGER IF NOT EXISTS prevent_audit_delete
+        BEFORE DELETE ON audit_logs
+        BEGIN
+            SELECT RAISE(ABORT, 'Database Trigger: AuditLog records are strictly immutable.');
+        END;
+    ''')
+    cursor.close()
