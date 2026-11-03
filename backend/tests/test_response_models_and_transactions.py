@@ -1,0 +1,296 @@
+import io
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from backend import auth, main
+from backend.database import Base, get_db
+from backend.main import app
+from backend.models import Asset, AuditLog, Finding, FindingScore, User
+
+
+@pytest.fixture
+def api():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+    admin = User(
+        username="test-admin",
+        hashed_password=auth.get_password_hash("test-password"),
+        role="admin",
+    )
+    viewer = User(
+        username="test-viewer",
+        hashed_password=auth.get_password_hash("test-password"),
+        role="viewer",
+    )
+    asset = Asset(name="TEST-ASSET", exposure="Internet", criticality=5)
+    db.add_all([admin, viewer, asset])
+    db.flush()
+    finding = Finding(
+        asset_id=asset.id,
+        cve_id="CVE-2025-1234",
+        cvss_score=8.5,
+        in_kev=True,
+        status="Open",
+        date_found="2026-10-01",
+    )
+    db.add(finding)
+    db.flush()
+    db.add(FindingScore(
+        finding_id=finding.id,
+        provider_id=1,
+        likelihood=0.8,
+        priority_tier="Critical",
+        provenance={"source": "test"},
+        explanation="Test explanation",
+    ))
+    db.commit()
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as client:
+        yield client, db
+    app.dependency_overrides.clear()
+    db.close()
+
+
+def _headers(client, username="test-admin"):
+    response = client.post(
+        "/token",
+        data={"username": username, "password": "test-password"},
+    )
+    assert response.status_code == 200
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def _reject_audit_insert(mapper, connection, target):
+    raise RuntimeError("audit insert failed")
+
+
+def _assert_audit_failure_rolls_back(db, request, assertion):
+    event.listen(AuditLog, "before_insert", _reject_audit_insert)
+    try:
+        with pytest.raises(RuntimeError, match="audit insert failed"):
+            request()
+    finally:
+        event.remove(AuditLog, "before_insert", _reject_audit_insert)
+    assert assertion()
+    db.rollback()
+
+
+def test_response_models_have_consistent_shapes(api, monkeypatch):
+    client, db = api
+    headers = _headers(client)
+
+    asset_response = client.post(
+        "/assets",
+        json={"name": "SCHEMA-ASSET", "exposure": "Internal", "criticality": 3},
+        headers=headers,
+    )
+    assert asset_response.status_code == 200
+    assert set(asset_response.json()) == {"id", "name", "exposure", "criticality"}
+    assert set(client.get("/assets", headers=headers).json()[0]) == {
+        "id", "name", "exposure", "criticality",
+    }
+
+    scan_response = client.post(
+        "/scan",
+        json={"asset_id": 1, "cve_id": "CVE-2025-5678", "cvss_score": 8.0},
+        headers=headers,
+    )
+    assert scan_response.status_code == 200
+    assert set(scan_response.json()) == {"finding_id", "priority_tier", "explanation"}
+
+    finding = client.get("/findings", headers=headers).json()["items"][0]
+    assert {"exposure", "criticality"} <= set(finding)
+    assert "asset_exposure" not in finding and "asset_criticality" not in finding
+    detail = client.get(f"/findings/{finding['id']}", headers=headers).json()
+    assert set(detail["asset"]) == {"id", "name", "exposure", "criticality"}
+    assert {"score_history", "audit_trail"} <= set(detail)
+
+    user_response = client.post(
+        "/users",
+        json={"username": "schema-user", "password": "test-password", "role": "analyst"},
+        headers=headers,
+    )
+    assert user_response.status_code == 201
+    assert set(user_response.json()) == {"id", "username", "role"}
+    assert set(client.get("/users", headers=headers).json()[0]) == {
+        "id", "username", "role",
+    }
+    audit = client.get("/audit", headers=headers).json()[0]
+    assert set(audit) == {"id", "user", "action", "details", "timestamp"}
+
+    csv_data = b"asset_name,cve_id,date_found\nTEST-ASSET,CVE-2025-9876,2026-10-01\n"
+    preview = client.post(
+        "/imports/preview",
+        files={"file": ("findings.csv", io.BytesIO(csv_data), "text/csv")},
+        headers=headers,
+    )
+    assert preview.status_code == 200
+    assert set(preview.json()) == {"summary", "rows"}
+    assert set(preview.json()["summary"]) == {"total", "ok", "error", "duplicate"}
+    assert set(preview.json()["rows"][0]) == {
+        "line", "asset_name", "cve_id", "date_found", "status", "reason", "asset_id",
+    }
+
+    async def fetch_cve_data(cve_id):
+        return {"in_kev": False, "cvss": 7.0, "epss": 0.4}
+
+    monkeypatch.setattr(main, "fetch_cve_data", fetch_cve_data)
+    committed = client.post(
+        "/imports/commit",
+        files={"file": ("findings.csv", io.BytesIO(csv_data), "text/csv")},
+        headers=headers,
+    )
+    assert committed.status_code == 200
+    assert set(committed.json()) == {"imported", "skipped", "problems_csv"}
+    assert committed.json()["imported"] == 1
+
+
+def test_viewer_is_read_only_and_admin_only_routes_remain_restricted(api):
+    client, db = api
+    headers = _headers(client, "test-viewer")
+    asset = db.query(Asset).first()
+    finding = db.query(Finding).first()
+    csv_data = b"asset_name,cve_id,date_found\nTEST-ASSET,CVE-2025-9876,2026-10-01\n"
+
+    assert client.get("/assets", headers=headers).status_code == 200
+    assert client.get("/findings", headers=headers).status_code == 200
+    assert client.post(
+        "/assets",
+        json={"name": "DENIED-ASSET", "exposure": "Internal", "criticality": 2},
+        headers=headers,
+    ).status_code == 403
+    assert client.post(
+        "/scan",
+        json={"asset_id": asset.id, "cve_id": "CVE-2025-5678"},
+        headers=headers,
+    ).status_code == 403
+    assert client.put(
+        f"/findings/{finding.id}/status",
+        json={"status": "Resolved"},
+        headers=headers,
+    ).status_code == 403
+    assert client.post(
+        "/users",
+        json={"username": "viewer-created", "password": "test-password"},
+        headers=headers,
+    ).status_code == 403
+    assert client.get("/users", headers=headers).status_code == 403
+    assert client.get("/audit", headers=headers).status_code == 403
+    for path in ("/imports/preview", "/imports/commit"):
+        assert client.post(
+            path,
+            files={"file": ("findings.csv", io.BytesIO(csv_data), "text/csv")},
+            headers=headers,
+        ).status_code == 403
+
+
+def test_asset_creation_rolls_back_when_audit_insert_fails(api):
+    client, db = api
+    headers = _headers(client)
+
+    _assert_audit_failure_rolls_back(
+        db,
+        lambda: client.post(
+            "/assets",
+            json={"name": "ROLLBACK-ASSET", "exposure": "Internal", "criticality": 2},
+            headers=headers,
+        ),
+        lambda: db.query(Asset).filter_by(name="ROLLBACK-ASSET").first() is None,
+    )
+
+
+def test_scan_rolls_back_when_audit_insert_fails(api):
+    client, db = api
+    headers = _headers(client)
+
+    _assert_audit_failure_rolls_back(
+        db,
+        lambda: client.post(
+            "/scan",
+            json={"asset_id": 1, "cve_id": "CVE-2025-6789", "cvss_score": 7.0},
+            headers=headers,
+        ),
+        lambda: db.query(Finding).filter_by(cve_id="CVE-2025-6789").first() is None,
+    )
+    assert db.query(FindingScore).count() == 1
+
+
+def test_status_update_rolls_back_when_audit_insert_fails(api):
+    client, db = api
+    headers = _headers(client)
+    finding = db.query(Finding).first()
+
+    _assert_audit_failure_rolls_back(
+        db,
+        lambda: client.put(
+            f"/findings/{finding.id}/status",
+            json={"status": "Resolved"},
+            headers=headers,
+        ),
+        lambda: db.query(Finding).filter_by(id=finding.id).first().status == "Open",
+    )
+
+
+def test_user_create_update_delete_roll_back_when_audit_insert_fails(api):
+    client, db = api
+    headers = _headers(client)
+
+    _assert_audit_failure_rolls_back(
+        db,
+        lambda: client.post(
+            "/users",
+            json={"username": "ROLLBACK-USER", "password": "test-password"},
+            headers=headers,
+        ),
+        lambda: db.query(User).filter_by(username="ROLLBACK-USER").first() is None,
+    )
+    viewer = db.query(User).filter_by(username="test-viewer").first()
+    _assert_audit_failure_rolls_back(
+        db,
+        lambda: client.patch(
+            f"/users/{viewer.id}",
+            json={"role": "analyst"},
+            headers=headers,
+        ),
+        lambda: db.query(User).filter_by(username="test-viewer").first().role == "viewer",
+    )
+    viewer = db.query(User).filter_by(username="test-viewer").first()
+    _assert_audit_failure_rolls_back(
+        db,
+        lambda: client.delete(f"/users/{viewer.id}", headers=headers),
+        lambda: db.query(User).filter_by(username="test-viewer").first() is not None,
+    )
+
+
+def test_import_commit_rolls_back_when_audit_insert_fails(api, monkeypatch):
+    client, db = api
+    headers = _headers(client)
+    csv_data = b"asset_name,cve_id,date_found\nTEST-ASSET,CVE-2025-9876,2026-10-01\n"
+
+    async def fetch_cve_data(cve_id):
+        return {"in_kev": False, "cvss": 7.0, "epss": 0.4}
+
+    monkeypatch.setattr(main, "fetch_cve_data", fetch_cve_data)
+    _assert_audit_failure_rolls_back(
+        db,
+        lambda: client.post(
+            "/imports/commit",
+            files={"file": ("findings.csv", io.BytesIO(csv_data), "text/csv")},
+            headers=headers,
+        ),
+        lambda: db.query(Finding).filter_by(cve_id="CVE-2025-9876").first() is None,
+    )
+    assert db.query(FindingScore).count() == 1

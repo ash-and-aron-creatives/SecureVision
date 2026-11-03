@@ -63,6 +63,28 @@ def test_manual_scan_creates_scored_finding_and_audit(env):
     assert ('P1' in combined_str or 'Critical' in combined_str or finding_in_db.cvss_score == 9.8), f"Cols: {col_values}, Resp: {scan_body}" 
     assert db.query(AuditLog).count() >= 1
 
+
+def test_manual_scan_rejects_empty_or_invalid_cve(env):
+    client, db = env
+    h = _hdrs(client)
+    asset = Asset(name="VALIDATION-SRV", exposure="Internal", criticality=3)
+    db.add(asset)
+    db.commit()
+
+    for cve_id in ("", "not-a-cve"):
+        response = client.post(
+            "/scan",
+            json={
+                "asset_id": asset.id,
+                "cve_id": cve_id,
+                "cvss_score": 5.0,
+                "in_kev": False,
+                "epss_percentile": 0.1,
+            },
+            headers=h,
+        )
+        assert response.status_code == 400
+
 def test_audit_log_immutability_enforced(env):
     client, db = env
     h = _hdrs(client)

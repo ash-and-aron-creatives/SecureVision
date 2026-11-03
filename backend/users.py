@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.auth import get_current_user, get_password_hash
 from backend.models import AuditLog, User
+from backend.schemas import DeletedUserResponse, UserResponse
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -34,7 +35,7 @@ class UserUpdateRequest(BaseModel):
     password: Optional[str] = None
 
 
-@router.get("")
+@router.get("", response_model=list[UserResponse])
 def list_users(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
@@ -43,7 +44,7 @@ def list_users(
     return [{"id": u.id, "username": u.username, "role": u.role} for u in users]
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
 def create_user(
     req: UserCreateRequest,
     db: Session = Depends(get_db),
@@ -66,22 +67,25 @@ def create_user(
         hashed_password=get_password_hash(req.password),
         role=req.role,
     )
-    db.add(user)
-    db.flush()
-    db.add(
-        AuditLog(
-            user_id=admin.id,
-            action="USER_CREATED",
-            details=f"Created user '{uname}' with role '{req.role}' (id={user.id})",
+    try:
+        db.add(user)
+        db.flush()
+        db.add(
+            AuditLog(
+                user_id=admin.id,
+                action="USER_CREATED",
+                details=f"Created user '{uname}' with role '{req.role}' (id={user.id})",
+            )
         )
-    )
-    db.commit()
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(user)
     return {"id": user.id, "username": user.username, "role": user.role}
 
-
-@router.patch("/{user_id}")
-@router.put("/{user_id}/role")
+@router.patch("/{user_id}", response_model=UserResponse)
+@router.put("/{user_id}/role", response_model=UserResponse)
 def update_user(
     user_id: int,
     req: UserUpdateRequest,
@@ -92,38 +96,41 @@ def update_user(
     if not target:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    changes = []
-    if req.role is not None:
-        if req.role not in VALID_ROLES:
-            raise HTTPException(status_code=400, detail="Role must be admin, analyst, or viewer.")
-        if target.id == admin.id and req.role != "admin":
-            raise HTTPException(status_code=400, detail="Administrators cannot demote themselves.")
-        if target.role != req.role:
-            old_role = target.role
-            target.role = req.role
-            changes.append(f"role:{old_role}->{req.role}")
+    try:
+        changes = []
+        if req.role is not None:
+            if req.role not in VALID_ROLES:
+                raise HTTPException(status_code=400, detail="Role must be admin, analyst, or viewer.")
+            if target.id == admin.id and req.role != "admin":
+                raise HTTPException(status_code=400, detail="Administrators cannot demote themselves.")
+            if target.role != req.role:
+                old_role = target.role
+                target.role = req.role
+                changes.append(f"role:{old_role}->{req.role}")
 
-    if req.password is not None and req.password != "":
-        if len(req.password) < MIN_PASSWORD_LEN:
-            raise HTTPException(status_code=400, detail=f"Password must be at least {MIN_PASSWORD_LEN} characters.")
-        target.hashed_password = get_password_hash(req.password)
-        changes.append("password_reset")
+        if req.password is not None and req.password != "":
+            if len(req.password) < MIN_PASSWORD_LEN:
+                raise HTTPException(status_code=400, detail=f"Password must be at least {MIN_PASSWORD_LEN} characters.")
+            target.hashed_password = get_password_hash(req.password)
+            changes.append("password_reset")
 
-    if changes:
-        db.add(
-            AuditLog(
-                user_id=admin.id,
-                action="USER_UPDATED",
-                details=f"Updated user '{target.username}' (id={target.id}): {', '.join(changes)}",
+        if changes:
+            db.add(
+                AuditLog(
+                    user_id=admin.id,
+                    action="USER_UPDATED",
+                    details=f"Updated user '{target.username}' (id={target.id}): {', '.join(changes)}",
+                )
             )
-        )
-        db.commit()
-        db.refresh(target)
+            db.commit()
+            db.refresh(target)
+    except Exception:
+        db.rollback()
+        raise
 
     return {"id": target.id, "username": target.username, "role": target.role}
 
-
-@router.delete("/{user_id}")
+@router.delete("/{user_id}", response_model=DeletedUserResponse)
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
@@ -137,13 +144,17 @@ def delete_user(
 
     uname = target.username
     role = target.role
-    db.delete(target)
-    db.add(
-        AuditLog(
-            user_id=admin.id,
-            action="USER_DELETED",
-            details=f"Deleted user '{uname}' (id={user_id}, role={role})",
+    try:
+        db.delete(target)
+        db.add(
+            AuditLog(
+                user_id=admin.id,
+                action="USER_DELETED",
+                details=f"Deleted user '{uname}' (id={user_id}, role={role})",
+            )
         )
-    )
-    db.commit()
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return {"deleted": user_id, "username": uname}

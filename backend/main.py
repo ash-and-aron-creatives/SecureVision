@@ -2,9 +2,9 @@ from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Q
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 from pydantic import BaseModel
 import hashlib
+import re
 
 from backend import models, auth
 from backend.database import engine, get_db
@@ -13,6 +13,16 @@ from backend.threat_intel import fetch_cve_data
 from backend.csv_import import MAX_BYTES, ImportFileError, parse_and_validate, problems_to_csv
 from backend.reports import router as reports_router
 from backend.users import router as users_router
+from backend.schemas import (
+    AssetResponse,
+    AuditEntryResponse,
+    FindingDetailResponse,
+    FindingsPageResponse,
+    ImportCommitResponse,
+    ImportPreviewResponse,
+    ScanResultResponse,
+    StatusUpdateResponse,
+)
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -47,7 +57,7 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     access_token = auth.create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer", "role": user.role, "username": user.username}
 
-@app.post("/assets")
+@app.post("/assets", response_model=AssetResponse)
 def create_asset(
     name: str | None = None,
     exposure: str | None = None,
@@ -67,14 +77,21 @@ def create_asset(
         raise HTTPException(status_code=400, detail="Criticality must be between 1 and 5.")
 
     asset = models.Asset(name=final_name, exposure=final_exposure, criticality=final_crit)
-    db.add(asset)
-    db.commit()
-    db.refresh(asset)
-    db.add(models.AuditLog(user_id=current_user.id, action="ASSET_CREATED", details=f"Added asset: {final_name} ({final_exposure}, criticality={final_crit})"))
-    db.commit()
+    try:
+        db.add(asset)
+        db.flush()
+        db.add(models.AuditLog(
+            user_id=current_user.id,
+            action="ASSET_CREATED",
+            details=f"Added asset: {final_name} ({final_exposure}, criticality={final_crit})",
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return asset
 
-@app.get("/assets")
+@app.get("/assets", response_model=list[AssetResponse])
 def get_assets(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return db.query(models.Asset).order_by(models.Asset.id.asc()).all()
 
@@ -82,7 +99,7 @@ def get_assets(db: Session = Depends(get_db), current_user: models.User = Depend
 async def get_intel(cve_id: str, current_user: models.User = Depends(auth.get_current_user)):
     return await fetch_cve_data(cve_id.strip().upper())
 
-@app.post("/scan")
+@app.post("/scan", response_model=ScanResultResponse)
 def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role == "viewer":
         raise HTTPException(status_code=403, detail="Viewers cannot run scans.")
@@ -91,6 +108,8 @@ def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), current_
         raise HTTPException(status_code=404, detail="Asset not found")
 
     cve_clean = req.cve_id.strip().upper()
+    if not re.fullmatch(r"CVE-\d{4}-\d{4,}", cve_clean):
+        raise HTTPException(status_code=400, detail="cve_id must look like CVE-2021-44228.")
     internet_facing = (asset.exposure.lower() == "internet")
     tier, exp = calculate_priority(req.in_kev, internet_facing, asset.criticality, req.epss_percentile, req.cvss_score)
 
@@ -101,24 +120,30 @@ def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), current_
         in_kev=req.in_kev,
         status="Open",
     )
-    db.add(finding)
-    db.commit()
-    db.refresh(finding)
-
-    score = models.FindingScore(
-        finding_id=finding.id,
-        provider_id=1,
-        likelihood=req.epss_percentile,
-        priority_tier=tier,
-        provenance={"source": "Manual Scan", "in_kev": req.in_kev, "cvss": req.cvss_score, "epss": req.epss_percentile},
-        explanation=exp,
-    )
-    db.add(score)
-    db.add(models.AuditLog(user_id=current_user.id, action="SCAN_RUN", details=f"Scanned {cve_clean} on {asset.name} -> {tier}"))
-    db.commit()
+    try:
+        db.add(finding)
+        db.flush()
+        score = models.FindingScore(
+            finding_id=finding.id,
+            provider_id=1,
+            likelihood=req.epss_percentile,
+            priority_tier=tier,
+            provenance={"source": "Manual Scan", "in_kev": req.in_kev, "cvss": req.cvss_score, "epss": req.epss_percentile},
+            explanation=exp,
+        )
+        db.add(score)
+        db.add(models.AuditLog(
+            user_id=current_user.id,
+            action="SCAN_RUN",
+            details=f"finding_id={finding.id} Scanned {cve_clean} on {asset.name} -> {tier}",
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return {"finding_id": finding.id, "priority_tier": tier, "explanation": exp}
 
-@app.put("/findings/{finding_id}/status")
+@app.put("/findings/{finding_id}/status", response_model=StatusUpdateResponse)
 def update_status(finding_id: int, req: StatusUpdateRequest, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role == "viewer":
         raise HTTPException(status_code=403, detail="Viewers cannot change finding status.")
@@ -128,16 +153,20 @@ def update_status(finding_id: int, req: StatusUpdateRequest, db: Session = Depen
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
     old_status = finding.status
-    finding.status = req.status
-    db.add(models.AuditLog(
-        user_id=current_user.id,
-        action="STATUS_UPDATE",
-        details=f"finding_id={finding.id} {finding.cve_id} status changed from {old_status} to {req.status}",
-    ))
-    db.commit()
+    try:
+        finding.status = req.status
+        db.add(models.AuditLog(
+            user_id=current_user.id,
+            action="STATUS_UPDATE",
+            details=f"finding_id={finding.id} {finding.cve_id} status changed from {old_status} to {req.status}",
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return {"message": "Success", "id": finding.id, "status": finding.status}
 
-@app.get("/findings")
+@app.get("/findings", response_model=FindingsPageResponse)
 def get_findings(
     priority: str | None = Query(default=None),
     status: str | None = Query(default=None),
@@ -173,8 +202,8 @@ def get_findings(
             "cve_id": str(f.cve_id or "UNKNOWN"),
             "asset_id": int(f.asset_id) if f.asset_id is not None else 0,
             "asset_name": f.asset.name if f.asset else "Unknown",
-            "asset_exposure": f.asset.exposure if f.asset else "Internal",
-            "asset_criticality": int(f.asset.criticality) if (f.asset and f.asset.criticality is not None) else 1,
+            "exposure": f.asset.exposure if f.asset else "Internal",
+            "criticality": int(f.asset.criticality) if (f.asset and f.asset.criticality is not None) else 1,
             "cvss_score": cvss_val,
             "epss": likelihood,
             "in_kev": bool(f.in_kev),
@@ -218,7 +247,7 @@ def get_findings(
         "counts": open_counts,
     }
 
-@app.get("/findings/{finding_id}")
+@app.get("/findings/{finding_id}", response_model=FindingDetailResponse)
 def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     f = db.query(models.Finding).filter(models.Finding.id == finding_id).first()
     if not f:
@@ -232,18 +261,15 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_u
     )
     latest = scores[0] if scores else None
 
-    related_logs = (
-        db.query(models.AuditLog)
-        .filter(
-            or_(
-                models.AuditLog.details.contains(f.cve_id),
-                models.AuditLog.details.contains(f"finding_id={f.id}"),
-            )
+    related_logs = []
+    if current_user.role == "admin":
+        related_logs = (
+            db.query(models.AuditLog)
+            .filter(models.AuditLog.details.contains(f"finding_id={f.id}"))
+            .order_by(models.AuditLog.id.desc())
+            .limit(20)
+            .all()
         )
-        .order_by(models.AuditLog.id.desc())
-        .limit(20)
-        .all()
-    )
 
     return {
         "id": f.id,
@@ -285,7 +311,7 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_u
         ],
     }
 
-@app.get("/audit")
+@app.get("/audit", response_model=list[AuditEntryResponse])
 def get_audit_logs(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only administrators can view the audit log.")
@@ -301,7 +327,7 @@ def get_audit_logs(db: Session = Depends(get_db), current_user: models.User = De
         for l in logs
     ]
 
-@app.post("/imports/preview")
+@app.post("/imports/preview", response_model=ImportPreviewResponse)
 async def preview_csv(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role == "viewer":
         raise HTTPException(403, "Viewers cannot import findings.")
@@ -316,7 +342,7 @@ async def preview_csv(file: UploadFile = File(...), db: Session = Depends(get_db
         raise HTTPException(400, str(exc))
     return {"summary": summary, "rows": [r.as_dict() for r in rows]}
 
-@app.post("/imports/commit")
+@app.post("/imports/commit", response_model=ImportCommitResponse)
 async def commit_csv(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role == "viewer":
         raise HTTPException(403, "Viewers cannot import findings.")
@@ -341,48 +367,52 @@ async def commit_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
     asset_by_id = {a.id: a for a in db.query(models.Asset).all()}
     imported = 0
 
-    for r in ok:
-        info = intel.get(r.cve_id)
-        if not info:
-            r.status, r.reason = "error", "No intel data available."
-            continue
+    try:
+        for r in ok:
+            info = intel.get(r.cve_id)
+            if not info:
+                r.status, r.reason = "error", "No intel data available."
+                continue
 
-        asset = asset_by_id[r.asset_id]
-        internet_facing = (asset.exposure.lower() == "internet")
-        in_kev = bool(info.get("in_kev", False))
-        cvss_val = float(info.get("cvss", 0.0))
-        epss_val = float(info.get("epss", 0.0))
-        tier, exp = calculate_priority(in_kev, internet_facing, asset.criticality, epss_val, cvss_val)
+            asset = asset_by_id[r.asset_id]
+            internet_facing = (asset.exposure.lower() == "internet")
+            in_kev = bool(info.get("in_kev", False))
+            cvss_val = float(info.get("cvss", 0.0))
+            epss_val = float(info.get("epss", 0.0))
+            tier, exp = calculate_priority(in_kev, internet_facing, asset.criticality, epss_val, cvss_val)
 
-        finding = models.Finding(
-            asset_id=r.asset_id,
-            cve_id=r.cve_id,
-            status="Open",
-            date_found=r.date_found,
-            cvss_score=cvss_val,
-            in_kev=in_kev,
-        )
-        db.add(finding)
-        db.flush()
+            finding = models.Finding(
+                asset_id=r.asset_id,
+                cve_id=r.cve_id,
+                status="Open",
+                date_found=r.date_found,
+                cvss_score=cvss_val,
+                in_kev=in_kev,
+            )
+            db.add(finding)
+            db.flush()
 
-        score = models.FindingScore(
-            finding_id=finding.id,
-            provider_id=1,
-            likelihood=epss_val,
-            priority_tier=tier,
-            provenance={"source": "CSV Import", "filename": file.filename, "in_kev": in_kev},
-            explanation=exp,
-        )
-        db.add(score)
-        imported += 1
+            score = models.FindingScore(
+                finding_id=finding.id,
+                provider_id=1,
+                likelihood=epss_val,
+                priority_tier=tier,
+                provenance={"source": "CSV Import", "filename": file.filename, "in_kev": in_kev},
+                explanation=exp,
+            )
+            db.add(score)
+            imported += 1
 
-    skipped = len(rows) - imported
-    digest = hashlib.sha256(data).hexdigest()
-    db.add(models.AuditLog(
-        user_id=current_user.id,
-        action="IMPORT",
-        details=f"file={file.filename} sha256={digest} imported={imported} skipped={skipped}",
-    ))
-    db.commit()
+        skipped = len(rows) - imported
+        digest = hashlib.sha256(data).hexdigest()
+        db.add(models.AuditLog(
+            user_id=current_user.id,
+            action="IMPORT",
+            details=f"file={file.filename} sha256={digest} imported={imported} skipped={skipped}",
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return {"imported": imported, "skipped": skipped, "problems_csv": problems_to_csv(rows)}

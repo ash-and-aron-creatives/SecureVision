@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 from backend.main import app
 from backend.database import Base, get_db
 from backend import auth
-from backend.models import Asset, AuditLog, User
+from backend.models import Asset, AuditLog, Finding, User
 
 
 @pytest.fixture
@@ -118,3 +118,39 @@ def test_rbac_matrix_across_endpoints(client, db_session):
     assert client.post("/imports/preview", files={"file": ("t.csv", io.BytesIO(csv_bytes), "text/csv")}, headers=h_viewer).status_code == 403
 
     assert client.get("/findings", headers=h_viewer).status_code == 200
+
+
+def test_finding_detail_only_includes_audit_trail_for_admin(client, db_session):
+    admin = db_session.query(User).filter(User.username == "admin").first()
+    asset = db_session.query(Asset).first()
+    finding = Finding(
+        asset_id=asset.id,
+        cve_id="CVE-2024-1234",
+        cvss_score=7.5,
+        status="Open",
+    )
+    db_session.add(finding)
+    db_session.flush()
+    db_session.add(
+        AuditLog(
+            user_id=admin.id,
+            action="STATUS_UPDATE",
+            details=f"finding_id={finding.id} CVE-2024-1234 status changed",
+        )
+    )
+    db_session.commit()
+
+    h_admin = _headers(client, "admin")
+    h_analyst = _headers(client, "analyst1")
+    h_viewer = _headers(client, "viewer1")
+
+    admin_detail = client.get(f"/findings/{finding.id}", headers=h_admin)
+    analyst_detail = client.get(f"/findings/{finding.id}", headers=h_analyst)
+    viewer_detail = client.get(f"/findings/{finding.id}", headers=h_viewer)
+
+    assert admin_detail.status_code == 200
+    assert admin_detail.json()["audit_trail"]
+    assert analyst_detail.status_code == 200
+    assert analyst_detail.json()["audit_trail"] == []
+    assert viewer_detail.status_code == 200
+    assert viewer_detail.json()["audit_trail"] == []
