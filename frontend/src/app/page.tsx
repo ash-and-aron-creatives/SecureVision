@@ -1,990 +1,709 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import axios from "axios";
-import {
-  Shield, Server, Search, LogOut, AlertTriangle,
-  FileText, UploadCloud, Eye, X, PlusCircle, CheckCircle2, Filter, Users, Trash2
-} from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { useState, useEffect } from "react";
+import { SecureApp } from "./SecureApp";
 
-const API_URL = "http://127.0.0.1:8000";
-
-export default function SecureVisionApp() {
-  const [token, setToken] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState("admin");
-  const [view, setView] = useState("dashboard");
-  const [usersList, setUsersList] = useState<any[]>([]);
-  const [newUsername, setNewUsername] = useState("");
-  const [newUserPassword, setNewUserPassword] = useState("");
-  const [newUserRole, setNewUserRole] = useState("analyst");
-  const [userMsg, setUserMsg] = useState("");
-  const [userErr, setUserErr] = useState("");
-
-  // Data State
-  const [assets, setAssets] = useState<any[]>([]);
-  const [findings, setFindings] = useState<any[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({ Critical: 0, High: 0, Medium: 0, Low: 0 });
-  const [totalFindings, setTotalFindings] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pages, setPages] = useState(1);
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
-
-  // Filter & Search State (Step 2)
-  const [filterPriority, setFilterPriority] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterAssetId, setFilterAssetId] = useState("");
+export default function LandingFlow() {
+  const [stage, setStage] = useState("splash"); // 'splash', 'landing', 'app'
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState("priority");
-
-  // Finding Detail Modal State (Step 2)
-  const [selectedFinding, setSelectedFinding] = useState<any | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-
-  const [exporting, setExporting] = useState<"csv" | "pdf" | null>(null);
-
-  const downloadReport = async (path: string, params: Record<string, string | number | undefined>, kind: "csv" | "pdf") => {
-    setExporting(kind);
-    try {
-      const qs = new URLSearchParams();
-      Object.entries(params).forEach(([k, v]) => {
-        if (v !== undefined && v !== "" && v !== null) qs.set(k, String(v));
-      });
-      const res = await fetch(`${API_URL}${path}${qs.toString() ? `?${qs}` : ""}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const cd = res.headers.get("Content-Disposition") ?? "";
-      const filename = /filename="?([^"]+)"?/.exec(cd)?.[1] ?? `securevision-report.${kind}`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      fetchData();
-    } catch (e: any) {
-      alert(e instanceof Error ? e.message : "Export failed");
-    } finally {
-      setExporting(null);
-    }
-  };
-
-  const handleExportCsv = () =>
-    downloadReport("/reports/findings.csv", {
-      priority: filterPriority,
-      status: filterStatus,
-      asset_id: filterAssetId,
-      q: searchQuery,
-      sort: sortBy,
-    }, "csv");
-
-  const handleExportPdf = () => downloadReport("/reports/executive.pdf", {}, "pdf");
-  // Manual Scan State
-  const [scanAsset, setScanAsset] = useState("");
-  const [cveId, setCveId] = useState("");
-  const [cvss, setCvss] = useState("");
-  const [epss, setEpss] = useState("");
-  const [inKev, setInKev] = useState(false);
-  const [isFetchingIntel, setIsFetchingIntel] = useState(false);
-  const [scanResult, setScanResult] = useState<any>(null);
-  const [scanError, setScanError] = useState("");
-
-  // Asset Creation State
-  const [newAssetName, setNewAssetName] = useState("");
-  const [newAssetExposure, setNewAssetExposure] = useState("Internet");
-  const [newAssetCrit, setNewAssetCrit] = useState(4);
-  const [assetMsg, setAssetMsg] = useState("");
-
-  // Import CSV State (Step 1)
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [importRows, setImportRows] = useState<any[]>([]);
-  const [importSummary, setImportSummary] = useState<any>(null);
-  const [importResult, setImportResult] = useState<any>(null);
-  const [importError, setImportError] = useState("");
-  const [importBusy, setImportBusy] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
-    if (token) {
-      fetchData();
+    if (stage === "splash") {
+      const timer = setTimeout(() => setStage("landing"), 900);
+      return () => clearTimeout(timer);
     }
-  }, [token, view, filterPriority, filterStatus, filterAssetId, searchQuery, sortBy, page]);
+  }, [stage]);
 
-  const fetchData = async () => {
-    try {
-      const hdrs = { Authorization: `Bearer ${token}` };
-      const params = new URLSearchParams();
-      if (filterPriority) params.append("priority", filterPriority);
-      if (filterStatus) params.append("status", filterStatus);
-      if (filterAssetId) params.append("asset_id", filterAssetId);
-      if (searchQuery) params.append("q", searchQuery);
-      params.append("sort", sortBy);
-      params.append("page", String(page));
-      params.append("page_size", "15");
+  if (stage === "app") return <SecureApp onBackToHome={() => setStage("landing")} />;
 
-      const [assRes, findRes, auditRes] = await Promise.all([
-        axios.get(`${API_URL}/assets`, { headers: hdrs }),
-        axios.get(`${API_URL}/findings?${params.toString()}`, { headers: hdrs }),
-        axios.get(`${API_URL}/audit`, { headers: hdrs }),
-      ]);
-
-      setAssets(assRes.data);
-      if (!scanAsset && assRes.data.length > 0) {
-        setScanAsset(String(assRes.data[0].id));
-      }
-
-      setFindings(findRes.data.items || []);
-      setCounts(findRes.data.counts || { Critical: 0, High: 0, Medium: 0, Low: 0 });
-      setTotalFindings(findRes.data.total || 0);
-      setPages(findRes.data.pages || 1);
-      setAuditLogs(auditRes.data || []);
-      if (role === "admin") {
-        const uRes = await axios.get(`${API_URL}/users`, { headers: hdrs }).catch(() => ({ data: [] }));
-        setUsersList(uRes.data || []);
-      }
-    } catch (e) {
-      console.error("Fetch error", e);
+  const scrollToSection = (id: string) => {
+    setActiveDropdown(null);
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const formData = new URLSearchParams();
-      formData.append("username", username);
-      formData.append("password", password);
-      const res = await axios.post(`${API_URL}/token`, formData, {
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      });
-      setToken(res.data.access_token);
-      setRole(res.data.role || "admin");
-    } catch {
-      alert("Login failed. Use admin / password123");
-    }
+  const navMenus: Record<string, { id: string; items: { title: string; desc: string; badge: string }[] }> = {
+    Platform: {
+      id: "platform",
+      items: [
+        { title: "320-Rule Deterministic Engine", desc: "Zero black-box AI hallucinations. Auditable mathematical scoring.", badge: "CORE" },
+        { title: "Multi-Scanner Ingestion", desc: "Unify Nessus, Qualys, OpenVAS, and Trivy CSVs into one schema.", badge: "INGEST" },
+        { title: "Asset Context Correlation", desc: "Weight CVEs by internet exposure, data sensitivity, and criticality.", badge: "CONTEXT" },
+      ],
+    },
+    Solutions: {
+      id: "solutions",
+      items: [
+        { title: "Exploit-Led Remediation", desc: "Cut patch volume by 85% by isolating active wild exploits.", badge: "SECOPS" },
+        { title: "Executive & Audit Compliance", desc: "Generate cryptographically verifiable PDF/CSV triage trails.", badge: "GRC" },
+        { title: "Role-Based Team Workflows", desc: "Granular JWT RBAC for Admins, Analysts, and Read-Only Auditors.", badge: "RBAC" },
+      ],
+    },
+    Resources: {
+      id: "resources",
+      items: [
+        { title: "Scoring Formula Whitepaper", desc: "Deep dive into CVSS + EPSS + KEV + Asset Criticality math.", badge: "DOCS" },
+        { title: "REST API & Webhook Specs", desc: "Automate scan uploads and Jira ticket creation via FastAPI.", badge: "API" },
+        { title: "Sample Vulnerability Datasets", desc: "Download pre-built enterprise CSVs to test the 320-rule engine.", badge: "DATA" },
+      ],
+    },
+    Company: {
+      id: "company",
+      items: [
+        { title: "Our Mission", desc: "Eliminating alert fatigue for modern security operations centers.", badge: "ABOUT" },
+        { title: "Security & Architecture", desc: "Built on zero-trust principles with full audit log immutability.", badge: "TRUST" },
+        { title: "Book a Live Walkthrough", desc: "See SecureVision prioritize 10,000 findings in under 2 seconds.", badge: "DEMO" },
+      ],
+    },
   };
 
-  const openFindingDetail = async (id: number) => {
-    setDetailLoading(true);
-    try {
-      const res = await axios.get(`${API_URL}/findings/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setSelectedFinding(res.data);
-    } catch (e) {
-      console.error("Failed to load finding details", e);
-    } finally {
-      setDetailLoading(false);
-    }
-  };
-
-  const handleStatusChange = async (findingId: number, newStatus: string) => {
-    try {
-      await axios.put(
-        `${API_URL}/findings/${findingId}/status`,
-        { status: newStatus },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      fetchData();
-      if (selectedFinding && selectedFinding.id === findingId) {
-        openFindingDetail(findingId);
-      }
-    } catch {
-      alert("Failed to update status.");
-    }
-  };
-
-  const handleFetchIntel = async () => {
-    if (!cveId.trim()) return;
-    setIsFetchingIntel(true);
-    setScanError("");
-    try {
-      const res = await axios.get(`${API_URL}/intel/${cveId.trim().toUpperCase()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setCvss(String(res.data.cvss ?? 7.5));
-      setEpss(String(res.data.epss ?? 0.5));
-      setInKev(Boolean(res.data.in_kev));
-    } catch {
-      setScanError("Could not fetch live intel for that CVE. You can still enter values manually.");
-    } finally {
-      setIsFetchingIntel(false);
-    }
-  };
-
-  const handleRunScan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setScanError("");
-    setScanResult(null);
-    try {
-      const res = await axios.post(
-        `${API_URL}/scan`,
-        {
-          asset_id: Number(scanAsset),
-          cve_id: cveId.trim().toUpperCase(),
-          cvss_score: parseFloat(cvss) || 0.0,
-          epss_percentile: parseFloat(epss) || 0.0,
-          in_kev: inKev,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setScanResult(res.data);
-      fetchData();
-    } catch (err: any) {
-      setScanError(err?.response?.data?.detail || "Scan failed.");
-    }
-  };
-
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setUserMsg(""); setUserErr("");
-    try {
-      await axios.post(`${API_URL}/users`, { username: newUsername, password: newUserPassword, role: newUserRole }, { headers: { Authorization: `Bearer ${token}` } });
-      setNewUsername(""); setNewUserPassword(""); setNewUserRole("analyst");
-      setUserMsg("User created and logged to Audit Trail!");
-      fetchData();
-    } catch (err: any) {
-      setUserErr(err?.response?.data?.detail || "Failed to create user.");
-    }
-  };
-
-  const handleRoleChange = async (userId: number, updatedRole: string) => {
-    setUserMsg(""); setUserErr("");
-    try {
-      await axios.put(`${API_URL}/users/${userId}/role`, { role: updatedRole }, { headers: { Authorization: `Bearer ${token}` } });
-      setUserMsg("Role updated!");
-      fetchData();
-    } catch (err: any) {
-      setUserErr(err?.response?.data?.detail || "Failed to update role.");
-    }
-  };
-
-  const handleDeleteUser = async (userId: number) => {
-    setUserMsg(""); setUserErr("");
-    try {
-      await axios.delete(`${API_URL}/users/${userId}`, { headers: { Authorization: `Bearer ${token}` } });
-      setUserMsg("User deleted.");
-      fetchData();
-    } catch (err: any) {
-      setUserErr(err?.response?.data?.detail || "Failed to delete user.");
-    }
-  };
-  const handleCreateAsset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAssetMsg("");
-    try {
-      await axios.post(
-        `${API_URL}/assets`,
-        { name: newAssetName, exposure: newAssetExposure, criticality: Number(newAssetCrit) },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setNewAssetName("");
-      setAssetMsg("Asset added and logged to Audit Trail!");
-      fetchData();
-    } catch (err: any) {
-      setAssetMsg(err?.response?.data?.detail || "Failed to add asset.");
-    }
-  };
-
-  const runImport = async (path: string, after: (d: any) => void) => {
-    if (!importFile) return;
-    setImportBusy(true);
-    setImportError("");
-    try {
-      const form = new FormData();
-      form.append("file", importFile);
-      const res = await axios.post(`${API_URL}${path}`, form, {
-        headers: { "Content-Type": "multipart/form-data", Authorization: `Bearer ${token}` },
-      });
-      after(res.data);
-      fetchData();
-    } catch (e: any) {
-      setImportError(e?.response?.data?.detail ?? "Upload failed.");
-    } finally {
-      setImportBusy(false);
-    }
-  };
-
-  const downloadProblems = () => {
-    const blob = new Blob([importResult!.problems_csv], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "import_problems.csv";
-    a.click();
-  };
-
-  const tierBadge = (tier: string) => {
-    if (tier === "Critical") return "bg-red-100 text-red-800 border-red-200";
-    if (tier === "High") return "bg-orange-100 text-orange-800 border-orange-200";
-    if (tier === "Medium") return "bg-amber-100 text-amber-800 border-amber-200";
-    return "bg-emerald-100 text-emerald-800 border-emerald-200";
-  };
-
-  if (!token) {
+  // STAGE 1: Motion UI Splash Screen
+  if (stage === "splash") {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="w-96 bg-white p-8 rounded-xl shadow-lg border border-slate-200">
-          <div className="flex justify-center mb-6 text-blue-600"><Shield size={56} /></div>
-          <h1 className="text-2xl font-bold text-center text-slate-800 mb-6">SecureVision</h1>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input className="w-full p-3 border rounded bg-slate-50 text-slate-800" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
-            <input className="w-full p-3 border rounded bg-slate-50 text-slate-800" type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
-            <button className="w-full bg-blue-600 text-white p-3 rounded font-bold hover:bg-blue-700 transition">Sign In</button>
-          </form>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[#2B125A] via-[#1D0B43] to-[#0D0322] overflow-hidden relative">
+        <style>{`
+          @keyframes letterDance {
+            0%, 100% { transform: translateY(0px) scale(1); }
+            50% { transform: translateY(-14px) scale(1.04); filter: drop-shadow(0 12px 20px rgba(0, 229, 196, 0.45)); }
+          }
+          @keyframes logoFloat {
+            0%, 100% { transform: translateY(0px) rotate(0deg) scale(1); }
+            50% { transform: translateY(-10px) rotate(2deg) scale(1.06); filter: drop-shadow(0 0 28px rgba(0, 229, 196, 0.6)); }
+          }
+          @keyframes waveUndulate1 {
+            0%, 100% { transform: translateX(0px) translateY(0px) scaleY(1); }
+            50% { transform: translateX(-35px) translateY(-18px) scaleY(1.12); }
+          }
+          @keyframes waveUndulate2 {
+            0%, 100% { transform: translateX(0px) translateY(0px) scaleY(1); }
+            50% { transform: translateX(35px) translateY(14px) scaleY(0.9); }
+          }
+          .dance-char {
+            display: inline-block;
+            animation: letterDance 1.5s ease-in-out infinite;
+          }
+          .logo-float {
+            animation: logoFloat 2.4s ease-in-out infinite;
+          }
+          .wave-motion-1 {
+            animation: waveUndulate1 4s ease-in-out infinite;
+          }
+          .wave-motion-2 {
+            animation: waveUndulate2 5s ease-in-out infinite;
+          }
+        `}</style>
+
+        <div className="absolute w-[650px] h-[650px] bg-[#8121D7]/25 blur-[140px] rounded-full pointer-events-none"></div>
+        <div className="absolute w-[450px] h-[450px] bg-[#00E5C4]/15 blur-[120px] rounded-full -top-20 -left-20 pointer-events-none"></div>
+
+        <div className="z-10 flex flex-col items-center -mt-12">
+          <div className="flex items-center gap-4 md:gap-5 mb-5">
+            <svg viewBox="0 0 120 100" className="w-20 h-16 md:w-24 md:h-20 logo-float" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="splashWingTop" x1="6" y1="20" x2="100" y2="80" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="#00E5C4"/>
+                  <stop offset="55%" stopColor="#3B82F6"/>
+                  <stop offset="100%" stopColor="#8121D7"/>
+                </linearGradient>
+                <linearGradient id="splashShieldGuard" x1="22" y1="35" x2="105" y2="95" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="#00E5C4"/>
+                  <stop offset="45%" stopColor="#6D28D9"/>
+                  <stop offset="100%" stopColor="#3B096C"/>
+                </linearGradient>
+                <linearGradient id="splashInnerBevel" x1="50" y1="20" x2="88" y2="75" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="#A5F3FC"/>
+                  <stop offset="100%" stopColor="#00E5C4"/>
+                </linearGradient>
+              </defs>
+              <path d="M 22 40 L 42 40 C 50 40 55 46 59 56 L 73 88 L 93 34 C 96 58 87 82 73 96 C 55 82 45 62 39 50 L 28 50 Z" fill="url(#splashShieldGuard)" />
+              <path d="M 6 22 L 56 22 C 66 22 72 28 75 36 L 73 66 L 94 20 L 106 20 L 73 86 L 56 46 C 52 36 46 32 36 32 L 14 32 Z" fill="url(#splashWingTop)" />
+              <path d="M 52 22 C 68 15 84 15 94 20 L 87 34 C 78 29 66 29 58 33 Z" fill="url(#splashInnerBevel)" opacity="0.85" />
+            </svg>
+
+            <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight flex items-center select-none">
+              {"Secure".split("").map((char, i) => (
+                <span key={`sec-${i}`} className="dance-char text-white" style={{ animationDelay: `${i * 0.08}s` }}>
+                  {char}
+                </span>
+              ))}
+              {"Vision".split("").map((char, i) => (
+                <span key={`vis-${i}`} className="dance-char text-[#00E5C4]" style={{ animationDelay: `${(i + 6) * 0.08}s` }}>
+                  {char}
+                </span>
+              ))}
+            </h1>
+          </div>
+
+          <div className="h-1.5 w-32 bg-gradient-to-r from-[#8121D7] via-[#00E5C4] to-[#1ABDD6] rounded-full animate-pulse shadow-[0_0_20px_#00E5C4]"></div>
+        </div>
+
+        <div className="absolute bottom-0 left-0 w-full h-[340px] overflow-hidden pointer-events-none z-0">
+          <svg className="w-[115%] -left-[7.5%] h-full absolute bottom-0" viewBox="0 0 1440 340" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="waveCyan" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="rgba(129, 33, 215, 0.1)" />
+                <stop offset="50%" stopColor="rgba(0, 229, 196, 0.65)" />
+                <stop offset="100%" stopColor="rgba(229, 0, 125, 0.25)" />
+              </linearGradient>
+              <linearGradient id="wavePurple" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="rgba(0, 229, 196, 0.15)" />
+                <stop offset="50%" stopColor="rgba(168, 85, 247, 0.6)" />
+                <stop offset="100%" stopColor="rgba(0, 229, 196, 0.2)" />
+              </linearGradient>
+              <filter id="nodeGlow">
+                <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                <feMerge>
+                  <feMergeNode in="coloredBlur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+
+            <g className="wave-motion-1">
+              <path d="M-100,320 C250,150 650,280 1540,120" fill="none" stroke="url(#waveCyan)" strokeWidth="2.5" />
+              <path d="M-100,280 C350,180 800,330 1540,180" fill="none" stroke="url(#wavePurple)" strokeWidth="2" />
+              <path d="M-100,340 C450,220 900,140 1540,260" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5" />
+              <circle cx="380" cy="215" r="5" fill="#fff" filter="url(#nodeGlow)" className="animate-ping" />
+              <circle cx="380" cy="215" r="4" fill="#00E5C4" filter="url(#nodeGlow)" />
+              <circle cx="960" cy="205" r="5" fill="#fff" filter="url(#nodeGlow)" />
+            </g>
+
+            <g className="wave-motion-2">
+              <path d="M-100,260 C300,340 750,120 1540,240" fill="none" stroke="url(#waveCyan)" strokeWidth="2" />
+              <path d="M-100,330 C520,140 880,290 1540,150" fill="none" stroke="url(#wavePurple)" strokeWidth="2.5" />
+              <path d="M-100,300 C200,240 600,190 1540,310" fill="none" stroke="rgba(0,229,196,0.22)" strokeWidth="1" />
+              <circle cx="670" cy="218" r="5" fill="#fff" filter="url(#nodeGlow)" />
+              <circle cx="820" cy="238" r="4" fill="#E5007D" filter="url(#nodeGlow)" className="animate-pulse" />
+              <circle cx="1120" cy="202" r="4" fill="#00E5C4" filter="url(#nodeGlow)" />
+            </g>
+          </svg>
         </div>
       </div>
     );
   }
 
-  const chartData = [
-    { name: "Critical", count: counts.Critical || 0, color: "#ef4444" },
-    { name: "High", count: counts.High || 0, color: "#f97316" },
-    { name: "Medium", count: counts.Medium || 0, color: "#f59e0b" },
-    { name: "Low", count: counts.Low || 0, color: "#10b981" },
-  ];
-
+  // STAGE 2: Quantexa-Style Enterprise Landing Page with Interactive Header & Scrollable Sections
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-800">
-      {/* Sidebar */}
-      <div className="w-64 bg-slate-900 text-white flex flex-col">
-        <div className="p-6 flex items-center gap-3 font-bold text-xl border-b border-slate-800">
-          <Shield className="text-blue-400" /> SecureVision
+    <div className="min-h-screen bg-gradient-to-br from-[#4C2396] via-[#2F1366] to-[#120524] text-white font-sans overflow-x-hidden scroll-smooth">
+      {/* Sticky Enterprise Header */}
+      <nav 
+        onMouseLeave={() => setActiveDropdown(null)}
+        className="flex items-center justify-between px-4 sm:px-8 py-3.5 sm:py-4 bg-gradient-to-r from-[#8121D7] to-[#1ABDD6] sticky top-0 z-50 shadow-xl relative"
+      >
+        <div 
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="flex items-center cursor-pointer hover:opacity-95 transition-opacity"
+        >
+          <svg viewBox="0 0 120 100" className="w-13 h-11 mr-2.5 drop-shadow-[0_2px_10px_rgba(0,229,196,0.3)]" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="opt2WingTop" x1="6" y1="20" x2="100" y2="80" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#00E5C4"/>
+                <stop offset="55%" stopColor="#3B82F6"/>
+                <stop offset="100%" stopColor="#8121D7"/>
+              </linearGradient>
+              <linearGradient id="opt2ShieldGuard" x1="22" y1="35" x2="105" y2="95" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#00E5C4"/>
+                <stop offset="45%" stopColor="#6D28D9"/>
+                <stop offset="100%" stopColor="#3B096C"/>
+              </linearGradient>
+              <linearGradient id="opt2InnerBevel" x1="50" y1="20" x2="88" y2="75" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#A5F3FC"/>
+                <stop offset="100%" stopColor="#00E5C4"/>
+              </linearGradient>
+            </defs>
+            <path d="M 22 40 L 42 40 C 50 40 55 46 59 56 L 73 88 L 93 34 C 96 58 87 82 73 96 C 55 82 45 62 39 50 L 28 50 Z" fill="url(#opt2ShieldGuard)" />
+            <path d="M 6 22 L 56 22 C 66 22 72 28 75 36 L 73 66 L 94 20 L 106 20 L 73 86 L 56 46 C 52 36 46 32 36 32 L 14 32 Z" fill="url(#opt2WingTop)" />
+            <path d="M 52 22 C 68 15 84 15 94 20 L 87 34 C 78 29 66 29 58 33 Z" fill="url(#opt2InnerBevel)" opacity="0.85" />
+          </svg>
+          <span className="text-3xl text-white font-extrabold tracking-tight">Secure</span>
+          <span className="text-3xl text-[#00E5C4] font-extrabold tracking-tight drop-shadow-sm">Vision</span>
         </div>
-        <nav className="flex-1 p-4 space-y-2">
-          <button onClick={() => setView("dashboard")} className={`w-full flex items-center gap-3 p-3 rounded font-medium transition ${view === "dashboard" ? "bg-blue-600" : "hover:bg-slate-800"}`}>
-            <AlertTriangle size={20} /> Dashboard
-          </button>
-          <button onClick={() => setView("scan")} className={`w-full flex items-center gap-3 p-3 rounded font-medium transition ${view === "scan" ? "bg-blue-600" : "hover:bg-slate-800"}`}>
-            <Search size={20} /> New Scan
-          </button>
-          <button onClick={() => setView("import")} className={`w-full flex items-center gap-3 p-3 rounded font-medium transition ${view === "import" ? "bg-blue-600" : "hover:bg-slate-800"}`}>
-            <UploadCloud size={20} /> Import CSV
-          </button>
-          <button onClick={() => setView("assets")} className={`w-full flex items-center gap-3 p-3 rounded font-medium transition ${view === "assets" ? "bg-blue-600" : "hover:bg-slate-800"}`}>
-            <Server size={20} /> Assets
-          </button>
-          <button onClick={() => setView("audit")} className={`w-full flex items-center gap-3 p-3 rounded font-medium transition ${view === "audit" ? "bg-blue-600" : "hover:bg-slate-800"}`}>
-            <FileText size={20} /> Audit Log
-          </button>
-          {role === "admin" && (
-            <button onClick={() => setView("users")} className={`w-full flex items-center gap-3 p-3 rounded font-medium transition ${view === "users" ? "bg-blue-600" : "hover:bg-slate-800"}`}>
-              <Users size={20} /> Users (RBAC)
-            </button>
-          )}
-        </nav>
-        <button onClick={() => setToken("")} className="p-6 border-t border-slate-800 flex items-center gap-3 hover:text-red-400 transition">
-          <LogOut size={20} /> Logout
-        </button>
-      </div>
 
-      {/* Main Content */}
-      <div className="flex-1 overflow-auto p-8">
-        {/* 1. DASHBOARD & FINDINGS VIEW */}
-        {view === "dashboard" && (
-          <div className="space-y-6 max-w-7xl">
-            <div className="flex justify-between items-center">
-              <h2 className="text-3xl font-bold text-slate-800">Vulnerability Dashboard</h2>
-              <span className="text-sm text-slate-500 font-medium">320-Rule Transparent Prioritization Engine</span>
-            </div>
-
-            {/* Summary KPI Cards */}
-            <div className="grid grid-cols-4 gap-6">
-              {Object.entries(counts).map(([tier, count]) => (
-                <div
-                  key={tier}
-                  onClick={() => { setFilterPriority(filterPriority === tier ? "" : tier); setPage(1); }}
-                  className={`cursor-pointer bg-white p-6 rounded-xl shadow-sm border transition hover:shadow-md ${filterPriority === tier ? "ring-2 ring-blue-600 border-blue-600" : "border-slate-200"}`}
-                >
-                  <div className="text-slate-500 text-sm font-bold uppercase tracking-wider mb-2">{tier} (Open)</div>
-                  <div className={`text-5xl font-bold ${tier === "Critical" ? "text-red-500" : tier === "High" ? "text-orange-500" : tier === "Medium" ? "text-amber-500" : "text-emerald-500"}`}>
-                    {count}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Chart */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <h3 className="text-lg font-bold mb-4 text-slate-800">Open Findings by Priority Tier</h3>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis allowDecimals={false} />
-                    <Tooltip />
-                    <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                      {chartData.map((entry, idx) => (
-                        <Cell key={idx} fill={entry.color} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Search & Filter Bar (Step 2) */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-3 items-center">
-              <div className="flex items-center gap-2 text-slate-500 font-semibold text-sm mr-2">
-                <Filter size={16} /> Filters:
-              </div>
-              <input
-                className="p-2 border rounded text-sm flex-1 min-w-[200px]"
-                placeholder="Search CVE ID or Asset Name..."
-                value={searchQuery}
-                onChange={e => { setSearchQuery(e.target.value); setPage(1); }}
-              />
-              <select className="p-2 border rounded text-sm" value={filterPriority} onChange={e => { setFilterPriority(e.target.value); setPage(1); }}>
-                <option value="">All Priorities</option>
-                <option value="Critical">Critical</option>
-                <option value="High">High</option>
-                <option value="Medium">Medium</option>
-                <option value="Low">Low</option>
-              </select>
-              <select className="p-2 border rounded text-sm" value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }}>
-                <option value="">All Statuses</option>
-                <option value="Open">Open</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Resolved">Resolved</option>
-              </select>
-              <select className="p-2 border rounded text-sm" value={filterAssetId} onChange={e => { setFilterAssetId(e.target.value); setPage(1); }}>
-                <option value="">All Assets</option>
-                {assets.map((a: any) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-              <select className="p-2 border rounded text-sm" value={sortBy} onChange={e => { setSortBy(e.target.value); setPage(1); }}>
-                <option value="priority">Sort: Priority Tier</option>
-                <option value="cvss">Sort: CVSS Score</option>
-                <option value="epss">Sort: EPSS Likelihood</option>
-                <option value="newest">Sort: Newest First</option>
-              </select>
-              <div className="ml-auto flex gap-2">
-                <button
-                  onClick={handleExportCsv}
-                  disabled={exporting !== null}
-                  className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  {exporting === "csv" ? "Exporting..." : "Export CSV"}
-                </button>
-                <button
-                  onClick={handleExportPdf}
-                  disabled={exporting !== null}
-                  className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-bold text-white hover:bg-slate-700 disabled:opacity-50"
-                >
-                  {exporting === "pdf" ? "Generating..." : "Export PDF"}
-                </button>
-              </div>
-              {(filterPriority || filterStatus || filterAssetId || searchQuery) && (
-                <button
-                  onClick={() => { setFilterPriority(""); setFilterStatus(""); setFilterAssetId(""); setSearchQuery(""); setPage(1); }}
-                  className="text-xs font-bold text-blue-600 hover:underline px-2"
-                >
-                  Reset
-                </button>
-              )}
-            </div>
-
-            {/* Prioritized Findings Table */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="p-4 border-b border-slate-200 flex justify-between items-center">
-                <h3 className="font-bold text-lg">Prioritized Vulnerability Queue ({totalFindings} matching)</h3>
-                <span className="text-xs text-slate-500">Click any row or Explain to inspect full 320-rule provenance</span>
-              </div>
-              <table className="w-full text-sm text-left">
-                <thead className="bg-slate-100 text-slate-600 uppercase text-xs">
-                  <tr>
-                    <th className="p-3">Priority</th>
-                    <th className="p-3">CVE ID</th>
-                    <th className="p-3">Asset</th>
-                    <th className="p-3">CVSS</th>
-                    <th className="p-3">EPSS</th>
-                    <th className="p-3">KEV</th>
-                    <th className="p-3">Status</th>
-                    <th className="p-3">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {findings.map((f: any) => (
-                    <tr key={f.id} className="border-t hover:bg-slate-50">
-                      <td className="p-3">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${tierBadge(f.priority_tier)}`}>
-                          {f.priority_tier}
-                        </span>
-                      </td>
-                      <td className="p-3 font-mono font-bold text-blue-700 cursor-pointer hover:underline" onClick={() => openFindingDetail(f.id)}>
-                        {f.cve_id}
-                      </td>
-                      <td className="p-3 font-medium">{f.asset_name}</td>
-                      <td className="p-3 font-semibold">{Number(f.cvss_score).toFixed(1)}</td>
-                      <td className="p-3">{(Number(f.epss) * 100).toFixed(1)}%</td>
-                      <td className="p-3">
-                        {f.in_kev ? (
-                          <span className="px-2 py-0.5 rounded bg-red-600 text-white text-xs font-bold">KEV</span>
-                        ) : (
-                          <span className="text-slate-400 text-xs">No</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        <select
-                          value={f.status}
-                          onChange={e => handleStatusChange(f.id, e.target.value)}
-                          className="border rounded px-2 py-1 text-xs font-semibold bg-white"
-                        >
-                          <option value="Open">Open</option>
-                          <option value="In Progress">In Progress</option>
-                          <option value="Resolved">Resolved</option>
-                        </select>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          onClick={() => openFindingDetail(f.id)}
-                          className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800"
-                        >
-                          <Eye size={14} /> Explain
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {findings.length === 0 && (
-                    <tr>
-                      <td colSpan={8} className="p-6 text-center text-slate-500">No findings match the current filters.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-
-              {/* Pagination Controls */}
-              <div className="p-4 border-t border-slate-200 flex justify-between items-center bg-slate-50">
-                <span className="text-xs text-slate-600">Page {page} of {pages}</span>
-                <div className="flex gap-2">
-                  <button
-                    disabled={page <= 1}
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    className="px-3 py-1 rounded border bg-white text-xs font-bold disabled:opacity-40"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    disabled={page >= pages}
-                    onClick={() => setPage(p => Math.min(pages, p + 1))}
-                    className="px-3 py-1 rounded border bg-white text-xs font-bold disabled:opacity-40"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 2. NEW SCAN VIEW */}
-        {view === "scan" && (
-          <div className="max-w-3xl bg-white p-8 rounded-xl shadow-sm border border-slate-200 space-y-6">
-            <div>
-              <h2 className="text-2xl font-bold mb-1">Single Vulnerability Triage Scan</h2>
-              <p className="text-sm text-slate-600">Evaluate a specific CVE against a registered asset using live NVD, FIRST.org EPSS, and CISA KEV threat intelligence.</p>
-            </div>
-            <form onSubmit={handleRunScan} className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold mb-1">Target Asset</label>
-                <select className="w-full p-3 border rounded bg-slate-50" value={scanAsset} onChange={e => setScanAsset(e.target.value)}>
-                  {assets.map((a: any) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} ({a.exposure} | Criticality {a.criticality}/5)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-1">CVE Identifier</label>
-                <div className="flex gap-2">
-                  <input
-                    className="flex-1 p-3 border rounded bg-slate-50 font-mono"
-                    placeholder="e.g. CVE-2021-44228"
-                    value={cveId}
-                    onChange={e => setCveId(e.target.value)}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={handleFetchIntel}
-                    disabled={isFetchingIntel || !cveId.trim()}
-                    className="bg-slate-800 text-white px-4 py-2 rounded font-bold hover:bg-slate-700 disabled:opacity-50"
-                  >
-                    {isFetchingIntel ? "Fetching..." : "Fetch Live Intel"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold mb-1">Base CVSS Score (0 - 10)</label>
-                  <input type="number" step="0.1" min="0" max="10" className="w-full p-3 border rounded bg-slate-50" value={cvss} onChange={e => setCvss(e.target.value)} required />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold mb-1">EPSS Probability (0.0 - 1.0)</label>
-                  <input type="number" step="0.0001" min="0" max="1" className="w-full p-3 border rounded bg-slate-50" value={epss} onChange={e => setEpss(e.target.value)} required />
-                </div>
-              </div>
-
-              <label className="flex items-center gap-2 font-semibold text-sm cursor-pointer">
-                <input type="checkbox" checked={inKev} onChange={e => setInKev(e.target.checked)} className="w-4 h-4" />
-                Listed in CISA Known Exploited Vulnerabilities (KEV) Catalog
-              </label>
-
-              {scanError && <p className="text-red-600 text-sm font-bold">{scanError}</p>}
-
-              <button type="submit" className="w-full bg-blue-600 text-white p-3 rounded font-bold hover:bg-blue-700 transition">
-                Evaluate with 320-Rule Matrix
-              </button>
-            </form>
-
-            {scanResult && (
-              <div className="p-5 rounded-xl border bg-slate-50 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-700">Assigned Priority Tier:</span>
-                  <span className={`px-3 py-1 rounded-full text-sm font-bold border ${tierBadge(scanResult.priority_tier)}`}>
-                    {scanResult.priority_tier}
-                  </span>
-                </div>
-                <p className="text-sm text-slate-700"><strong>Rule Explanation:</strong> {scanResult.explanation}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 3. IMPORT CSV VIEW (Step 1) */}
-        {view === "import" && (
-          <div className="max-w-5xl bg-white p-8 rounded-xl shadow-sm border border-slate-200">
-            <h2 className="text-2xl font-bold mb-2">Import Findings (CSV)</h2>
-            <p className="text-sm text-slate-600 mb-6">Required columns: asset_name, cve_id, date_found (YYYY-MM-DD).</p>
-            <input
-              type="file"
-              accept=".csv"
-              onChange={(e) => {
-                setImportFile(e.target.files?.[0] ?? null);
-                setImportRows([]);
-                setImportSummary(null);
-                setImportResult(null);
-              }}
-              className="mb-4 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded border file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-            />
-            <div className="flex gap-2 mb-4">
-              <button
-                disabled={!importFile || importBusy}
-                className="rounded bg-slate-800 px-4 py-2 text-white disabled:opacity-50 font-bold"
-                onClick={() => runImport("/imports/preview", (d: any) => { setImportRows(d.rows); setImportSummary(d.summary); setImportResult(null); })}
+        {/* Interactive Nav Links with Dropdowns + Smooth Scroll */}
+        <div className="hidden md:flex gap-8 text-sm font-semibold text-white/95 relative">
+          {Object.keys(navMenus).map((label) => {
+            const menu = navMenus[label];
+            const isOpen = activeDropdown === label;
+            return (
+              <div
+                key={label}
+                onMouseEnter={() => setActiveDropdown(label)}
+                className="relative py-2"
               >
-                Preview
-              </button>
-              <button
-                disabled={!importSummary || importSummary.ok === 0 || importBusy}
-                className="rounded bg-emerald-600 px-4 py-2 text-white disabled:opacity-50 font-bold"
-                onClick={() => runImport("/imports/commit", (d: any) => setImportResult(d))}
-              >
-                Import {importSummary ? importSummary.ok : 0} valid rows
-              </button>
-            </div>
-            {importError && <p className="text-red-700 font-bold mb-4">{importError}</p>}
-            {importSummary && !importResult && (
-              <p className="mb-4 font-medium text-slate-700">
-                Total {importSummary.total}: {importSummary.ok} valid, {importSummary.error} errors, {importSummary.duplicate} duplicates.
-              </p>
-            )}
-            {importResult && (
-              <div className="rounded border border-emerald-200 bg-emerald-50 p-4 mb-4 text-emerald-900 font-medium">
-                Imported {importResult.imported}, skipped {importResult.skipped}.{" "}
-                {importResult.skipped > 0 && (
-                  <button className="underline font-bold" onClick={downloadProblems}>
-                    Download the problems as CSV
-                  </button>
-                )}
-              </div>
-            )}
-            {importRows.length > 0 && (
-              <div className="max-h-96 overflow-auto rounded border border-slate-200">
-                <table className="w-full text-sm text-left">
-                  <thead className="sticky top-0 bg-slate-100">
-                    <tr>
-                      <th className="p-3">Line</th>
-                      <th className="p-3">Asset</th>
-                      <th className="p-3">CVE</th>
-                      <th className="p-3">Date</th>
-                      <th className="p-3">Result</th>
-                      <th className="p-3">Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {importRows.map((r: any) => (
-                      <tr key={r.line} className="border-t hover:bg-slate-50">
-                        <td className="p-3">{r.line}</td>
-                        <td className="p-3">{r.asset_name}</td>
-                        <td className="p-3">{r.cve_id}</td>
-                        <td className="p-3">{r.date_found}</td>
-                        <td className="p-3">
-                          <span className={`rounded px-2 py-1 text-xs font-bold ${r.status === "ok" ? "bg-green-100 text-green-800" : r.status === "error" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>
-                            {r.status}
-                          </span>
-                        </td>
-                        <td className="p-3">{r.reason}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
+                <button
+                  onClick={() => scrollToSection(menu.id)}
+                  className="hover:text-[#00E5C4] cursor-pointer transition-colors flex items-center gap-1.5 focus:outline-none"
+                >
+                  {label}
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    className={`transition-transform duration-200 ${isOpen ? "rotate-180 text-[#00E5C4]" : ""}`}
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </button>
 
-        {/* 4. ASSETS VIEW */}
-        {view === "assets" && (
-          <div className="max-w-5xl space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><PlusCircle size={20} className="text-blue-600" /> Register New Asset</h2>
-              <form onSubmit={handleCreateAsset} className="grid grid-cols-4 gap-4 items-end">
-                <div className="col-span-2">
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Asset Name</label>
-                  <input className="w-full p-2.5 border rounded bg-slate-50" placeholder="e.g. Core Banking API" value={newAssetName} onChange={e => setNewAssetName(e.target.value)} required />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Network Exposure</label>
-                  <select className="w-full p-2.5 border rounded bg-slate-50" value={newAssetExposure} onChange={e => setNewAssetExposure(e.target.value)}>
-                    <option value="Internet">Internet</option>
-                    <option value="Internal">Internal</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Criticality (1-5)</label>
-                  <div className="flex gap-2">
-                    <input type="number" min="1" max="5" className="w-20 p-2.5 border rounded bg-slate-50" value={newAssetCrit} onChange={e => setNewAssetCrit(Number(e.target.value))} required />
-                    <button type="submit" className="flex-1 bg-blue-600 text-white px-4 py-2.5 rounded font-bold hover:bg-blue-700">Add</button>
-                  </div>
-                </div>
-              </form>
-              {assetMsg && <p className="mt-3 text-sm font-semibold text-emerald-700 flex items-center gap-1"><CheckCircle2 size={16} /> {assetMsg}</p>}
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="p-4 border-b border-slate-200 font-bold text-lg">Registered Organization Assets ({assets.length})</div>
-              <table className="w-full text-sm text-left">
-                <thead className="bg-slate-100 text-slate-600 uppercase text-xs">
-                  <tr>
-                    <th className="p-3">ID</th>
-                    <th className="p-3">Asset Name</th>
-                    <th className="p-3">Network Exposure</th>
-                    <th className="p-3">Business Criticality</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {assets.map((a: any) => (
-                    <tr key={a.id} className="border-t hover:bg-slate-50">
-                      <td className="p-3 font-mono text-slate-500">#{a.id}</td>
-                      <td className="p-3 font-bold">{a.name}</td>
-                      <td className="p-3">
-                        <span className={`px-2 py-1 rounded text-xs font-bold ${a.exposure.toLowerCase() === "internet" ? "bg-purple-100 text-purple-800" : "bg-slate-100 text-slate-700"}`}>
-                          {a.exposure}
-                        </span>
-                      </td>
-                      <td className="p-3 font-semibold">Tier {a.criticality} / 5</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* 5. AUDIT LOG VIEW */}
-        {view === "audit" && (
-          <div className="max-w-6xl bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-5 border-b border-slate-200 flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold">Immutable Security Audit Trail</h2>
-                <p className="text-xs text-slate-500">Tracks every scan, CSV batch import, asset registration, and status change.</p>
-              </div>
-            </div>
-            <table className="w-full text-sm text-left">
-              <thead className="bg-slate-100 text-slate-600 uppercase text-xs">
-                <tr>
-                  <th className="p-3">ID</th>
-                  <th className="p-3">Timestamp</th>
-                  <th className="p-3">User</th>
-                  <th className="p-3">Action</th>
-                  <th className="p-3">Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {auditLogs.map((l: any) => (
-                  <tr key={l.id} className="border-t hover:bg-slate-50">
-                    <td className="p-3 font-mono text-xs text-slate-500">#{l.id}</td>
-                    <td className="p-3 text-xs text-slate-500">{l.timestamp ? new Date(l.timestamp).toLocaleString() : "Just now"}</td>
-                    <td className="p-3 font-bold">{l.user}</td>
-                    <td className="p-3">
-                      <span className="px-2 py-1 rounded bg-slate-800 text-white text-xs font-mono font-bold">{l.action}</span>
-                    </td>
-                    <td className="p-3 font-mono text-xs text-slate-700 break-all">{l.details}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* 6. USERS RBAC VIEW (Step 4) */}
-        {view === "users" && role === "admin" && (
-          <div className="max-w-5xl space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Users size={20} className="text-blue-600" /> Create User Account (RBAC)</h2>
-              <form onSubmit={handleCreateUser} className="grid grid-cols-4 gap-4 items-end">
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Username</label>
-                  <input className="w-full p-2.5 border rounded bg-slate-50" placeholder="e.g. analyst_jane" value={newUsername} onChange={e => setNewUsername(e.target.value)} required />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Password (min 8 chars)</label>
-                  <input type="password" className="w-full p-2.5 border rounded bg-slate-50" placeholder="••••••••" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} required />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Role</label>
-                  <select className="w-full p-2.5 border rounded bg-slate-50" value={newUserRole} onChange={e => setNewUserRole(e.target.value)}>
-                    <option value="analyst">Analyst (Scan, Import, Triage)</option>
-                    <option value="viewer">Viewer (Read & Export Only)</option>
-                    <option value="admin">Admin (Full Control)</option>
-                  </select>
-                </div>
-                <div>
-                  <button type="submit" className="w-full bg-blue-600 text-white px-4 py-2.5 rounded font-bold hover:bg-blue-700">Create User</button>
-                </div>
-              </form>
-              {userMsg && <p className="mt-3 text-sm font-semibold text-emerald-700">{userMsg}</p>}
-              {userErr && <p className="mt-3 text-sm font-semibold text-red-600">{userErr}</p>}
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="p-4 border-b border-slate-200 font-bold text-lg">System Users & Roles ({usersList.length})</div>
-              <table className="w-full text-sm text-left">
-                <thead className="bg-slate-100 text-slate-600 uppercase text-xs">
-                  <tr>
-                    <th className="p-3">ID</th>
-                    <th className="p-3">Username</th>
-                    <th className="p-3">Assigned Role</th>
-                    <th className="p-3">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {usersList.map((u: any) => (
-                    <tr key={u.id} className="border-t hover:bg-slate-50">
-                      <td className="p-3 font-mono text-slate-500">#{u.id}</td>
-                      <td className="p-3 font-bold">{u.username}</td>
-                      <td className="p-3">
-                        <select
-                          value={u.role}
-                          onChange={e => handleRoleChange(u.id, e.target.value)}
-                          className="border rounded px-2.5 py-1 text-xs font-bold bg-white"
+                {/* Dropdown Panel */}
+                {isOpen && (
+                  <div className="absolute left-0 top-full pt-2 w-80 z-50">
+                    <div className="bg-[#1A0B3B]/95 backdrop-blur-2xl border border-white/15 rounded-xl p-3 shadow-2xl space-y-1">
+                      {menu.items.map((item, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => scrollToSection(menu.id)}
+                          className="p-3 rounded-lg hover:bg-white/10 transition-colors cursor-pointer group"
                         >
-                          <option value="admin">admin</option>
-                          <option value="analyst">analyst</option>
-                          <option value="viewer">viewer</option>
-                        </select>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          onClick={() => handleDeleteUser(u.id)}
-                          className="flex items-center gap-1 text-xs font-bold text-red-600 hover:text-red-800"
-                        >
-                          <Trash2 size={14} /> Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* FINDING DETAIL MODAL (Step 2 Explainability Drawer) */}
-        {(selectedFinding || detailLoading) && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-auto">
-              {detailLoading || !selectedFinding ? (
-                <p className="text-center py-8 font-bold text-slate-600">Loading finding provenance...</p>
-              ) : (
-                <>
-                  <div className="flex justify-between items-start border-b pb-3">
-                    <div>
-                      <div className="flex items-center gap-3">
-                        <h3 className="text-2xl font-bold font-mono text-blue-700">{selectedFinding.cve_id}</h3>
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold border ${tierBadge(selectedFinding.priority_tier)}`}>
-                          {selectedFinding.priority_tier}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1">Finding #{selectedFinding.id} | Date Found: {selectedFinding.date_found}</p>
-                    </div>
-                    <button onClick={() => setSelectedFinding(null)} className="text-slate-400 hover:text-slate-700">
-                      <X size={22} />
-                    </button>
-                  </div>
-
-                  {/* Asset Context & Threat Signals */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-4 rounded-lg bg-slate-50 border">
-                      <div className="text-xs font-bold uppercase text-slate-500 mb-2">Asset Context</div>
-                      <p className="text-sm"><strong>Name:</strong> {selectedFinding.asset?.name}</p>
-                      <p className="text-sm"><strong>Exposure:</strong> {selectedFinding.asset?.exposure}</p>
-                      <p className="text-sm"><strong>Criticality:</strong> {selectedFinding.asset?.criticality} / 5</p>
-                    </div>
-                    <div className="p-4 rounded-lg bg-slate-50 border">
-                      <div className="text-xs font-bold uppercase text-slate-500 mb-2">Threat Intel Signals</div>
-                      <p className="text-sm"><strong>NVD CVSS Base:</strong> {Number(selectedFinding.cvss_score).toFixed(1)} / 10</p>
-                      <p className="text-sm"><strong>FIRST.org EPSS:</strong> {(Number(selectedFinding.likelihood) * 100).toFixed(2)}%</p>
-                      <p className="text-sm"><strong>CISA KEV Active Exploit:</strong> {selectedFinding.in_kev ? "YES (In KEV)" : "No"}</p>
-                    </div>
-                  </div>
-
-                  {/* Matched Rule Explanation */}
-                  <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
-                    <div className="text-xs font-bold uppercase text-blue-700 mb-1">320-Rule Matrix Decision Explanation</div>
-                    <p className="text-sm font-medium text-slate-800">{selectedFinding.explanation}</p>
-                  </div>
-
-                  {/* Score History */}
-                  <div>
-                    <div className="text-xs font-bold uppercase text-slate-500 mb-2">Score Provenance History</div>
-                    <div className="border rounded divide-y text-xs">
-                      {selectedFinding.score_history?.map((s: any) => (
-                        <div key={s.id} className="p-2.5 flex justify-between items-center">
-                          <span><strong>Tier:</strong> {s.priority_tier} (EPSS {(Number(s.likelihood) * 100).toFixed(1)}%)</span>
-                          <span className="font-mono text-slate-500">Source: {s.provenance?.source || "Engine"}</span>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-white font-bold text-xs group-hover:text-[#00E5C4] transition-colors">
+                              {item.title}
+                            </span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#00E5C4]/15 text-[#00E5C4] border border-[#00E5C4]/30">
+                              {item.badge}
+                            </span>
+                          </div>
+                          <p className="text-white/60 text-[11px] leading-snug">{item.desc}</p>
                         </div>
                       ))}
-                    </div>
-                  </div>
-
-                  {/* Audit History for this Finding */}
-                  {selectedFinding.audit_trail?.length > 0 && (
-                    <div>
-                      <div className="text-xs font-bold uppercase text-slate-500 mb-2">Related Audit Trail</div>
-                      <div className="border rounded divide-y text-xs max-h-36 overflow-auto">
-                        {selectedFinding.audit_trail.map((a: any) => (
-                          <div key={a.id} className="p-2 flex justify-between">
-                            <span><strong>{a.action}</strong> by {a.user}: {a.details}</span>
-                          </div>
-                        ))}
+                      <div className="pt-2 mt-1 border-t border-white/10 px-3 py-1.5 flex justify-between items-center text-[11px] text-[#00E5C4] font-semibold cursor-pointer hover:underline"
+                           onClick={() => scrollToSection(menu.id)}>
+                        <span>Explore full {label} section</span>
+                        <span>/</span>
                       </div>
                     </div>
-                  )}
-                </>
-              )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Right Actions: Search + Log In */}
+        <div className="flex items-center gap-4">
+          {searchOpen ? (
+            <div className="flex items-center bg-[#1A0B3B]/80 border border-white/25 rounded-md px-3 py-1.5">
+              <input
+                type="text"
+                placeholder="Search CVE, rules, docs..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") scrollToSection("platform");
+                }}
+                className="bg-transparent text-white text-xs focus:outline-none w-40 placeholder-white/50"
+                autoFocus
+              />
+              <button onClick={() => setSearchOpen(false)} className="text-white/60 hover:text-white text-xs ml-2">/</button>
             </div>
+          ) : (
+            <button
+              onClick={() => setSearchOpen(true)}
+              title="Search SecureVision"
+              className="p-2 rounded-full hover:bg-white/10 transition-colors"
+            >
+              <svg className="w-5 h-5 text-white cursor-pointer hover:text-[#00E5C4] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+              </svg>
+            </button>
+          )}
+          <button 
+            onClick={() => setStage("app")}
+            className="bg-[#93278F] hover:bg-[#B031AB] text-white px-4 sm:px-7 py-2 sm:py-2.5 rounded-sm text-xs sm:text-sm font-bold transition-all shadow-[0_4px_14px_0_rgba(147,39,143,0.39)] cursor-pointer"
+          >
+            Log In
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(!mobileNavOpen)}
+            aria-label="Toggle Mobile Menu"
+            className="md:hidden p-2 rounded-lg bg-white/15 text-white hover:bg-white/25"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Mobile / Tablet Dropdown Menu */}
+        {mobileNavOpen && (
+          <div className="md:hidden absolute top-full left-0 right-0 bg-[#1A0B3B]/98 backdrop-blur-2xl border-b border-white/15 p-4 space-y-2 z-50 shadow-2xl">
+            {Object.keys(navMenus).map((label) => (
+              <button
+                key={label}
+                onClick={() => {
+                  setMobileNavOpen(false);
+                  scrollToSection(navMenus[label].id);
+                }}
+                className="w-full text-left px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-sm font-bold text-white flex items-center justify-between"
+              >
+                <span>{label}</span>
+                <span className="text-[#00E5C4]">-&gt;</span>
+              </button>
+            ))}
           </div>
         )}
+      </nav>
+
+      {/* HERO SECTION */}
+      <main className="max-w-7xl mx-auto px-8 pt-20 pb-24 flex flex-col md:flex-row items-center relative">
+        <div className="w-full md:w-3/5 z-10 animate-fade-in-up pr-8">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-xs text-[#00E5C4] font-semibold mb-6">
+            <span className="w-2 h-2 rounded-full bg-[#00E5C4] animate-ping"></span>
+            320-Rule Deterministic Prioritization Engine
+          </div>
+          <h1 className="text-5xl md:text-7xl font-bold leading-tight mb-6 tracking-tight text-white">
+            Fix the vulnerabilities<br/>attackers will<br/>actually use.
+          </h1>
+          <p className="text-lg md:text-xl text-white/75 mb-10 max-w-xl leading-relaxed">
+            SecureVision joins your scanner, asset and threat data into one ranked queue, so your team spends this week on the findings that put the business at risk.
+          </p>
+          <div className="flex flex-wrap gap-4">
+            <button 
+              onClick={() => setStage("app")}
+              className="bg-white text-[#1C0F4A] px-8 py-3.5 rounded text-sm font-bold hover:bg-[#00E5C4] transition-colors shadow-lg"
+            >
+              See our platform
+            </button>
+            <button 
+              onClick={() => scrollToSection("platform")}
+              className="bg-transparent border border-white/30 text-white px-8 py-3.5 rounded text-sm font-bold hover:bg-white/10 transition-colors"
+            >
+              Explore Architecture /
+            </button>
+          </div>
+        </div>
+
+        {/* Priority Queue Glassmorphism Card */}
+        <div className="w-full md:w-2/5 mt-16 md:mt-0 relative animate-fade-in-up z-10" style={{ animationDelay: '0.2s' }}>
+          <div className="bg-[#2D1B69]/45 backdrop-blur-xl border border-white/15 rounded-xl p-6 shadow-2xl relative z-10">
+            <div className="flex justify-between items-end mb-6">
+              <div>
+                <h3 className="text-white font-semibold text-lg">Priority queue</h3>
+                <p className="text-white/50 text-xs">Live deterministic ranking</p>
+              </div>
+              <div className="text-right">
+                <p className="text-white font-semibold text-sm">1,284 open findings</p>
+                <p className="text-[#00E5C4] text-xs font-medium">7 need action this week</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div onClick={() => setStage("app")} className="bg-white/5 border border-white/10 rounded-lg p-4 flex justify-between items-center hover:bg-white/10 transition-colors cursor-pointer">
+                <div>
+                  <h4 className="text-white font-medium">CVE-2024-3400</h4>
+                  <p className="text-white/60 text-xs mb-2">vpn-gw-01 / Palo Alto PAN-OS</p>
+                  <div className="flex gap-2">
+                    <span className="text-[10px] text-white/70 px-2 py-0.5 bg-[#FF4A4A]/20 border border-[#FF4A4A]/40 rounded">Exploited in the wild</span>
+                    <span className="text-[10px] text-white/60 px-2 py-0.5 border border-white/20 rounded">Internet-facing</span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="text-[#FF4A4A] font-bold text-2xl">98</span>
+                  <div className="w-8 h-1 bg-[#FF4A4A] rounded-full mt-1"></div>
+                </div>
+              </div>
+
+              <div onClick={() => setStage("app")} className="bg-white/5 border border-white/10 rounded-lg p-4 flex justify-between items-center hover:bg-white/10 transition-colors cursor-pointer">
+                <div>
+                  <h4 className="text-white font-medium">CVE-2023-4966</h4>
+                  <p className="text-white/60 text-xs mb-2">citrix-edge-02 / NetScaler ADC</p>
+                  <div className="flex gap-2">
+                    <span className="text-[10px] text-white/70 px-2 py-0.5 bg-[#FF4A4A]/20 border border-[#FF4A4A]/40 rounded">Exploited in the wild</span>
+                    <span className="text-[10px] text-white/60 px-2 py-0.5 border border-white/20 rounded">Holds customer data</span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="text-[#FF4A4A] font-bold text-2xl">91</span>
+                  <div className="w-8 h-1 bg-[#FF4A4A] rounded-full mt-1"></div>
+                </div>
+              </div>
+
+              <div onClick={() => setStage("app")} className="bg-white/5 border border-white/10 rounded-lg p-4 flex justify-between items-center hover:bg-white/10 transition-colors cursor-pointer">
+                <div>
+                  <h4 className="text-white font-medium">CVE-2024-21762</h4>
+                  <p className="text-white/60 text-xs mb-2">fw-hq-main / FortiOS SSL VPN</p>
+                  <span className="text-[10px] text-white/60 px-2 py-0.5 border border-white/20 rounded">Public exploit code</span>
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="text-[#FFB340] font-bold text-2xl">76</span>
+                  <div className="w-8 h-1 bg-[#FFB340] rounded-full mt-1"></div>
+                </div>
+              </div>
+
+              <div onClick={() => setStage("app")} className="bg-white/5 border border-white/10 rounded-lg p-4 flex justify-between items-center hover:bg-white/10 transition-colors cursor-pointer">
+                <div>
+                  <h4 className="text-white font-medium">CVE-2023-38545</h4>
+                  <p className="text-white/60 text-xs mb-2">build-runner-07 / curl libcurl</p>
+                  <span className="text-[10px] text-white/60 px-2 py-0.5 border border-white/20 rounded">Internal only</span>
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="text-[#00E5C4] font-bold text-2xl">38</span>
+                  <div className="w-8 h-1 bg-[#00E5C4] rounded-full mt-1"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-[#5926B6]/20 blur-[100px] rounded-full -z-10 pointer-events-none"></div>
+        </div>
+
+        {/* Animated Data Lines in Hero Background */}
+        <div className="absolute bottom-0 left-0 w-full overflow-hidden leading-none z-0 pointer-events-none h-[380px]">
+          <svg className="absolute w-full h-full" viewBox="0 0 1200 400" preserveAspectRatio="none">
+            <path className="animate-draw-line" d="M-100,300 C300,450 700,100 1300,250" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2" />
+            <path className="animate-draw-line-reverse" d="M-100,350 C400,100 800,400 1300,200" fill="none" stroke="rgba(0,229,196,0.3)" strokeWidth="3" />
+            <path className="animate-draw-line" d="M-100,200 C500,400 600,150 1300,300" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+            <path className="animate-draw-line-reverse" d="M-100,250 C200,50 900,450 1300,150" fill="none" stroke="rgba(201,0,118,0.3)" strokeWidth="2" />
+          </svg>
+        </div>
+      </main>
+
+      {/* QUANTEXA-STYLE "INTEGRATED WITH / TRUSTED BY" GLASS BAR */}
+      <div className="max-w-7xl mx-auto px-8 pb-20 relative z-10">
+        <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl py-6 px-8 flex flex-col items-center">
+          <p className="text-[11px] uppercase tracking-[0.25em] text-white/50 font-semibold mb-5">
+            SEAMLESS TELEMETRY & THREAT INTELLIGENCE INTEGRATION
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-8 w-full text-center items-center opacity-80">
+            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">CISA KEV</div>
+            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">FIRST EPSS</div>
+            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">NIST NVD</div>
+            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">NESSUS PRO</div>
+            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">QUALYS VMDR</div>
+            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">TRIVY / OPENVAS</div>
+          </div>
+        </div>
       </div>
+
+      {/* SECTION 1: PLATFORM */}
+      <section id="platform" className="py-24 px-8 border-t border-white/10 bg-[#160730]/60 backdrop-blur-lg">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-14">
+            <div>
+              <span className="text-[#00E5C4] text-xs font-extrabold uppercase tracking-widest">01 / PLATFORM ARCHITECTURE</span>
+              <h2 className="text-3xl md:text-5xl font-bold mt-2">Inside the 320-Rule Deterministic Engine</h2>
+            </div>
+            <p className="text-white/65 max-w-md text-sm mt-4 md:mt-0">
+              Unlike opaque AIwrappers that guess risk scores, SecureVision evaluates every CVE across four verifiable dimensions for 100% explainable auditability.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="bg-[#25104C]/60 border border-white/10 rounded-2xl p-8 hover:border-[#00E5C4]/50 transition-all shadow-xl">
+              <div className="w-12 h-12 rounded-xl bg-[#00E5C4]/15 border border-[#00E5C4]/30 flex items-center justify-center text-[#00E5C4] font-extrabold text-xl mb-6">
+                01
+              </div>
+              <h3 className="text-xl font-bold mb-3">Multi-Scanner Normalization</h3>
+              <p className="text-white/65 text-sm leading-relaxed mb-6">
+                Ingest raw CSV exports or API streams from Nessus, Qualys, and OpenVAS. SecureVision deduplicates findings and maps hostnames to your canonical asset inventory.
+              </p>
+              <div className="text-xs font-mono text-[#00E5C4] bg-black/30 p-3 rounded border border-white/5">
+                POST /api/v1/scans/import-csv / 200 OK
+              </div>
+            </div>
+
+            <div className="bg-[#25104C]/60 border border-white/10 rounded-2xl p-8 hover:border-[#00E5C4]/50 transition-all shadow-xl">
+              <div className="w-12 h-12 rounded-xl bg-[#8121D7]/25 border border-[#8121D7]/50 flex items-center justify-center text-[#E5007D] font-extrabold text-xl mb-6">
+                02
+              </div>
+              <h3 className="text-xl font-bold mb-3">320-Rule Combinatorial Matrix</h3>
+              <p className="text-white/65 text-sm leading-relaxed mb-6">
+                Cross-references CVSS base severity (4 tiers) / Exploit Maturity (4 tiers) / Asset Exposure (4 tiers) / Data Criticality (5 tiers) = 320 deterministic decision rules.
+              </p>
+              <div className="text-xs font-mono text-[#E5007D] bg-black/30 p-3 rounded border border-white/5">
+                Score = f(CVSS, KEV, EPSS, Exposure, Tier)
+              </div>
+            </div>
+
+            <div className="bg-[#25104C]/60 border border-white/10 rounded-2xl p-8 hover:border-[#00E5C4]/50 transition-all shadow-xl">
+              <div className="w-12 h-12 rounded-xl bg-[#00E5C4]/15 border border-[#00E5C4]/30 flex items-center justify-center text-[#00E5C4] font-extrabold text-xl mb-6">
+                03
+              </div>
+              <h3 className="text-xl font-bold mb-3">Explainable Triage Queue</h3>
+              <p className="text-white/65 text-sm leading-relaxed mb-6">
+                Every prioritized vulnerability includes a human-readable rule trace showing why it ranked Critical, High, Medium, or Low/ready for instant CISO or auditor review.
+              </p>
+              <div className="text-xs font-mono text-white/80 bg-black/30 p-3 rounded border border-white/5">
+                Rule #318 / Priority: CRITICAL (SLA: 24h)
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SECTION 2: SOLUTIONS */}
+      <section id="solutions" className="py-24 px-8 border-t border-white/10">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <span className="text-[#00E5C4] text-xs font-extrabold uppercase tracking-widest">02 / ENTERPRISE SOLUTIONS</span>
+            <h2 className="text-3xl md:text-5xl font-bold mt-2 mb-4">Built for Every Security Stakeholder</h2>
+            <p className="text-white/65 text-sm">
+              From hands-on vulnerability analysts to compliance auditors, SecureVision aligns technical remediation with real business risk.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="bg-gradient-to-br from-[#2D1B69]/70 to-[#1A0B3B]/70 border border-white/15 rounded-2xl p-8 flex flex-col justify-between">
+              <div>
+                <span className="px-3 py-1 text-[10px] font-bold uppercase bg-[#E5007D]/20 text-[#FF61D2] border border-[#E5007D]/40 rounded-full">
+                  SecOps & Vulnerability Management
+                </span>
+                <h3 className="text-2xl font-bold mt-4 mb-3">Eliminate 85% of Alert Noise</h3>
+                <p className="text-white/70 text-sm leading-relaxed mb-6">
+                  Traditional CVSS-only sorting floods teams with thousands of "High" vulnerabilities that have zero public exploit code and sit on isolated internal networks. SecureVision isolates the 3/5% of findings that represent imminent breach pathways.
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/10 text-center">
+                <div>
+                  <p className="text-2xl font-extrabold text-[#00E5C4]">85%</p>
+                  <p className="text-[11px] text-white/50">Noise Reduction</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-extrabold text-white">320</p>
+                  <p className="text-[11px] text-white/50">Explicit Rules</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-extrabold text-[#FF4A4A]">&lt; 2s</p>
+                  <p className="text-[11px] text-white/50">Batch Scoring</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-[#2D1B69]/70 to-[#1A0B3B]/70 border border-white/15 rounded-2xl p-8 flex flex-col justify-between">
+              <div>
+                <span className="px-3 py-1 text-[10px] font-bold uppercase bg-[#00E5C4]/20 text-[#00E5C4] border border-[#00E5C4]/40 rounded-full">
+                  GRC, Audit & Executive Reporting
+                </span>
+                <h3 className="text-2xl font-bold mt-4 mb-3">Tamper-Evident Audit Trails & RBAC</h3>
+                <p className="text-white/70 text-sm leading-relaxed mb-6">
+                  Every scan upload, status change, asset modification, and user login is recorded in an immutable audit log. Enforce strict Role-Based Access Control (Admin, Analyst, Viewer) secured by JWT authentication.
+                </p>
+              </div>
+              <div className="flex items-center justify-between pt-6 border-t border-white/10">
+                <span className="text-xs text-white/60">ISO 27001 / SOC 2 / NIST CSF Aligned</span>
+                <button
+                  onClick={() => setStage("app")}
+                  className="text-xs font-bold text-[#00E5C4] hover:underline"
+                >
+                  Launch RBAC Console /
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SECTION 3: RESOURCES & SCORING TRANSPARENCY */}
+      <section id="resources" className="py-24 px-8 border-t border-white/10 bg-[#160730]/60">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-14">
+            <div>
+              <span className="text-[#00E5C4] text-xs font-extrabold uppercase tracking-widest">03 / TECHNICAL RESOURCES</span>
+              <h2 className="text-3xl md:text-5xl font-bold mt-2">Documentation & Scoring Specs</h2>
+            </div>
+            <button
+              onClick={() => setStage("app")}
+              className="mt-4 md:mt-0 bg-[#00E5C4] text-[#120524] px-6 py-2.5 rounded font-bold text-xs hover:bg-white transition-colors"
+            >
+              Test with Sample CSV in App /
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white/5 border border-white/10 rounded-xl p-6 flex flex-col justify-between hover:bg-white/10 transition-all">
+              <div>
+                <span className="text-[10px] font-mono uppercase px-2 py-1 bg-white/10 rounded text-[#00E5C4]">SPECIFICATION</span>
+                <h4 className="text-lg font-bold mt-4 mb-2">Deterministic Prioritization Formula</h4>
+                <p className="text-white/60 text-xs leading-relaxed">
+                  Complete mathematical breakdown showing how base CVSS v3.1 combines with CISA Known Exploited Vulnerabilities (KEV) and asset business criticality tiers.
+                </p>
+              </div>
+              <button onClick={() => setStage("app")} className="mt-6 text-left text-xs font-bold text-[#00E5C4] hover:underline">
+                Inspect Rule Engine /
+              </button>
+            </div>
+
+            <div className="bg-white/5 border border-white/10 rounded-xl p-6 flex flex-col justify-between hover:bg-white/10 transition-all">
+              <div>
+                <span className="text-[10px] font-mono uppercase px-2 py-1 bg-white/10 rounded text-[#FF61D2]">CSV SCHEMA</span>
+                <h4 className="text-lg font-bold mt-4 mb-2">Bulk Scan Ingestion Guide</h4>
+                <p className="text-white/60 text-xs leading-relaxed">
+                  Standardized column headers (`cve_id`, `cvss_score`, `exploit_status`, `asset_name`, `exposure`) for one-click bulk CSV uploads into the SecureVision dashboard.
+                </p>
+              </div>
+              <button onClick={() => setStage("app")} className="mt-6 text-left text-xs font-bold text-[#00E5C4] hover:underline">
+                Open CSV Importer /
+              </button>
+            </div>
+
+            <div className="bg-white/5 border border-white/10 rounded-xl p-6 flex flex-col justify-between hover:bg-white/10 transition-all">
+              <div>
+                <span className="text-[10px] font-mono uppercase px-2 py-1 bg-white/10 rounded text-[#FFB340]">SECURITY VERIFICATION</span>
+                <h4 className="text-lg font-bold mt-4 mb-2">29/29 Automated Test Suite</h4>
+                <p className="text-white/60 text-xs leading-relaxed">
+                  Verified unit and integration test coverage across authentication, RBAC permission boundaries, deterministic rule evaluation, and audit logging.
+                </p>
+              </div>
+              <button onClick={() => setStage("app")} className="mt-6 text-left text-xs font-bold text-[#00E5C4] hover:underline">
+                View Live Dashboard /
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SECTION 4: COMPANY & CTA FOOTER */}
+      <section id="company" className="py-24 px-8 border-t border-white/10">
+        <div className="max-w-5xl mx-auto text-center">
+          <span className="text-[#00E5C4] text-xs font-extrabold uppercase tracking-widest">04 / ABOUT SECUREVISION</span>
+          <h2 className="text-3xl md:text-5xl font-bold mt-3 mb-6">
+            Decision Intelligence for Modern Cyber Defense
+          </h2>
+          <p className="text-white/70 text-base md:text-lg leading-relaxed mb-10 max-w-3xl mx-auto">
+            SecureVision was engineered to bridge the gap between raw vulnerability scanners and executive risk decision-making/replacing guesswork with transparent, repeatable, and defensible prioritization.
+          </p>
+          <div className="flex flex-wrap justify-center gap-4">
+            <button
+              onClick={() => setStage("app")}
+              className="bg-[#E5007D] hover:bg-[#FF1493] text-white px-10 py-4 rounded font-bold text-sm transition-all shadow-[0_0_25px_rgba(229,0,125,0.5)]"
+            >
+              Sign In to SecureVision Platform
+            </button>
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-8 py-4 rounded font-bold text-sm transition-all"
+            >
+              Back to Top /
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Enterprise Footer */}
+      <footer className="border-t border-white/10 bg-[#0D031A] py-8 px-8 text-xs text-white/50">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-white font-bold">Secure</span>
+            <span className="text-[#00E5C4] font-bold">Vision</span>
+            <span>/ 320-Rule Transparent Vulnerability Prioritization Engine</span>
+          </div>
+          <div className="flex gap-6">
+            <button onClick={() => scrollToSection("platform")} className="hover:text-white">Platform</button>
+            <button onClick={() => scrollToSection("solutions")} className="hover:text-white">Solutions</button>
+            <button onClick={() => scrollToSection("resources")} className="hover:text-white">Resources</button>
+            <button onClick={() => scrollToSection("company")} className="hover:text-white">Company</button>
+            <button onClick={() => setStage("app")} className="text-[#00E5C4] font-semibold hover:underline">Login</button>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
