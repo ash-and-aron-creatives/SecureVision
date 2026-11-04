@@ -30,7 +30,7 @@ export default function LandingFlow() {
     Platform: {
       id: "platform",
       items: [
-        { title: "320-Rule Deterministic Engine", desc: "Zero black-box AI hallucinations. Auditable mathematical scoring.", badge: "CORE" },
+        { title: "Backend Scoring Engine", desc: "One auditable scorer returns the priority tier, score, and rationale.", badge: "CORE" },
         { title: "Multi-Scanner Ingestion", desc: "Unify Nessus, Qualys, OpenVAS, and Trivy CSVs into one schema.", badge: "INGEST" },
         { title: "Asset Context Correlation", desc: "Weight CVEs by internet exposure, data sensitivity, and criticality.", badge: "CONTEXT" },
       ],
@@ -48,7 +48,7 @@ export default function LandingFlow() {
       items: [
         { title: "Scoring Formula Whitepaper", desc: "Deep dive into CVSS + EPSS + KEV + Asset Criticality math.", badge: "DOCS" },
         { title: "REST API & Webhook Specs", desc: "Automate scan uploads and Jira ticket creation via FastAPI.", badge: "API" },
-        { title: "Sample Vulnerability Datasets", desc: "Download pre-built enterprise CSVs to test the 320-rule engine.", badge: "DATA" },
+        { title: "Sample Vulnerability Datasets", desc: "Use scanner exports to evaluate findings with backend asset and threat context.", badge: "DATA" },
       ],
     },
     Company: {
@@ -357,7 +357,7 @@ export default function LandingFlow() {
         <div className="w-full md:w-3/5 z-10 animate-fade-in-up pr-8">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-xs text-[#00E5C4] font-semibold mb-6">
             <span className="w-2 h-2 rounded-full bg-[#00E5C4] animate-ping"></span>
-            320-Rule Deterministic Prioritization Engine
+            Backend-Driven Vulnerability Prioritization
           </div>
           <h1 className="text-5xl md:text-7xl font-bold leading-tight mb-6 tracking-tight text-white">
             Fix the vulnerabilities<br/>attackers will<br/>actually use.
@@ -489,10 +489,10 @@ export default function LandingFlow() {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-14">
             <div>
               <span className="text-[#00E5C4] text-xs font-extrabold uppercase tracking-widest">01 / PLATFORM ARCHITECTURE</span>
-              <h2 className="text-3xl md:text-5xl font-bold mt-2">Inside the 320-Rule Deterministic Engine</h2>
+              <h2 className="text-3xl md:text-5xl font-bold mt-2">Inside the Backend Scoring Engine</h2>
             </div>
             <p className="text-white/65 max-w-md text-sm mt-4 md:mt-0">
-              Unlike opaque AIwrappers that guess risk scores, SecureVision evaluates every CVE across four verifiable dimensions for 100% explainable auditability.
+              The backend evaluates KEV status, EPSS, CVSS, Internet exposure, and asset criticality, then returns the priority tier, score, and structured rationale.
             </p>
           </div>
 
@@ -514,12 +514,12 @@ export default function LandingFlow() {
               <div className="w-12 h-12 rounded-xl bg-[#8121D7]/25 border border-[#8121D7]/50 flex items-center justify-center text-[#E5007D] font-extrabold text-xl mb-6">
                 02
               </div>
-              <h3 className="text-xl font-bold mb-3">320-Rule Combinatorial Matrix</h3>
+              <h3 className="text-xl font-bold mb-3">Threat and Asset Context</h3>
               <p className="text-white/65 text-sm leading-relaxed mb-6">
-                Cross-references CVSS base severity (4 tiers) / Exploit Maturity (4 tiers) / Asset Exposure (4 tiers) / Data Criticality (5 tiers) = 320 deterministic decision rules.
+                A single backend scorer combines KEV, EPSS, CVSS, Internet exposure, and business criticality to rank each finding.
               </p>
               <div className="text-xs font-mono text-[#E5007D] bg-black/30 p-3 rounded border border-white/5">
-                Score = f(CVSS, KEV, EPSS, Exposure, Tier)
+                Score = backend(CVSS, KEV, EPSS, Exposure, Criticality)
               </div>
             </div>
 
@@ -529,10 +529,10 @@ export default function LandingFlow() {
               </div>
               <h3 className="text-xl font-bold mb-3">Explainable Triage Queue</h3>
               <p className="text-white/65 text-sm leading-relaxed mb-6">
-                Every prioritized vulnerability includes a human-readable rule trace showing why it ranked Critical, High, Medium, or Low/ready for instant CISO or auditor review.
+                Every prioritized vulnerability includes the structured explanation returned by the backend, alongside its tier and score.
               </p>
               <div className="text-xs font-mono text-white/80 bg-black/30 p-3 rounded border border-white/5">
-                Rule #318 / Priority: CRITICAL (SLA: 24h)
+                Backend explanation: priority rationale and scoring inputs
               </div>
             </div>
           </div>
@@ -567,8 +567,8 @@ export default function LandingFlow() {
                   <p className="text-[11px] text-white/50">Noise Reduction</p>
                 </div>
                 <div>
-                  <p className="text-2xl font-extrabold text-white">320</p>
-                  <p className="text-[11px] text-white/50">Explicit Rules</p>
+                  <p className="text-2xl font-extrabold text-white">1</p>
+                  <p className="text-[11px] text-white/50">Canonical Scorer</p>
                 </div>
                 <div>
                   <p className="text-2xl font-extrabold text-[#FF4A4A]">&lt; 2s</p>
@@ -693,7 +693,7 @@ export default function LandingFlow() {
           <div className="flex items-center gap-2">
             <span className="text-white font-bold">Secure</span>
             <span className="text-[#00E5C4] font-bold">Vision</span>
-            <span>/ 320-Rule Transparent Vulnerability Prioritization Engine</span>
+            <span>/ Backend-Driven Vulnerability Prioritization Engine</span>
           </div>
           <div className="flex gap-6">
             <button onClick={() => scrollToSection("platform")} className="hover:text-white">Platform</button>

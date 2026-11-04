@@ -26,6 +26,20 @@ class AssetResponse(ResponseSchema):
     criticality: int
 
 
+class ScoringInputsResponse(ResponseSchema):
+    in_kev: bool
+    internet_facing: bool
+    criticality: int
+    epss_percentile: float | None
+    cvss_score: float | None
+
+
+class ScoringExplanationResponse(ResponseSchema):
+    summary: str
+    inputs: ScoringInputsResponse
+    rationale: list[str]
+
+
 class FindingResponse(ResponseSchema):
     id: int
     cve_id: str
@@ -37,9 +51,10 @@ class FindingResponse(ResponseSchema):
     epss: float
     in_kev: bool
     priority_tier: str
+    score: int
     status: str
     date_found: str
-    explanation: str
+    explanation: ScoringExplanationResponse
 
 
 class FindingsPageResponse(ResponseSchema):
@@ -62,8 +77,9 @@ class ScoreHistoryResponse(ResponseSchema):
     id: int
     provider_id: int
     priority_tier: str
+    score: int
     likelihood: float
-    explanation: str
+    explanation: ScoringExplanationResponse
     provenance: Any
 
 
@@ -84,8 +100,9 @@ class FindingDetailResponse(ResponseSchema):
     in_kev: bool
     asset: AssetSummaryResponse
     priority_tier: str
+    score: int
     likelihood: float
-    explanation: str
+    explanation: ScoringExplanationResponse
     provenance: Any
     score_history: list[ScoreHistoryResponse]
     audit_trail: list[AuditEntryResponse]
@@ -94,7 +111,8 @@ class FindingDetailResponse(ResponseSchema):
 class ScanResultResponse(ResponseSchema):
     finding_id: int
     priority_tier: str
-    explanation: str
+    score: int
+    explanation: ScoringExplanationResponse
 
 
 class StatusUpdateResponse(ResponseSchema):

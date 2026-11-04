@@ -8,7 +8,7 @@ import re
 
 from backend import models, auth
 from backend.database import engine, get_db
-from backend.scoring_engine import calculate_priority
+from backend.scoring_engine import TIER_SCORES, calculate_priority
 from backend.threat_intel import fetch_cve_data
 from backend.csv_import import MAX_BYTES, ImportFileError, parse_and_validate, problems_to_csv
 from backend.reports import router as reports_router
@@ -33,6 +33,36 @@ app.include_router(users_router)
 
 TIER_RANK = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Unknown": 0}
 VALID_STATUSES = {"Open", "In Progress", "Resolved"}
+
+
+def _stored_score(score: models.FindingScore | None, tier: str) -> int:
+    if score and isinstance(score.provenance, dict) and "score" in score.provenance:
+        return int(score.provenance["score"])
+    return TIER_SCORES.get(tier, 0)
+
+
+def _stored_explanation(
+    score: models.FindingScore | None,
+    finding: models.Finding,
+    asset: models.Asset | None,
+) -> dict:
+    if score and isinstance(score.provenance, dict):
+        explanation = score.provenance.get("scoring_explanation")
+        if explanation:
+            return explanation
+
+    return {
+        "summary": score.explanation if score and score.explanation else "No scoring explanation recorded.",
+        "inputs": {
+            "in_kev": bool(finding.in_kev),
+            "internet_facing": bool(asset and (asset.exposure or "").lower() == "internet"),
+            "criticality": int(asset.criticality) if asset and asset.criticality is not None else 1,
+            "epss_percentile": float(score.likelihood) if score and score.likelihood is not None else None,
+            "cvss_score": float(finding.cvss_score) if finding.cvss_score is not None else None,
+        },
+        "rationale": [],
+    }
+
 
 class AssetCreateRequest(BaseModel):
     name: str
@@ -111,7 +141,8 @@ def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), current_
     if not re.fullmatch(r"CVE-\d{4}-\d{4,}", cve_clean):
         raise HTTPException(status_code=400, detail="cve_id must look like CVE-2021-44228.")
     internet_facing = (asset.exposure.lower() == "internet")
-    tier, exp = calculate_priority(req.in_kev, internet_facing, asset.criticality, req.epss_percentile, req.cvss_score)
+    scoring = calculate_priority(req.in_kev, internet_facing, asset.criticality, req.epss_percentile, req.cvss_score)
+    tier = scoring["tier"]
 
     finding = models.Finding(
         asset_id=asset.id,
@@ -128,8 +159,15 @@ def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), current_
             provider_id=1,
             likelihood=req.epss_percentile,
             priority_tier=tier,
-            provenance={"source": "Manual Scan", "in_kev": req.in_kev, "cvss": req.cvss_score, "epss": req.epss_percentile},
-            explanation=exp,
+            provenance={
+                "source": "Manual Scan",
+                "in_kev": req.in_kev,
+                "cvss": req.cvss_score,
+                "epss": req.epss_percentile,
+                "score": scoring["score"],
+                "scoring_explanation": scoring["explanation"],
+            },
+            explanation=scoring["explanation"]["summary"],
         )
         db.add(score)
         db.add(models.AuditLog(
@@ -141,7 +179,12 @@ def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), current_
     except Exception:
         db.rollback()
         raise
-    return {"finding_id": finding.id, "priority_tier": tier, "explanation": exp}
+    return {
+        "finding_id": finding.id,
+        "priority_tier": tier,
+        "score": scoring["score"],
+        "explanation": scoring["explanation"],
+    }
 
 @app.put("/findings/{finding_id}/status", response_model=StatusUpdateResponse)
 def update_status(finding_id: int, req: StatusUpdateRequest, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
@@ -191,7 +234,7 @@ def get_findings(
         )
         tier = (latest.priority_tier if latest and latest.priority_tier else "Low")
         likelihood = float(latest.likelihood) if (latest and latest.likelihood is not None) else 0.0
-        explanation = (latest.explanation if latest and latest.explanation else "Scored by 320-rule matrix.")
+        explanation = _stored_explanation(latest, f, f.asset)
         cvss_val = float(f.cvss_score) if f.cvss_score is not None else 0.0
 
         if f.status == "Open" and tier in open_counts:
@@ -208,6 +251,7 @@ def get_findings(
             "epss": likelihood,
             "in_kev": bool(f.in_kev),
             "priority_tier": tier,
+            "score": _stored_score(latest, tier),
             "status": str(f.status or "Open"),
             "date_found": str(f.date_found or "2026-10-01"),
             "explanation": explanation,
@@ -285,16 +329,18 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_u
             "criticality": f.asset.criticality if f.asset else 1,
         },
         "priority_tier": latest.priority_tier if latest else "Unknown",
+        "score": _stored_score(latest, latest.priority_tier if latest else "Unknown"),
         "likelihood": float(latest.likelihood or 0.0) if latest else 0.0,
-        "explanation": latest.explanation if latest else "No rule explanation recorded.",
+        "explanation": _stored_explanation(latest, f, f.asset),
         "provenance": latest.provenance if latest else {},
         "score_history": [
             {
                 "id": s.id,
                 "provider_id": s.provider_id,
                 "priority_tier": s.priority_tier,
+                "score": _stored_score(s, s.priority_tier),
                 "likelihood": float(s.likelihood or 0.0),
-                "explanation": s.explanation,
+                "explanation": _stored_explanation(s, f, f.asset),
                 "provenance": s.provenance,
             }
             for s in scores
@@ -379,7 +425,8 @@ async def commit_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
             in_kev = bool(info.get("in_kev", False))
             cvss_val = float(info.get("cvss", 0.0))
             epss_val = float(info.get("epss", 0.0))
-            tier, exp = calculate_priority(in_kev, internet_facing, asset.criticality, epss_val, cvss_val)
+            scoring = calculate_priority(in_kev, internet_facing, asset.criticality, epss_val, cvss_val)
+            tier = scoring["tier"]
 
             finding = models.Finding(
                 asset_id=r.asset_id,
@@ -397,8 +444,14 @@ async def commit_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
                 provider_id=1,
                 likelihood=epss_val,
                 priority_tier=tier,
-                provenance={"source": "CSV Import", "filename": file.filename, "in_kev": in_kev},
-                explanation=exp,
+                provenance={
+                    "source": "CSV Import",
+                    "filename": file.filename,
+                    "in_kev": in_kev,
+                    "score": scoring["score"],
+                    "scoring_explanation": scoring["explanation"],
+                },
+                explanation=scoring["explanation"]["summary"],
             )
             db.add(score)
             imported += 1

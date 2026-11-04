@@ -1,28 +1,103 @@
-from backend.scoring_engine import calculate_priority
+import csv
+from pathlib import Path
 
-def test_scoring_monotonicity_and_exhaustiveness():
-    # Priority rank mapping for monotonicity verification
-    rank = {"Low": 1, "Medium": 2, "High": 3, "Critical": 4}
+import pytest
 
-    # 1. Critical condition: In KEV, Internet-facing, Criticality 5
-    tier_crit, exp_crit = calculate_priority(True, True, 5, 0.95, 9.8)
-    assert tier_crit == 'Critical'
-    assert isinstance(exp_crit, str) and len(exp_crit) > 0
+from backend.scoring_engine import TIER_SCORES, calculate_priority
 
-    # 2. Low condition: Not in KEV, Internal, Low Criticality, Low EPSS, Low CVSS
-    tier_low, exp_low = calculate_priority(False, False, 1, 0.01, 2.0)
-    assert tier_low == 'Low'
 
-    # 3. Monotonicity check: Increasing exposure cannot lower risk tier
-    tier_internal, _ = calculate_priority(False, False, 3, 0.40, 6.5)
-    tier_internet, _ = calculate_priority(False, True, 3, 0.40, 6.5)
-    assert rank[tier_internet] >= rank[tier_internal]
+EXPECTED_TIERS_PATH = Path(__file__).parents[2] / "docs" / "scoring_matrix_v1.csv"
+EPSS_BAND_VALUES = {
+    "High (>0.95)": 0.96,
+    "Med (0.2-0.95)": 0.5,
+    "Low (<0.2)": 0.1,
+    "Missing": None,
+}
+CVSS_BAND_VALUES = {
+    "Crit (9.0+)": 9.0,
+    "High (7.0-8.9)": 7.0,
+    "Med (4.0-6.9)": 4.0,
+    "Low (0.0-3.9)": 0.0,
+}
 
-    # 4. Monotonicity check: Increasing asset criticality cannot lower risk tier
-    tier_crit_low, _ = calculate_priority(False, True, 2, 0.50, 7.0)
-    tier_crit_high, _ = calculate_priority(False, True, 5, 0.50, 7.0)
-    assert rank[tier_crit_high] >= rank[tier_crit_low]
 
-    # 5. KEV presence always mandates elevated priority on critical business assets
-    tier_kev, _ = calculate_priority(True, False, 4, 0.50, 7.5)
-    assert tier_kev in ['High', 'Critical']
+def _documented_matrix_cases():
+    with EXPECTED_TIERS_PATH.open(newline="", encoding="utf-8") as matrix_file:
+        rows = list(csv.DictReader(matrix_file))
+
+    return [
+        pytest.param(
+            row["in_kev"] == "True",
+            row["internet"] == "True",
+            int(row["crit"]),
+            EPSS_BAND_VALUES[row["epss"]],
+            CVSS_BAND_VALUES[row["cvss"]],
+            row["priority"],
+            id=(
+                f"kev-{row['in_kev']}-internet-{row['internet']}-crit-{row['crit']}"
+                f"-epss-{row['epss']}-cvss-{row['cvss']}"
+            ),
+        )
+        for row in rows
+    ]
+
+
+@pytest.mark.parametrize(
+    "in_kev,internet_facing,criticality,epss_percentile,cvss_score,expected_tier",
+    _documented_matrix_cases(),
+)
+def test_scoring_matches_documented_expected_tier_table(
+    in_kev,
+    internet_facing,
+    criticality,
+    epss_percentile,
+    cvss_score,
+    expected_tier,
+):
+    result = calculate_priority(
+        in_kev, internet_facing, criticality, epss_percentile, cvss_score
+    )
+
+    assert result["tier"] == expected_tier
+    assert result["score"] == TIER_SCORES[expected_tier]
+    assert result["explanation"]["inputs"] == {
+        "in_kev": in_kev,
+        "internet_facing": internet_facing,
+        "criticality": criticality,
+        "epss_percentile": epss_percentile,
+        "cvss_score": cvss_score,
+    }
+    assert result["explanation"]["summary"]
+    assert result["explanation"]["rationale"]
+
+
+@pytest.mark.parametrize(
+    "epss_percentile,expected_tier",
+    [
+        (None, "Low"),
+        (0.199999, "Low"),
+        (0.2, "Medium"),
+        (0.95, "Medium"),
+        (0.950001, "High"),
+    ],
+)
+def test_scoring_epss_boundaries(epss_percentile, expected_tier):
+    result = calculate_priority(False, False, 3, epss_percentile, 0.0)
+    assert result["tier"] == expected_tier
+
+
+@pytest.mark.parametrize(
+    "cvss_score,expected_tier",
+    [
+        (0.0, "Low"),
+        (3.9, "Low"),
+        (4.0, "Low"),
+        (6.9, "Low"),
+        (7.0, "Medium"),
+        (8.9, "Medium"),
+        (9.0, "Medium"),
+    ],
+)
+def test_scoring_cvss_boundaries(cvss_score, expected_tier):
+    result = calculate_priority(False, False, 3, 0.0, cvss_score)
+    assert result["tier"] == expected_tier

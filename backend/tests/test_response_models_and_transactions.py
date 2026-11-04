@@ -109,14 +109,20 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
         headers=headers,
     )
     assert scan_response.status_code == 200
-    assert set(scan_response.json()) == {"finding_id", "priority_tier", "explanation"}
+    scan_body = scan_response.json()
+    assert set(scan_body) == {"finding_id", "priority_tier", "score", "explanation"}
+    assert scan_body["score"] == 2
+    assert set(scan_body["explanation"]) == {"summary", "inputs", "rationale"}
+    assert set(scan_body["explanation"]["inputs"]) == {
+        "in_kev", "internet_facing", "criticality", "epss_percentile", "cvss_score",
+    }
 
     finding = client.get("/findings", headers=headers).json()["items"][0]
-    assert {"exposure", "criticality"} <= set(finding)
+    assert {"exposure", "criticality", "score", "explanation"} <= set(finding)
     assert "asset_exposure" not in finding and "asset_criticality" not in finding
     detail = client.get(f"/findings/{finding['id']}", headers=headers).json()
     assert set(detail["asset"]) == {"id", "name", "exposure", "criticality"}
-    assert {"score_history", "audit_trail"} <= set(detail)
+    assert {"score", "explanation", "score_history", "audit_trail"} <= set(detail)
 
     user_response = client.post(
         "/users",

@@ -58,7 +58,8 @@ for i in range(50):
     f_epss = max(0.0, min(1.0, epss + random.uniform(-0.05, 0.05)))
     
     internet_facing = (asset.exposure.lower() == 'internet')
-    tier, exp = calculate_priority(kev, internet_facing, asset.criticality, f_epss, f_cvss)
+    scoring = calculate_priority(kev, internet_facing, asset.criticality, f_epss, f_cvss)
+    tier = scoring["tier"]
     
     finding = Finding(asset_id=asset.id, cve_id=f_cve, cvss_score=f_cvss, in_kev=kev, status='Open')
     db.add(finding)
@@ -67,7 +68,12 @@ for i in range(50):
     
     score = FindingScore(
         finding_id=finding.id, provider_id=1, likelihood=f_epss, priority_tier=tier,
-        provenance={"source": "Seeding Script"}, explanation=exp
+        provenance={
+            "source": "Seeding Script",
+            "score": scoring["score"],
+            "scoring_explanation": scoring["explanation"],
+        },
+        explanation=scoring["explanation"]["summary"],
     )
     db.add(score)
 

@@ -6,24 +6,29 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 interface Finding {
   id: number;
   cve_id: string;
-  title?: string;
-  description?: string;
-  cvss_base?: number;
-  cvss_score?: number;
-  exploit_maturity?: string;
-  exploit_status?: string;
-  priority_tier?: string;
-  priority?: string;
-  priority_score?: number;
-  score?: number;
-  rule_id?: string;
-  status?: string;
-  asset_id?: number;
-  asset_name?: string;
-  hostname?: string;
-  exposure?: string;
-  criticality?: number;
-  created_at?: string;
+  cvss_score: number;
+  priority_tier: string;
+  score: number;
+  explanation: ScoringExplanation;
+  status: string;
+  asset_id: number;
+  asset_name: string;
+  exposure: string;
+  criticality: number;
+  epss: number;
+  in_kev: boolean;
+}
+
+interface ScoringExplanation {
+  summary: string;
+  inputs: {
+    in_kev: boolean;
+    internet_facing: boolean;
+    criticality: number;
+    epss_percentile: number | null;
+    cvss_score: number | null;
+  };
+  rationale: string[];
 }
 
 interface Asset {
@@ -76,7 +81,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [tierFilter, setTierFilter] = useState<string>("ALL");
 
-  // Interactive 320-Rule Inspector Drawer, Command Palette & Mobile Drawer states
+  // Finding explanation drawer, command palette, and mobile drawer states
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [cmdOpen, setCmdOpen] = useState<boolean>(false);
   const [cmdQuery, setCmdQuery] = useState<string>("");
@@ -90,17 +95,14 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   const [actionMessage, setActionMessage] = useState<string>("");
 
   // New Scan form states
-  const [scanCve, setScanCve] = useState("CVE-2024-3400");
-  const [scanTitle, setScanTitle] = useState("PAN-OS GlobalProtect Command Injection");
+  const [scanCve, setScanCve] = useState("");
+  const [scanAssetId, setScanAssetId] = useState("");
   const [scanCvss, setScanCvss] = useState("9.8");
-  const [scanExploit, setScanExploit] = useState("weaponized");
-  const [scanExposure, setScanExposure] = useState("internet");
-  const [scanCriticality, setScanCriticality] = useState("5");
-  const [scanHostname, setScanHostname] = useState("vpn-gw-01");
+  const [scanEpss, setScanEpss] = useState("0.0");
+  const [scanKev, setScanKev] = useState(false);
 
   // New Asset form states
   const [assetHost, setAssetHost] = useState("");
-  const [assetIp, setAssetIp] = useState("");
   const [assetExposure, setAssetExposure] = useState("internet");
   const [assetCrit, setAssetCrit] = useState("5");
 
@@ -159,53 +161,12 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const getTier = (f: Finding): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" => {
-    const raw = (f.priority_tier || f.priority || "").toUpperCase();
-    if (raw.includes("CRIT")) return "CRITICAL";
-    if (raw.includes("HIGH")) return "HIGH";
-    if (raw.includes("MED")) return "MEDIUM";
-    if (raw.includes("LOW")) return "LOW";
-    const cvss = Number(f.cvss_base ?? f.cvss_score ?? 0);
-    if (cvss >= 9.0) return "CRITICAL";
-    if (cvss >= 7.0) return "HIGH";
-    if (cvss >= 4.0) return "MEDIUM";
-    return "LOW";
-  };
-
-  const getScore = (f: Finding): number => {
-    if (f.priority_score !== undefined) return Math.round(Number(f.priority_score));
-    if (f.score !== undefined) return Math.round(Number(f.score));
-    const cvss = Number(f.cvss_base ?? f.cvss_score ?? 5.0);
-    return Math.min(100, Math.round(cvss * 10));
-  };
-
-  const getRuleBreakdown = (f: Finding) => {
-    const cvss = Number(f.cvss_base ?? f.cvss_score ?? 9.8);
-    const cvssTier = cvss >= 9.0 ? 4 : cvss >= 7.0 ? 3 : cvss >= 4.0 ? 2 : 1;
-
-    const expRaw = (f.exploit_maturity || f.exploit_status || "weaponized").toLowerCase();
-    const expTier = expRaw.includes("weapon") || expRaw.includes("kev") ? 4 : expRaw.includes("poc") ? 3 : expRaw.includes("high") ? 2 : 1;
-
-    const netRaw = (f.exposure || "internet").toLowerCase();
-    const netTier = netRaw.includes("internet") ? 4 : netRaw.includes("dmz") ? 3 : netRaw.includes("internal") ? 2 : 1;
-
-    const critTier = Math.min(5, Math.max(1, Number(f.criticality ?? (getTier(f) === "CRITICAL" ? 5 : getTier(f) === "HIGH" ? 4 : 3))));
-
-    const ruleNumber = ((cvssTier - 1) * 80) + ((expTier - 1) * 20) + ((netTier - 1) * 5) + critTier;
-    const slaWindow = getTier(f) === "CRITICAL" ? "24 Hours" : getTier(f) === "HIGH" ? "72 Hours" : getTier(f) === "MEDIUM" ? "14 Days" : "30 Days";
-
-    return {
-      cvss,
-      cvssTier,
-      expLabel: expRaw.toUpperCase(),
-      expTier,
-      netLabel: netRaw.toUpperCase(),
-      netTier,
-      critTier,
-      ruleCode: f.rule_id || `RULE-${String(ruleNumber).padStart(3, "0")}`,
-      ruleNumber,
-      slaWindow,
-    };
+  const getTier = (f: Finding): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN" => {
+    const tier = f.priority_tier.toUpperCase();
+    if (tier === "CRITICAL" || tier === "HIGH" || tier === "MEDIUM" || tier === "LOW") {
+      return tier;
+    }
+    return "UNKNOWN";
   };
 
   const fetchAllData = useCallback(async (authToken: string) => {
@@ -214,7 +175,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
       const [fRes, aRes, lRes, uRes] = await Promise.allSettled([
         fetch(`${API_BASE}/findings`, { headers, signal: AbortSignal.timeout(1500) }),
         fetch(`${API_BASE}/assets`, { headers, signal: AbortSignal.timeout(1500) }),
-        fetch(`${API_BASE}/audit-logs`, { headers, signal: AbortSignal.timeout(1500) }),
+        fetch(`${API_BASE}/audit`, { headers, signal: AbortSignal.timeout(1500) }),
         fetch(`${API_BASE}/users`, { headers, signal: AbortSignal.timeout(1500) }),
       ]);
 
@@ -250,58 +211,32 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     setError("");
 
     const cleanUser = username.trim().toLowerCase() || "admin";
-    const inferredRole = cleanUser.includes("admin")
-      ? "admin"
-      : cleanUser.includes("analyst")
-      ? "analyst"
-      : cleanUser.includes("viewer")
-      ? "viewer"
-      : "admin";
-
     try {
-      let res = await fetch(`${API_BASE}/auth/login`, {
+      const formBody = new URLSearchParams();
+      formBody.append("username", cleanUser);
+      formBody.append("password", password);
+      const res = await fetch(`${API_BASE}/token`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: cleanUser, password }),
-      }).catch(() => null);
-
-      if (!res || !res.ok) {
-        const formBody = new URLSearchParams();
-        formBody.append("username", cleanUser);
-        formBody.append("password", password);
-        res = await fetch(`${API_BASE}/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: formBody.toString(),
-        }).catch(() => null);
-      }
-
-      if (res && res.ok) {
-        const data = await res.json();
-        const jwt = data.access_token || data.token || "sv-jwt-session-token";
-        const userRole = data.role || inferredRole;
-        setToken(jwt);
-        setRole(userRole);
-        setCurrentUser(cleanUser);
-        if (rememberMe && typeof window !== "undefined") {
-          localStorage.setItem("sv_token", jwt);
-          localStorage.setItem("sv_role", userRole);
-          localStorage.setItem("sv_user", cleanUser);
-        }
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formBody.toString(),
+      });
+      if (!res.ok) {
+        const detail = await res.json();
+        setError(detail.detail || "Login failed.");
         return;
       }
-    } catch {
-      // Proceed with local RBAC session
-    }
 
-    const fallbackJwt = `sv-local-jwt-${cleanUser}-${Date.now()}`;
-    setToken(fallbackJwt);
-    setRole(inferredRole);
-    setCurrentUser(cleanUser);
-    if (rememberMe && typeof window !== "undefined") {
-      localStorage.setItem("sv_token", fallbackJwt);
-      localStorage.setItem("sv_role", inferredRole);
-      localStorage.setItem("sv_user", cleanUser);
+      const data = await res.json();
+      setToken(data.access_token);
+      setRole(data.role);
+      setCurrentUser(data.username);
+      if (rememberMe && typeof window !== "undefined") {
+        localStorage.setItem("sv_token", data.access_token);
+        localStorage.setItem("sv_role", data.role);
+        localStorage.setItem("sv_user", data.username);
+      }
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : "Unable to connect to the backend.");
     }
   };
 
@@ -316,22 +251,20 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
 
   const handleCreateScan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token) return;
+    if (!token || !scanAssetId) {
+      setActionMessage("Select a backend asset before running a scan.");
+      return;
+    }
     setActionMessage("");
     try {
       const payload = {
+        asset_id: Number(scanAssetId),
         cve_id: scanCve,
-        title: scanTitle,
-        cvss_base: parseFloat(scanCvss),
-        cvss_score: parseFloat(scanCvss),
-        exploit_maturity: scanExploit,
-        exploit_status: scanExploit,
-        exposure: scanExposure,
-        criticality: parseInt(scanCriticality, 10),
-        hostname: scanHostname,
-        asset_name: scanHostname,
+        cvss_score: Number(scanCvss),
+        in_kev: scanKev,
+        epss_percentile: Number(scanEpss),
       };
-      const res = await fetch(`${API_BASE}/findings`, {
+      const res = await fetch(`${API_BASE}/scan`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -339,41 +272,15 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
         },
         body: JSON.stringify(payload),
       });
-      if (res.ok) {
-        setActionMessage("Finding evaluated & prioritized via 320-Rule Engine!");
-        fetchAllData(token);
-        switchTab("dashboard");
-      } else {
-        const newItem: Finding = {
-          id: Date.now(),
-          cve_id: scanCve,
-          title: scanTitle,
-          cvss_base: parseFloat(scanCvss),
-          exploit_maturity: scanExploit,
-          hostname: scanHostname,
-          exposure: scanExposure,
-          criticality: parseInt(scanCriticality, 10),
-          status: "OPEN",
-        };
-        setFindings((prev) => [newItem, ...prev]);
-        setActionMessage("Finding scored & added to Priority Queue!");
-        switchTab("dashboard");
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.detail || "Backend scan failed.");
       }
-    } catch {
-      const newItem: Finding = {
-        id: Date.now(),
-        cve_id: scanCve,
-        title: scanTitle,
-        cvss_base: parseFloat(scanCvss),
-        exploit_maturity: scanExploit,
-        hostname: scanHostname,
-        exposure: scanExposure,
-        criticality: parseInt(scanCriticality, 10),
-        status: "OPEN",
-      };
-      setFindings((prev) => [newItem, ...prev]);
-      setActionMessage("Evaluated locally with 320-Rule Engine & added to Priority Queue.");
+      setActionMessage(`${result.priority_tier} (score ${result.score}/4): ${result.explanation.summary}`);
+      await fetchAllData(token);
       switchTab("dashboard");
+    } catch (scanError) {
+      setActionMessage(scanError instanceof Error ? scanError.message : "Backend scan failed.");
     }
   };
 
@@ -383,40 +290,50 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     const formData = new FormData();
     formData.append("file", csvFile);
     try {
-      const res = await fetch(`${API_BASE}/findings/import-csv`, {
+      const res = await fetch(`${API_BASE}/imports/commit`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-      if (res.ok) {
-        setActionMessage("CSV batch imported and scored!");
-        fetchAllData(token);
-        switchTab("dashboard");
-      } else {
-        setActionMessage("CSV processed by 320-Rule Engine.");
-        fetchAllData(token);
-        switchTab("dashboard");
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.detail || "CSV import failed.");
       }
-    } catch {
-      setActionMessage("CSV upload completed & scored.");
+      setActionMessage(`Backend imported ${result.imported} findings; ${result.skipped} skipped.`);
+      await fetchAllData(token);
       switchTab("dashboard");
+    } catch (importError) {
+      setActionMessage(importError instanceof Error ? importError.message : "CSV import failed.");
     }
   };
 
   const handleCreateAsset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!assetHost) return;
-    const newAsset: Asset = {
-      id: Date.now(),
-      hostname: assetHost,
-      ip_address: assetIp || "10.0.14.22",
-      exposure: assetExposure,
-      criticality: parseInt(assetCrit, 10),
-    };
-    setAssets((prev) => [newAsset, ...prev]);
-    setAssetHost("");
-    setAssetIp("");
-    setActionMessage(`Asset ${newAsset.hostname} registered.`);
+    if (!assetHost || !token) return;
+    try {
+      const response = await fetch(`${API_BASE}/assets`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: assetHost,
+          exposure: assetExposure === "internet" ? "Internet" : "Internal",
+          criticality: Number(assetCrit),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || "Unable to register asset.");
+      }
+
+      setAssets((current) => [...current, result]);
+      setAssetHost("");
+      setActionMessage(`Asset ${result.name} registered by the backend.`);
+    } catch (assetError) {
+      setActionMessage(assetError instanceof Error ? assetError.message : "Unable to register asset.");
+    }
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -434,79 +351,33 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     setActionMessage(`Operator ${created.username} (${created.role.toUpperCase()}) provisioned.`);
   };
 
-  const displayFindings: Finding[] =
-    findings.length > 0
-      ? findings
-      : [
-          ...Array.from({ length: 14 }, (_, i) => ({
-            id: 100 + i,
-            cve_id: i === 0 ? "CVE-2024-3400" : i === 1 ? "CVE-2023-4966" : `CVE-2024-34${10 + i}`,
-            title: i === 0 ? "PAN-OS GlobalProtect Command Injection RCE" : i === 1 ? "Citrix Bleed NetScaler Session Hijack" : "Remote Code Execution on Edge Gateway",
-            cvss_base: 9.8,
-            priority_tier: "CRITICAL",
-            priority_score: 98 - i,
-            hostname: i % 2 === 0 ? "vpn-gw-01" : "citrix-edge-02",
-            exposure: "internet",
-            exploit_maturity: "weaponized",
-            criticality: 5,
-            rule_id: `RULE-${320 - i}`,
-            status: "OPEN",
-          })),
-          ...Array.from({ length: 6 }, (_, i) => ({
-            id: 200 + i,
-            cve_id: i === 0 ? "CVE-2024-21762" : `CVE-2024-218${i}`,
-            title: "FortiOS Out-of-Bounds Write SSL VPN",
-            cvss_base: 8.1,
-            priority_tier: "HIGH",
-            priority_score: 78 - i,
-            hostname: "fw-hq-main",
-            exposure: "internet",
-            exploit_maturity: "poc",
-            criticality: 4,
-            rule_id: `RULE-${240 - i}`,
-            status: "OPEN",
-          })),
-          ...Array.from({ length: 7 }, (_, i) => ({
-            id: 300 + i,
-            cve_id: `CVE-2023-4448${i}`,
-            title: "HTTP/2 Rapid Reset DDoS Vector",
-            cvss_base: 5.9,
-            priority_tier: "MEDIUM",
-            priority_score: 54 - i,
-            hostname: "k8s-ingress-04",
-            exposure: "internal",
-            exploit_maturity: "poc",
-            criticality: 3,
-            rule_id: `RULE-${150 - i}`,
-            status: "OPEN",
-          })),
-          ...Array.from({ length: 23 }, (_, i) => ({
-            id: 400 + i,
-            cve_id: i === 0 ? "CVE-2023-38545" : `CVE-2023-385${50 + i}`,
-            title: "curl SOCKS5 Heap Buffer Overflow",
-            cvss_base: 3.7,
-            priority_tier: "LOW",
-            priority_score: 38 - (i % 15),
-            hostname: "build-runner-07",
-            exposure: "internal",
-            exploit_maturity: "unproven",
-            criticality: 2,
-            rule_id: `RULE-${80 - (i % 40)}`,
-            status: i < 12 ? "RESOLVED" : "OPEN",
-          })),
-        ];
+  const displayFindings = findings;
 
-  const toggleFindingStatus = (id: number) => {
-    const baseList = findings.length > 0 ? findings : displayFindings;
-    const updated = baseList.map((f) =>
-      f.id === id
-        ? { ...f, status: (f.status || "OPEN").toUpperCase() === "RESOLVED" ? "OPEN" : "RESOLVED" }
-        : f
-    );
-    setFindings(updated);
-    if (selectedFinding && selectedFinding.id === id) {
-      const found = updated.find((x) => x.id === id) || null;
-      setSelectedFinding(found);
+  const toggleFindingStatus = async (finding: Finding) => {
+    if (!token) return;
+    const status = finding.status.toUpperCase() === "RESOLVED" ? "Open" : "Resolved";
+    try {
+      const response = await fetch(`${API_BASE}/findings/${finding.id}/status`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || "Unable to update finding status.");
+      }
+
+      setFindings((current) =>
+        current.map((item) => item.id === finding.id ? { ...item, status: result.status } : item)
+      );
+      setSelectedFinding((current) =>
+        current?.id === finding.id ? { ...current, status: result.status } : current
+      );
+    } catch (statusError) {
+      setActionMessage(statusError instanceof Error ? statusError.message : "Unable to update finding status.");
     }
   };
 
@@ -524,27 +395,24 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     const matchesSearch =
       !q ||
       f.cve_id.toLowerCase().includes(q) ||
-      (f.hostname || f.asset_name || "").toLowerCase().includes(q) ||
-      (f.title || "").toLowerCase().includes(q) ||
-      (f.rule_id || "").toLowerCase().includes(q);
+      f.asset_name.toLowerCase().includes(q) ||
+      f.explanation.summary.toLowerCase().includes(q);
     return matchesTier && matchesSearch;
   });
 
   const exportPriorityCsv = () => {
-    const headers = ["CVE_ID", "Hostname", "CVSS", "Exploit_Maturity", "Exposure", "Criticality_Tier", "Rule_ID", "Priority_Score", "Priority_Tier", "Status"];
+    const headers = ["CVE_ID", "Asset", "CVSS", "Exposure", "Criticality", "Score", "Priority_Tier", "Status", "Explanation"];
     const rows = filteredFindings.map((f) => {
-      const rb = getRuleBreakdown(f);
       return [
         f.cve_id,
-        f.hostname || f.asset_name || "vpn-gw-01",
-        rb.cvss,
-        rb.expLabel,
-        rb.netLabel,
-        rb.critTier,
-        rb.ruleCode,
-        getScore(f),
+        f.asset_name,
+        f.cvss_score,
+        f.exposure,
+        f.criticality,
+        f.score,
         getTier(f),
-        (f.status || "OPEN").toUpperCase(),
+        f.status.toUpperCase(),
+        f.explanation.summary,
       ].join(",");
     });
     const csvContent = [headers.join(","), ...rows].join("\n");
@@ -561,11 +429,11 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   const exportExecutiveReport = () => {
     const reportLines = [
       "====================================================================",
-      " SECUREVISION - 320-RULE DETERMINISTIC EXECUTIVE COMPLIANCE REPORT",
+      " SECUREVISION - PRIORITY EXECUTIVE COMPLIANCE REPORT",
       "====================================================================",
       `Generated By : ${currentUser.toUpperCase()} (${role.toUpperCase()})`,
       `Timestamp    : ${new Date().toUTCString()}`,
-      `Engine State : 320 Combinatorial Rules Active (Zero Black-Box AI)`,
+      "Scoring Source : Backend scoring engine",
       "--------------------------------------------------------------------",
       " SUMMARY TELEMETRY:",
       `  • Critical (Open, 24h SLA) : ${criticalCount}`,
@@ -576,8 +444,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
       "--------------------------------------------------------------------",
       " TOP PRIORITIZED FINDINGS REQUIRING IMMEDIATE ACTION:",
       ...displayFindings.slice(0, 10).map((f, idx) => {
-        const rb = getRuleBreakdown(f);
-        return `  ${idx + 1}. [${getTier(f)}] ${f.cve_id} on ${f.hostname || "vpn-gw-01"} | Score: ${getScore(f)} | ${rb.ruleCode} (CVSS ${rb.cvss}, ${rb.expLabel}, ${rb.netLabel})`;
+        return `  ${idx + 1}. [${getTier(f)}] ${f.cve_id} on ${f.asset_name} | Score: ${f.score}/4 | ${f.explanation.summary}`;
       }),
       "====================================================================",
     ];
@@ -614,7 +481,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
 
           <div className="hidden sm:flex items-center gap-2 text-xs text-white/60 bg-white/5 border border-white/10 px-3.5 py-1.5 rounded-full backdrop-blur-md">
             <span className="w-2 h-2 rounded-full bg-[#00E5C4] animate-pulse"></span>
-            <span>320-Rule Engine Online</span>
+            <span>Backend scoring enabled</span>
           </div>
         </header>
 
@@ -980,17 +847,6 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                 </button>
               )}
               <button
-                onClick={() => { setSelectedFinding(displayFindings[0]); setMobileMenuOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer hover:translate-x-1 ${
-                  darkMode ? "text-white/65 hover:text-[#00E5C4] hover:bg-white/5" : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>Rule Inspector (320)</span>
-              </button>
-              <button
                 onClick={handleLogout}
                 className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold text-rose-500 hover:bg-rose-500/10 hover:translate-x-1 transition-all cursor-pointer"
               >
@@ -1003,24 +859,6 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
           </div>
         </div>
 
-        <div className="mt-6 rounded-2xl p-5 bg-gradient-to-br from-[#1D0C3B] via-[#3A1678] to-[#0D3B4C] text-white relative overflow-hidden shadow-lg group">
-          <div className="absolute -right-6 -bottom-6 w-28 h-28 rounded-full bg-[#00E5C4]/25 blur-xl pointer-events-none group-hover:scale-125 transition-transform duration-500"></div>
-          <div className="w-8 h-8 rounded-full bg-white/10 border border-white/20 flex items-center justify-center mb-3 text-[#00E5C4] font-bold text-xs">
-            320
-          </div>
-          <h4 className="font-bold text-sm leading-snug mb-1">
-            Deterministic Scoring Engine
-          </h4>
-          <p className="text-[11px] text-white/70 mb-4">
-            Click any CVE to inspect its 4-vector mathematical trace
-          </p>
-          <button
-            onClick={() => { setSelectedFinding(displayFindings[0]); setMobileMenuOpen(false); }}
-            className="w-full py-2 rounded-xl bg-gradient-to-r from-[#8121D7] to-[#00B89E] hover:opacity-95 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
-          >
-            Inspect Rule #320
-          </button>
-        </div>
       </aside>
 
       {/* MAIN CONTENT AREA */}
@@ -1051,7 +889,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
               </span>
               <input
                 type="text"
-                placeholder="Search CVE, hostname, or rule..."
+                placeholder="Search CVE, asset, or explanation..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className={`w-full pl-10 sm:pl-11 pr-14 sm:pr-20 py-2.5 rounded-full text-xs sm:text-sm focus:outline-none transition-all ${
@@ -1445,7 +1283,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                     </div>
                     <div>
                       <span className="inline-flex items-center text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#00E5C4]/15 text-[#008B76] dark:text-[#00E5C4]">
-                        ✓ via 320 Rules
+                        Based on backend findings
                       </span>
                     </div>
                   </div>
@@ -1489,7 +1327,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                   <div className="flex items-center justify-between gap-2 mb-5">
                     <div>
                       <h3 className={`text-lg font-extrabold ${headingColor}`}>Priority Queue</h3>
-                      <p className={`text-xs ${mutedText}`}>Click any finding to inspect its 320-rule math</p>
+                      <p className={`text-xs ${mutedText}`}>Click a finding to view the backend scoring explanation</p>
                     </div>
                     <button
                       onClick={() => switchTab("queue")}
@@ -1504,9 +1342,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                   </div>
 
                   <div className="space-y-2.5">
-                    {displayFindings.slice(0, 5).map((f, i) => {
-                      const rb = getRuleBreakdown(f);
-                      return (
+                    {displayFindings.slice(0, 5).map((f, i) => (
                         <div
                           key={f.id}
                           onClick={() => setSelectedFinding(f)}
@@ -1526,14 +1362,14 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                                   : "bg-gradient-to-br from-[#0D9488] to-[#00C8A8]"
                               }`}
                             >
-                              {getScore(f)}
+                              {f.score}/4
                             </span>
                             <div className="min-w-0 flex-1">
                               <p className={`text-xs font-extrabold tracking-tight whitespace-nowrap ${headingColor}`}>
                                 {f.cve_id}
                               </p>
                               <p className={`text-[11px] whitespace-nowrap mt-0.5 ${mutedText}`}>
-                                {f.hostname || f.asset_name || "vpn-gw-01"} • <span className="font-semibold text-[#00B89E]">CVSS {rb.cvss}</span>
+                                {f.asset_name} • <span className="font-semibold text-[#00B89E]">CVSS {f.cvss_score}</span>
                               </p>
                             </div>
                           </div>
@@ -1541,13 +1377,9 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                             <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4]">
                               {getTier(f)}
                             </span>
-                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#00E5C4]/15 text-[#008B76] dark:text-[#00E5C4]">
-                              {rb.ruleCode}
-                            </span>
                           </div>
                         </div>
-                      );
-                    })}
+                    ))}
                   </div>
                 </div>
 
@@ -1562,7 +1394,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
 
             {/* ROW 3: 7-DAY CAPSULE VELOCITY CHART (7 COLS) + REMEDIATION GAUGE & 2X2 SEVERITY GRID (5 COLS) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* Col 1 (7 cols): Weekly Ingestion & Rule Velocity Capsule Chart */}
+              {/* Col 1 (7 cols): Weekly Ingestion Capsule Chart */}
               <div
                 style={{ animationDelay: "0.42s" }}
                 className={`sv-card-pop lg:col-span-7 rounded-3xl p-5 sm:p-6 md:p-7 border flex flex-col justify-between ${subSurfaceCard}`}
@@ -1570,7 +1402,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
                   <div>
                     <h3 className={`text-lg font-extrabold ${headingColor}`}>
-                      Weekly Scanner Ingestion & Rule Velocity
+                      Weekly Scanner Ingestion
                     </h3>
                     <p className={`text-xs ${mutedText}`}>
                       Daily CVE batch evaluations across Nessus, Qualys & Trivy feeds
@@ -1578,7 +1410,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                   </div>
                   <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4] flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-[#00E5C4] animate-ping"></span>
-                    320 Rules Active
+                    Backend data
                   </span>
                 </div>
 
@@ -1709,10 +1541,10 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
             <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
               <div>
                 <h2 className={`text-2xl font-extrabold ${headingColor}`}>
-                  320-Rule Priority Queue
+                  Priority Queue
                 </h2>
                 <p className={`text-xs ${mutedText}`}>
-                  Click any row to open the 320-Rule Mathematical Inspector Drawer
+                  Click a row to view the backend explanation
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1746,9 +1578,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                   <tr className={`border-b text-[11px] font-bold uppercase tracking-wider ${darkMode ? "border-white/10 text-white/50" : "border-slate-200 text-slate-400"}`}>
                     <th className="py-3 px-4">CVE ID</th>
                     <th className="py-3 px-4">Host / Asset</th>
-                    <th className="py-3 px-4">Rule Trace</th>
                     <th className="py-3 px-4">CVSS</th>
-                    <th className="py-3 px-4">Exploit Status</th>
                     <th className="py-3 px-4">Score</th>
                     <th className="py-3 px-4">Tier</th>
                     <th className="py-3 px-4">Action</th>
@@ -1757,7 +1587,6 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                 <tbody className={`divide-y text-sm ${darkMode ? "divide-white/10" : "divide-slate-100"}`}>
                   {filteredFindings.map((f, idx) => {
                     const tier = getTier(f);
-                    const rb = getRuleBreakdown(f);
                     const isResolved = (f.status || "OPEN").toUpperCase() === "RESOLVED";
                     return (
                       <tr
@@ -1768,26 +1597,16 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                       >
                         <td className={`py-3.5 px-4 font-bold ${headingColor}`}>
                           {f.cve_id}
-                          <div className={`text-[11px] font-normal ${mutedText}`}>{f.title || "Deterministic rule match"}</div>
+                          <div className={`text-[11px] font-normal ${mutedText}`}>{f.explanation.summary}</div>
                         </td>
                         <td className="py-3.5 px-4 font-medium">
-                          {f.hostname || f.asset_name || "vpn-gw-01"}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className="text-xs font-mono font-bold px-2 py-1 rounded bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4]">
-                            {rb.ruleCode}
-                          </span>
+                          {f.asset_name}
                         </td>
                         <td className="py-3.5 px-4 font-bold">
-                          {rb.cvss}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${darkMode ? "bg-white/10 text-white/80" : "bg-slate-100 text-slate-700"}`}>
-                            {f.exploit_maturity || f.exploit_status || "weaponized"}
-                          </span>
+                          {f.cvss_score}
                         </td>
                         <td className="py-3.5 px-4 font-extrabold text-[#00B89E]">
-                          {getScore(f)}
+                          {f.score}/4
                         </td>
                         <td className="py-3.5 px-4">
                           <span
@@ -1806,7 +1625,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                         </td>
                         <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
                           <button
-                            onClick={() => toggleFindingStatus(f.id)}
+                            onClick={() => toggleFindingStatus(f)}
                             className={`text-xs font-bold px-3 py-1 rounded-full border cursor-pointer transition-all ${
                               isResolved
                                 ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30"
@@ -1836,7 +1655,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
               Evaluate New Vulnerability Scan
             </h2>
             <p className={`text-xs mb-6 ${mutedText}`}>
-              Submit a CVE finding to calculate its deterministic priority tier across the 320-rule matrix.
+              Submit vulnerability inputs to the backend scoring engine. Exposure and criticality come from the selected asset.
             </p>
             <form onSubmit={handleCreateScan} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1851,27 +1670,23 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                   />
                 </div>
                 <div>
-                  <label className={`block text-xs font-bold mb-1 ${headingColor}`}>Target Hostname</label>
-                  <input
-                    type="text"
-                    value={scanHostname}
-                    onChange={(e) => setScanHostname(e.target.value)}
+                  <label className={`block text-xs font-bold mb-1 ${headingColor}`}>Asset</label>
+                  <select
+                    value={scanAssetId}
+                    onChange={(e) => setScanAssetId(e.target.value)}
                     className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:border-[#00E5C4] ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
                     required
-                  />
+                  >
+                    <option value="">Select an asset</option>
+                    {assets.map((asset) => (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.name || asset.hostname} ({asset.exposure}, criticality {asset.criticality})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
-              <div>
-                <label className={`block text-xs font-bold mb-1 ${headingColor}`}>Vulnerability Summary</label>
-                <input
-                  type="text"
-                  value={scanTitle}
-                  onChange={(e) => setScanTitle(e.target.value)}
-                  className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:border-[#00E5C4] ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className={`block text-xs font-bold mb-1 ${headingColor}`}>CVSS (0-10)</label>
                   <input
@@ -1885,41 +1700,26 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                   />
                 </div>
                 <div>
-                  <label className={`block text-xs font-bold mb-1 ${headingColor}`}>Exploit Status</label>
-                  <select
-                    value={scanExploit}
-                    onChange={(e) => setScanExploit(e.target.value)}
+                  <label className={`block text-xs font-bold mb-1 ${headingColor}`}>EPSS Percentile (0-1)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    min="0"
+                    max="1"
+                    value={scanEpss}
+                    onChange={(e) => setScanEpss(e.target.value)}
                     className={`w-full px-3 py-2.5 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-                  >
-                    <option value="weaponized">Weaponized / KEV</option>
-                    <option value="poc">Public PoC</option>
-                    <option value="unproven">Unproven</option>
-                  </select>
+                  />
                 </div>
                 <div>
-                  <label className={`block text-xs font-bold mb-1 ${headingColor}`}>Exposure</label>
+                  <label className={`block text-xs font-bold mb-1 ${headingColor}`}>CISA KEV</label>
                   <select
-                    value={scanExposure}
-                    onChange={(e) => setScanExposure(e.target.value)}
+                    value={scanKev ? "true" : "false"}
+                    onChange={(e) => setScanKev(e.target.value === "true")}
                     className={`w-full px-3 py-2.5 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
                   >
-                    <option value="internet">Internet-Facing</option>
-                    <option value="internal">Internal</option>
-                    <option value="isolated">Isolated</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={`block text-xs font-bold mb-1 ${headingColor}`}>Asset Tier (1-5)</label>
-                  <select
-                    value={scanCriticality}
-                    onChange={(e) => setScanCriticality(e.target.value)}
-                    className={`w-full px-3 py-2.5 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-                  >
-                    <option value="5">5 - Crown Jewel</option>
-                    <option value="4">4 - High</option>
-                    <option value="3">3 - Medium</option>
-                    <option value="2">2 - Low</option>
-                    <option value="1">1 - Minimal</option>
+                    <option value="false">No</option>
+                    <option value="true">Yes</option>
                   </select>
                 </div>
               </div>
@@ -1927,7 +1727,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                 type="submit"
                 className="px-6 py-3 rounded-full bg-gradient-to-r from-[#8121D7] to-[#00B89E] text-white font-bold text-xs shadow-md hover:opacity-95 hover:scale-105 transition-all cursor-pointer"
               >
-                Run 320-Rule Prioritization
+                Score with backend
               </button>
             </form>
           </div>
@@ -1942,7 +1742,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
               Bulk Scanner CSV Ingestion
             </h2>
             <p className={`text-xs mb-6 ${mutedText}`}>
-              Upload Nessus, Qualys, OpenVAS, or Trivy CSV exports for automated 320-rule batch scoring.
+              Upload a supported scanner CSV to score findings through the backend.
             </p>
             <form onSubmit={handleCsvUpload} className="space-y-4">
               <div className={`border-2 border-dashed border-[#8121D7]/40 hover:border-[#00B89E] transition-colors rounded-2xl p-8 text-center ${subSurfaceCard}`}>
@@ -1983,13 +1783,6 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                 className={`px-3.5 py-2 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
                 required
               />
-              <input
-                type="text"
-                placeholder="IP Address"
-                value={assetIp}
-                onChange={(e) => setAssetIp(e.target.value)}
-                className={`px-3.5 py-2 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-              />
               <select
                 value={assetExposure}
                 onChange={(e) => setAssetExposure(e.target.value)}
@@ -2016,26 +1809,18 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
             </form>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {(assets.length > 0
-                ? assets
-                : [
-                    { id: 1, hostname: "vpn-gw-01", ip_address: "198.51.100.12", exposure: "internet", criticality: 5 },
-                    { id: 2, hostname: "citrix-edge-02", ip_address: "198.51.100.44", exposure: "internet", criticality: 5 },
-                    { id: 3, hostname: "fw-hq-main", ip_address: "10.0.1.1", exposure: "internet", criticality: 4 },
-                    { id: 4, hostname: "build-runner-07", ip_address: "10.20.4.19", exposure: "internal", criticality: 2 },
-                  ]
-              ).map((a, idx) => (
+              {assets.map((a, idx) => (
                 <div
                   key={a.id}
                   style={{ animationDelay: `${idx * 0.06}s` }}
                   className={`sv-card-pop p-5 rounded-2xl border hover:-translate-y-1 transition-all flex items-center justify-between ${subSurfaceCard}`}
                 >
                   <div>
-                    <p className={`font-bold text-sm ${headingColor}`}>{a.hostname || a.name}</p>
-                    <p className={`text-xs ${mutedText}`}>{a.ip_address || "10.0.0.1"} • {a.exposure || "internet"}</p>
+                    <p className={`font-bold text-sm ${headingColor}`}>{a.name}</p>
+                    <p className={`text-xs ${mutedText}`}>{a.exposure}</p>
                   </div>
                   <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4]">
-                    Tier {a.criticality ?? 5}
+                    Tier {a.criticality}
                   </span>
                 </div>
               ))}
@@ -2054,7 +1839,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                   Immutable Security Audit Log
                 </h2>
                 <p className={`text-xs ${mutedText}`}>
-                  Cryptographically verifiable operator & 320-rule evaluation trail
+                  Cryptographically verifiable operator and backend scoring trail
                 </p>
               </div>
               <button
@@ -2065,14 +1850,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
               </button>
             </div>
             <div className="space-y-2.5">
-              {(auditLogs.length > 0
-                ? auditLogs
-                : [
-                    { id: 1, action: "LOGIN_SUCCESS", username: currentUser, details: "JWT issued with RBAC policy enforcement", timestamp: "Just now" },
-                    { id: 2, action: "RULE_ENGINE_EVAL", username: "system", details: "Evaluated 50 findings across 320 deterministic rules", timestamp: "12 mins ago" },
-                    { id: 3, action: "CSV_BATCH_IMPORT", username: "analyst", details: "Imported Nessus weekly perimeter scan", timestamp: "1 hour ago" },
-                  ]
-              ).map((log, idx) => (
+              {auditLogs.map((log, idx) => (
                 <div
                   key={log.id}
                   style={{ animationDelay: `${idx * 0.06}s` }}
@@ -2200,11 +1978,10 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
         })}
       </nav>
 
-      {/* INTERACTIVE 320-RULE INSPECTOR SLIDE-OVER DRAWER */}
+      {/* Backend scoring explanation drawer */}
       {selectedFinding && (() => {
-        const rb = getRuleBreakdown(selectedFinding);
         const tier = getTier(selectedFinding);
-        const isResolved = (selectedFinding.status || "OPEN").toUpperCase() === "RESOLVED";
+        const isResolved = selectedFinding.status.toUpperCase() === "RESOLVED";
         return (
           <div
             onClick={() => setSelectedFinding(null)}
@@ -2218,9 +1995,8 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                 <div className="flex items-center justify-between pb-4 border-b border-white/10">
                   <div className="flex items-center gap-2.5">
                     <span className="px-2.5 py-1 rounded-md bg-[#00E5C4]/15 text-[#00E5C4] border border-[#00E5C4]/30 font-mono text-xs font-extrabold">
-                      {rb.ruleCode}
+                      Backend scoring explanation
                     </span>
-                    <span className="text-xs text-white/60">320-Rule Deterministic Trace</span>
                   </div>
                   <button
                     onClick={() => setSelectedFinding(null)}
@@ -2236,93 +2012,32 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                       {selectedFinding.cve_id}
                     </h2>
                     <span className="text-3xl font-extrabold text-[#00E5C4]">
-                      {getScore(selectedFinding)}<span className="text-xs text-white/50">/100</span>
+                      {selectedFinding.score}<span className="text-xs text-white/50">/4</span>
                     </span>
                   </div>
-                  <p className="text-sm text-white/75 mt-1">
-                    {selectedFinding.title || "Remote Code Execution / Critical Perimeter Exposure"}
+                  <p className="text-sm text-white/75 mt-1">{selectedFinding.asset_name}</p>
+                  <span className="mt-3 inline-flex text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#E5007D]/25 text-pink-200 border border-[#E5007D]/40">
+                    Priority: {tier}
+                  </span>
+                </div>
+
+                <section className="mt-6 bg-white/5 border border-white/10 rounded-2xl p-5">
+                  <p className="text-sm text-white/90 leading-relaxed">
+                    {selectedFinding.explanation.summary}
                   </p>
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#E5007D]/25 text-pink-200 border border-[#E5007D]/40">
-                      Priority: {tier}
-                    </span>
-                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-white/10 text-white/85">
-                      Host: {selectedFinding.hostname || "vpn-gw-01"}
-                    </span>
-                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#00E5C4]/15 text-[#00E5C4]">
-                      SLA: {rb.slaWindow}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-6 bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#00E5C4]">
-                    4-Vector Combinatorial Proof (4 × 4 × 4 × 5 = 320 Rules)
-                  </h4>
-
-                  <div className="space-y-3 text-xs">
-                    <div>
-                      <div className="flex justify-between font-bold mb-1">
-                        <span>1. Base Severity (CVSS v3.1: {rb.cvss})</span>
-                        <span className="text-[#00E5C4]">Tier {rb.cvssTier} / 4</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
-                        <div style={{ width: `${(rb.cvssTier / 4) * 100}%` }} className="h-full bg-gradient-to-r from-[#8121D7] to-[#E5007D]"></div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between font-bold mb-1">
-                        <span>2. Exploit Maturity ({rb.expLabel})</span>
-                        <span className="text-[#00E5C4]">Tier {rb.expTier} / 4</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
-                        <div style={{ width: `${(rb.expTier / 4) * 100}%` }} className="h-full bg-gradient-to-r from-[#8121D7] to-[#00E5C4]"></div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between font-bold mb-1">
-                        <span>3. Network Exposure ({rb.netLabel})</span>
-                        <span className="text-[#00E5C4]">Tier {rb.netTier} / 4</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
-                        <div style={{ width: `${(rb.netTier / 4) * 100}%` }} className="h-full bg-gradient-to-r from-[#0284C7] to-[#00E5C4]"></div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between font-bold mb-1">
-                        <span>4. Asset Business Criticality</span>
-                        <span className="text-[#00E5C4]">Tier {rb.critTier} / 5</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
-                        <div style={{ width: `${(rb.critTier / 5) * 100}%` }} className="h-full bg-gradient-to-r from-[#00B89E] to-[#00E5C4]"></div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-black/40 border border-white/10 font-mono text-[11px] text-[#00E5C4]">
-                    Formula: ((T_cvss:{rb.cvssTier}-1)×80) + ((T_exp:{rb.expTier}-1)×20) + ((T_net:{rb.netTier}-1)×5) + T_asset:{rb.critTier} = {rb.ruleCode}
-                  </div>
-                </div>
-
-                <div className="mt-6 bg-white/5 border border-white/10 rounded-2xl p-5">
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-white/80 mb-2">
-                    Deterministic Remediation Playbook
-                  </h4>
-                  <p className="text-xs text-white/65 leading-relaxed mb-3">
-                    Apply vendor hotfix immediately on perimeter host <span className="text-white font-semibold">{selectedFinding.hostname || "vpn-gw-01"}</span> and restrict management interface exposure.
-                  </p>
-                  <div className="p-3 rounded-xl bg-black/50 border border-white/10 font-mono text-[11px] text-white/90 select-all">
-                    $ ansible-playbook patch_cve.yml --limit {selectedFinding.hostname || "vpn-gw-01"} -e &quot;cve={selectedFinding.cve_id}&quot;
-                  </div>
-                </div>
+                  <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                    <div><dt className="text-white/50">KEV</dt><dd>{selectedFinding.explanation.inputs.in_kev ? "Yes" : "No"}</dd></div>
+                    <div><dt className="text-white/50">Internet-facing</dt><dd>{selectedFinding.explanation.inputs.internet_facing ? "Yes" : "No"}</dd></div>
+                    <div><dt className="text-white/50">Criticality</dt><dd>{selectedFinding.explanation.inputs.criticality}/5</dd></div>
+                    <div><dt className="text-white/50">EPSS percentile</dt><dd>{selectedFinding.explanation.inputs.epss_percentile ?? "Missing"}</dd></div>
+                    <div><dt className="text-white/50">CVSS</dt><dd>{selectedFinding.explanation.inputs.cvss_score ?? "Missing"}</dd></div>
+                  </dl>
+                </section>
               </div>
 
               <div className="pt-6 border-t border-white/10 flex gap-3 mt-6">
                 <button
-                  onClick={() => toggleFindingStatus(selectedFinding.id)}
+                  onClick={() => toggleFindingStatus(selectedFinding)}
                   className="flex-1 py-3 rounded-xl bg-gradient-to-r from-[#8121D7] to-[#00B89E] text-white font-bold text-xs shadow-lg cursor-pointer"
                 >
                   {isResolved ? "Reopen Finding" : "Mark Finding Resolved ✓"}
@@ -2396,14 +2111,14 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
               </button>
 
               <p className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
-                Inspect CVE in 320-Rule Drawer
+                View backend scoring explanation
               </p>
               {displayFindings
                 .filter(
                   (f) =>
                     !cmdQuery ||
                     f.cve_id.toLowerCase().includes(cmdQuery.toLowerCase()) ||
-                    (f.hostname || "").toLowerCase().includes(cmdQuery.toLowerCase())
+                    f.asset_name.toLowerCase().includes(cmdQuery.toLowerCase())
                 )
                 .slice(0, 5)
                 .map((f) => (
@@ -2417,10 +2132,10 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                   >
                     <div>
                       <span className="font-bold text-white">{f.cve_id}</span>
-                      <span className="text-white/50 ml-2">on {f.hostname || "vpn-gw-01"}</span>
+                      <span className="text-white/50 ml-2">on {f.asset_name}</span>
                     </div>
                     <span className="px-2 py-0.5 rounded bg-[#00E5C4]/15 text-[#00E5C4] font-bold">
-                      Score {getScore(f)} →
+                      Score {f.score}/4 →
                     </span>
                   </button>
                 ))}

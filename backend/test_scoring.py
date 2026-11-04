@@ -8,7 +8,8 @@ test_cases = [
 
 print('--- SCORING ENGINE TEST ---')
 for tc in test_cases:
-    tier, exp = calculate_priority(tc['kev'], tc['internet'], tc['crit'], tc['epss'], tc['cvss'])
+    result = calculate_priority(tc['kev'], tc['internet'], tc['crit'], tc['epss'], tc['cvss'])
     print(f"\nScenario: {tc['name']}")
-    print(f"Tier:     {tier}")
-    print(f"Reason:   {exp}")
+    print(f"Tier:     {result['tier']}")
+    print(f"Score:    {result['score']}")
+    print(f"Reason:   {result['explanation']['summary']}")
