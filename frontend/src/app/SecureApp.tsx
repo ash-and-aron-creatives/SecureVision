@@ -1,22 +1,25 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+
+type UserRole = "admin" | "analyst" | "viewer";
 
 interface Finding {
   id: number;
   cve_id: string;
-  cvss_score: number;
-  priority_tier: string;
-  score: number;
-  explanation: ScoringExplanation;
-  status: string;
   asset_id: number;
   asset_name: string;
   exposure: string;
   criticality: number;
+  cvss_score: number;
   epss: number;
   in_kev: boolean;
+  priority_tier: string;
+  score: number;
+  status: string;
+  date_found: string;
+  explanation: ScoringExplanation;
 }
 
 interface ScoringExplanation {
@@ -33,43 +36,104 @@ interface ScoringExplanation {
 
 interface Asset {
   id: number;
-  hostname?: string;
-  name?: string;
-  ip_address?: string;
-  exposure?: string;
-  internet_facing?: boolean;
-  criticality?: number;
-  business_criticality?: string;
-  environment?: string;
+  name: string;
+  exposure: string;
+  criticality: number;
 }
 
 interface AuditEntry {
   id: number;
-  timestamp?: string;
-  created_at?: string;
-  username?: string;
-  user?: string;
+  user: string;
   action: string;
-  details?: string;
-  resource?: string;
+  details: string;
+  timestamp: string | null;
 }
 
 interface UserItem {
   id: number;
   username: string;
-  role: string;
-  email?: string;
-  is_active?: boolean;
+  role: UserRole;
+}
+
+interface FindingsPage {
+  items: Finding[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+  counts: Record<string, number>;
+}
+
+interface ScanResult {
+  finding_id: number;
+  priority_tier: string;
+  score: number;
+  explanation: ScoringExplanation;
+}
+
+interface ImportPreview {
+  summary: {
+    total: number;
+    ok: number;
+    error: number;
+    duplicate: number;
+  };
+  rows: Array<{
+    line: number;
+    asset_name: string;
+    cve_id: string;
+    date_found: string;
+    status: string;
+    reason: string;
+    asset_id: number | null;
+  }>;
+}
+
+interface ImportCommit {
+  imported: number;
+  skipped: number;
+  problems_csv: string;
+}
+
+interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  role: UserRole;
+  username: string;
+}
+
+interface StatusUpdate {
+  message: string;
+  id: number;
+  status: string;
+}
+
+function getErrorMessage(payload: unknown, fallback: string): string {
+  if (typeof payload === "object" && payload !== null && "detail" in payload) {
+    const detail = payload.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item) =>
+          typeof item === "object" && item !== null && "msg" in item && typeof item.msg === "string"
+            ? item.msg
+            : "",
+        )
+        .filter(Boolean)
+        .join(", ") || fallback;
+    }
+  }
+  return typeof payload === "string" && payload ? payload : fallback;
 }
 
 export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) {
   const [token, setToken] = useState<string | null>(null);
-  const [role, setRole] = useState<string>("admin");
-  const [currentUser, setCurrentUser] = useState<string>("admin");
+  const [role, setRole] = useState<UserRole | "">("");
+  const [currentUser, setCurrentUser] = useState<string>("");
 
   // Login states
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState("");
@@ -113,12 +177,52 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
 
   // CSV upload state
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
 
   const switchTab = (tabId: string) => {
     setActiveTab(tabId);
     setTabAnimKey((prev) => prev + 1);
     setMobileMenuOpen(false);
   };
+
+  const handleLogout = useCallback(() => {
+    setToken(null);
+    setRole("");
+    setCurrentUser("");
+    setActiveTab("dashboard");
+    setFindings([]);
+    setAssets([]);
+    setAuditLogs([]);
+    setUsers([]);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("sv_token");
+      localStorage.removeItem("sv_role");
+      localStorage.removeItem("sv_user");
+    }
+  }, []);
+
+  const apiRequest = useCallback(async <T,>(
+    path: string,
+    authToken: string | null,
+    init: RequestInit = {},
+  ): Promise<T> => {
+    const headers = new Headers(init.headers);
+    if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+    const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    const responseText = await response.text();
+    let payload: unknown;
+    try {
+      payload = responseText ? JSON.parse(responseText) as unknown : undefined;
+    } catch {
+      payload = responseText;
+    }
+
+    if (response.status === 401) handleLogout();
+    if (!response.ok) {
+      throw new Error(getErrorMessage(payload, `Request failed (${response.status}).`));
+    }
+    return payload as T;
+  }, [handleLogout]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -128,7 +232,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     const savedTheme = localStorage.getItem("sv_theme");
     if (savedToken) {
       setToken(savedToken);
-      if (savedRole) setRole(savedRole);
+      if (savedRole === "admin" || savedRole === "analyst" || savedRole === "viewer") setRole(savedRole);
       if (savedUser) setCurrentUser(savedUser);
     }
     if (savedTheme === "dark") {
@@ -170,35 +274,28 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   };
 
   const fetchAllData = useCallback(async (authToken: string) => {
-    const headers = { Authorization: `Bearer ${authToken}` };
     try {
-      const [fRes, aRes, lRes, uRes] = await Promise.allSettled([
-        fetch(`${API_BASE}/findings`, { headers, signal: AbortSignal.timeout(1500) }),
-        fetch(`${API_BASE}/assets`, { headers, signal: AbortSignal.timeout(1500) }),
-        fetch(`${API_BASE}/audit`, { headers, signal: AbortSignal.timeout(1500) }),
-        fetch(`${API_BASE}/users`, { headers, signal: AbortSignal.timeout(1500) }),
+      const [findingsResponse, assetsResponse] = await Promise.all([
+        apiRequest<FindingsPage>("/findings", authToken),
+        apiRequest<Asset[]>("/assets", authToken),
       ]);
-
-      if (fRes.status === "fulfilled" && fRes.value.ok) {
-        const data = await fRes.value.json();
-        setFindings(Array.isArray(data) ? data : data.items || data.findings || []);
+      setFindings(findingsResponse.items);
+      setAssets(assetsResponse);
+      if (role === "admin") {
+        const [auditResponse, usersResponse] = await Promise.all([
+          apiRequest<AuditEntry[]>("/audit", authToken),
+          apiRequest<UserItem[]>("/users", authToken),
+        ]);
+        setAuditLogs(auditResponse);
+        setUsers(usersResponse);
+      } else {
+        setAuditLogs([]);
+        setUsers([]);
       }
-      if (aRes.status === "fulfilled" && aRes.value.ok) {
-        const data = await aRes.value.json();
-        setAssets(Array.isArray(data) ? data : data.items || data.assets || []);
-      }
-      if (lRes.status === "fulfilled" && lRes.value.ok) {
-        const data = await lRes.value.json();
-        setAuditLogs(Array.isArray(data) ? data : data.items || data.logs || []);
-      }
-      if (uRes.status === "fulfilled" && uRes.value.ok) {
-        const data = await uRes.value.json();
-        setUsers(Array.isArray(data) ? data : data.items || data.users || []);
-      }
-    } catch {
-      // Fallback sample data if backend is offline
+    } catch (fetchError) {
+      setActionMessage(fetchError instanceof Error ? fetchError.message : "Unable to load backend data.");
     }
-  }, []);
+  }, [apiRequest, role]);
 
   useEffect(() => {
     if (token) {
@@ -210,23 +307,15 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     e.preventDefault();
     setError("");
 
-    const cleanUser = username.trim().toLowerCase() || "admin";
     try {
       const formBody = new URLSearchParams();
-      formBody.append("username", cleanUser);
+      formBody.append("username", username.trim());
       formBody.append("password", password);
-      const res = await fetch(`${API_BASE}/token`, {
+      const data = await apiRequest<LoginResponse>("/token", null, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: formBody.toString(),
+        body: formBody,
       });
-      if (!res.ok) {
-        const detail = await res.json();
-        setError(detail.detail || "Login failed.");
-        return;
-      }
-
-      const data = await res.json();
       setToken(data.access_token);
       setRole(data.role);
       setCurrentUser(data.username);
@@ -234,18 +323,13 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
         localStorage.setItem("sv_token", data.access_token);
         localStorage.setItem("sv_role", data.role);
         localStorage.setItem("sv_user", data.username);
+      } else if (typeof window !== "undefined") {
+        localStorage.removeItem("sv_token");
+        localStorage.removeItem("sv_role");
+        localStorage.removeItem("sv_user");
       }
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "Unable to connect to the backend.");
-    }
-  };
-
-  const handleLogout = () => {
-    setToken(null);
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("sv_token");
-      localStorage.removeItem("sv_role");
-      localStorage.removeItem("sv_user");
     }
   };
 
@@ -255,27 +339,35 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
       setActionMessage("Select a backend asset before running a scan.");
       return;
     }
+    const cveId = scanCve.trim().toUpperCase();
+    const cvssScore = Number(scanCvss);
+    const epssPercentile = Number(scanEpss);
+    if (!/^CVE-\d{4}-\d{4,}$/.test(cveId)) {
+      setActionMessage("CVE ID must look like CVE-2021-44228.");
+      return;
+    }
+    if (!scanCvss.trim() || !Number.isFinite(cvssScore) || cvssScore < 0 || cvssScore > 10) {
+      setActionMessage("CVSS score must be between 0 and 10.");
+      return;
+    }
+    if (!scanEpss.trim() || !Number.isFinite(epssPercentile) || epssPercentile < 0 || epssPercentile > 1) {
+      setActionMessage("EPSS percentile must be between 0 and 1.");
+      return;
+    }
     setActionMessage("");
     try {
       const payload = {
         asset_id: Number(scanAssetId),
-        cve_id: scanCve,
-        cvss_score: Number(scanCvss),
+        cve_id: cveId,
+        cvss_score: cvssScore,
         in_kev: scanKev,
-        epss_percentile: Number(scanEpss),
+        epss_percentile: epssPercentile,
       };
-      const res = await fetch(`${API_BASE}/scan`, {
+      const result = await apiRequest<ScanResult>("/scan", token, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const result = await res.json();
-      if (!res.ok) {
-        throw new Error(result.detail || "Backend scan failed.");
-      }
       setActionMessage(`${result.priority_tier} (score ${result.score}/4): ${result.explanation.summary}`);
       await fetchAllData(token);
       switchTab("dashboard");
@@ -284,24 +376,39 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     }
   };
 
-  const handleCsvUpload = async (e: React.FormEvent) => {
+  const handleCsvPreview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!csvFile || !token) return;
+    if (!csvFile || !token) {
+      setActionMessage("Choose a CSV file before previewing.");
+      return;
+    }
     const formData = new FormData();
     formData.append("file", csvFile);
     try {
-      const res = await fetch(`${API_BASE}/imports/commit`, {
+      const result = await apiRequest<ImportPreview>("/imports/preview", token, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-      const result = await res.json();
-      if (!res.ok) {
-        throw new Error(result.detail || "CSV import failed.");
-      }
+      setImportPreview(result);
+      setActionMessage(`Preview ready: ${result.summary.ok} valid, ${result.summary.error} errors, ${result.summary.duplicate} duplicates.`);
+    } catch (importError) {
+      setActionMessage(importError instanceof Error ? importError.message : "CSV preview failed.");
+    }
+  };
+
+  const handleCsvCommit = async () => {
+    if (!csvFile || !token || !importPreview) return;
+    const formData = new FormData();
+    formData.append("file", csvFile);
+    try {
+      const result = await apiRequest<ImportCommit>("/imports/commit", token, {
+        method: "POST",
+        body: formData,
+      });
       setActionMessage(`Backend imported ${result.imported} findings; ${result.skipped} skipped.`);
       await fetchAllData(token);
-      switchTab("dashboard");
+      setImportPreview(null);
+      setCsvFile(null);
     } catch (importError) {
       setActionMessage(importError instanceof Error ? importError.message : "CSV import failed.");
     }
@@ -311,23 +418,15 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     e.preventDefault();
     if (!assetHost || !token) return;
     try {
-      const response = await fetch(`${API_BASE}/assets`, {
+      const result = await apiRequest<Asset>("/assets", token, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: assetHost,
           exposure: assetExposure === "internet" ? "Internet" : "Internal",
           criticality: Number(assetCrit),
         }),
       });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.detail || "Unable to register asset.");
-      }
-
       setAssets((current) => [...current, result]);
       setAssetHost("");
       setActionMessage(`Asset ${result.name} registered by the backend.`);
@@ -338,17 +437,20 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUsername) return;
-    const created: UserItem = {
-      id: Date.now(),
-      username: newUsername,
-      role: newRole,
-      is_active: true,
-    };
-    setUsers((prev) => [...prev, created]);
-    setNewUsername("");
-    setNewPassword("");
-    setActionMessage(`Operator ${created.username} (${created.role.toUpperCase()}) provisioned.`);
+    if (!newUsername || !token) return;
+    try {
+      const created = await apiRequest<UserItem>("/users", token, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: newUsername, password: newPassword, role: newRole }),
+      });
+      setUsers((current) => [...current, created]);
+      setNewUsername("");
+      setNewPassword("");
+      setActionMessage(`Operator ${created.username} (${created.role.toUpperCase()}) provisioned.`);
+    } catch (userError) {
+      setActionMessage(userError instanceof Error ? userError.message : "Unable to create user.");
+    }
   };
 
   const displayFindings = findings;
@@ -357,18 +459,11 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     if (!token) return;
     const status = finding.status.toUpperCase() === "RESOLVED" ? "Open" : "Resolved";
     try {
-      const response = await fetch(`${API_BASE}/findings/${finding.id}/status`, {
+      const result = await apiRequest<StatusUpdate>(`/findings/${finding.id}/status`, token, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.detail || "Unable to update finding status.");
-      }
 
       setFindings((current) =>
         current.map((item) => item.id === finding.id ? { ...item, status: result.status } : item)
@@ -376,6 +471,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
       setSelectedFinding((current) =>
         current?.id === finding.id ? { ...current, status: result.status } : current
       );
+      setActionMessage(result.message);
     } catch (statusError) {
       setActionMessage(statusError instanceof Error ? statusError.message : "Unable to update finding status.");
     }
@@ -588,40 +684,6 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
               </button>
             </form>
 
-            <div className="mt-6 pt-5 border-t border-white/10">
-              <div className="flex items-center justify-between mb-2.5">
-                <span className="text-[11px] uppercase tracking-wider text-white/50 font-semibold">
-                  Quick-Fill RBAC Profiles
-                </span>
-                <span className="text-[10px] text-[#00E5C4]">Click to autofill</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setUsername("admin"); setPassword("admin123"); }}
-                  className="px-2.5 py-2 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 text-left transition-all cursor-pointer"
-                >
-                  <div className="text-xs font-bold text-white">Admin</div>
-                  <div className="text-[10px] text-white/45">Full Access</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setUsername("analyst"); setPassword("analyst123"); }}
-                  className="px-2.5 py-2 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 text-left transition-all cursor-pointer"
-                >
-                  <div className="text-xs font-bold text-white">Analyst</div>
-                  <div className="text-[10px] text-white/45">Triage & Scan</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setUsername("viewer"); setPassword("viewer123"); }}
-                  className="px-2.5 py-2 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 text-left transition-all cursor-pointer"
-                >
-                  <div className="text-xs font-bold text-white">Viewer</div>
-                  <div className="text-[10px] text-white/45">Read-Only</div>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -637,8 +699,10 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     { id: "scan", label: "New Scan", badge: null, icon: "scan" },
     { id: "import", label: "Import CSV", badge: null, icon: "upload" },
     { id: "assets", label: "Assets", badge: null, icon: "server" },
-    { id: "audit", label: "Audit Log", badge: null, icon: "shield" },
-    { id: "users", label: "Users (RBAC)", badge: null, icon: "users" },
+    ...(role === "admin" ? [
+      { id: "audit", label: "Audit Log", badge: null, icon: "shield" },
+      { id: "users", label: "Users (RBAC)", badge: null, icon: "users" },
+    ] : []),
   ];
 
   const weeklyBars = [
@@ -1657,7 +1721,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
             <p className={`text-xs mb-6 ${mutedText}`}>
               Submit vulnerability inputs to the backend scoring engine. Exposure and criticality come from the selected asset.
             </p>
-            <form onSubmit={handleCreateScan} className="space-y-4">
+            <form onSubmit={handleCreateScan} noValidate className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={`block text-xs font-bold mb-1 ${headingColor}`}>CVE Identifier</label>
@@ -1680,7 +1744,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                     <option value="">Select an asset</option>
                     {assets.map((asset) => (
                       <option key={asset.id} value={asset.id}>
-                        {asset.name || asset.hostname} ({asset.exposure}, criticality {asset.criticality})
+                        {asset.name} ({asset.exposure}, criticality {asset.criticality})
                       </option>
                     ))}
                   </select>
@@ -1744,25 +1808,68 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
             <p className={`text-xs mb-6 ${mutedText}`}>
               Upload a supported scanner CSV to score findings through the backend.
             </p>
-            <form onSubmit={handleCsvUpload} className="space-y-4">
+            <form onSubmit={handleCsvPreview} className="space-y-4">
               <div className={`border-2 border-dashed border-[#8121D7]/40 hover:border-[#00B89E] transition-colors rounded-2xl p-8 text-center ${subSurfaceCard}`}>
                 <input
                   type="file"
                   accept=".csv"
-                  onChange={(e) => setCsvFile(e.target.files ? e.target.files[0] : null)}
+                  onChange={(e) => {
+                    setCsvFile(e.target.files ? e.target.files[0] : null);
+                    setImportPreview(null);
+                  }}
                   className={`text-sm ${mutedText}`}
                 />
                 <p className={`text-xs mt-2 ${mutedText}`}>
-                  Columns: cve_id, cvss_base, exploit_maturity, hostname, exposure, criticality
+                  Required columns: asset_name, cve_id, date_found (YYYY-MM-DD)
                 </p>
               </div>
               <button
                 type="submit"
                 className="px-6 py-3 rounded-full bg-gradient-to-r from-[#8121D7] to-[#1ABDD6] text-white font-bold text-xs shadow-md hover:scale-105 transition-all cursor-pointer"
               >
-                Upload & Score CSV Batch
+                Preview CSV
               </button>
             </form>
+            {importPreview && (
+              <div className="mt-6 space-y-4">
+                <p className={`text-sm font-bold ${headingColor}`}>
+                  {importPreview.summary.total} rows: {importPreview.summary.ok} valid, {importPreview.summary.error} errors, {importPreview.summary.duplicate} duplicates
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className={mutedText}>
+                      <tr>
+                        <th className="p-2">Line</th>
+                        <th className="p-2">Asset</th>
+                        <th className="p-2">CVE</th>
+                        <th className="p-2">Date</th>
+                        <th className="p-2">Status</th>
+                        <th className="p-2">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importPreview.rows.map((row) => (
+                        <tr key={row.line} className="border-t border-slate-200/30">
+                          <td className="p-2">{row.line}</td>
+                          <td className="p-2">{row.asset_name}</td>
+                          <td className="p-2">{row.cve_id}</td>
+                          <td className="p-2">{row.date_found}</td>
+                          <td className="p-2">{row.status}</td>
+                          <td className="p-2">{row.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCsvCommit}
+                  className="px-6 py-3 rounded-full bg-gradient-to-r from-[#8121D7] to-[#00B89E] text-white font-bold text-xs shadow-md hover:scale-105 transition-all cursor-pointer"
+                >
+                  Commit Import
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1831,7 +1938,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
         {/* =================================================================== */}
         {/* TAB 6: AUDIT LOG                                                    */}
         {/* =================================================================== */}
-        {activeTab === "audit" && (
+        {activeTab === "audit" && role === "admin" && (
           <div key={`audit-${tabAnimKey}`} className={`rounded-3xl p-6 md:p-8 border sv-tab-transition ${surfaceCard}`}>
             <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
               <div>
@@ -1858,10 +1965,10 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                 >
                   <div>
                     <span className="font-extrabold text-[#00B89E] mr-2">[{log.action}]</span>
-                    <span className={`font-semibold ${headingColor}`}>{log.username || log.user}</span>
-                    <span className={`ml-2 ${mutedText}`}>{log.details || log.resource}</span>
+                    <span className={`font-semibold ${headingColor}`}>{log.user}</span>
+                    <span className={`ml-2 ${mutedText}`}>{log.details}</span>
                   </div>
-                  <span className={mutedText}>{log.timestamp || log.created_at || "Recorded"}</span>
+                  <span className={mutedText}>{log.timestamp || "Recorded"}</span>
                 </div>
               ))}
             </div>
@@ -1871,7 +1978,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
         {/* =================================================================== */}
         {/* TAB 7: USERS (RBAC)                                                 */}
         {/* =================================================================== */}
-        {activeTab === "users" && (
+        {activeTab === "users" && role === "admin" && (
           <div key={`users-${tabAnimKey}`} className={`rounded-3xl p-6 md:p-8 border space-y-6 sv-tab-transition ${surfaceCard}`}>
             <h2 className={`text-2xl font-extrabold ${headingColor}`}>
               Role-Based Access Control (RBAC)
@@ -1911,14 +2018,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
             </form>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {(users.length > 0
-                ? users
-                : [
-                    { id: 1, username: "admin", role: "admin" },
-                    { id: 2, username: "analyst", role: "analyst" },
-                    { id: 3, username: "viewer", role: "viewer" },
-                  ]
-              ).map((u, idx) => (
+              {users.map((u, idx) => (
                 <div
                   key={u.id}
                   style={{ animationDelay: `${idx * 0.06}s` }}
@@ -1956,7 +2056,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
           { id: "queue", label: "Queue" },
           { id: "scan", label: "Scan" },
           { id: "assets", label: "Assets" },
-          { id: "audit", label: "Audit" },
+          ...(role === "admin" ? [{ id: "audit", label: "Audit" }] : []),
         ].map((tab) => {
           const isAct = activeTab === tab.id;
           return (
