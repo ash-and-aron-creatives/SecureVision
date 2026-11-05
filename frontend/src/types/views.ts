@@ -1,0 +1,87 @@
+import type { Dispatch, FormEventHandler, SetStateAction } from "react";
+import type {
+  Asset,
+  AuditEntry,
+  Finding,
+  ImportPreview,
+  UserItem,
+  UserRole,
+} from "./index";
+
+export interface LoginViewProps {
+  onBackToHome?: () => void;
+  error: string;
+  username: string;
+  setUsername: Dispatch<SetStateAction<string>>;
+  password: string;
+  setPassword: Dispatch<SetStateAction<string>>;
+  showPassword: boolean;
+  setShowPassword: Dispatch<SetStateAction<boolean>>;
+  rememberMe: boolean;
+  setRememberMe: Dispatch<SetStateAction<boolean>>;
+  handleLogin: FormEventHandler<HTMLFormElement>;
+}
+
+export interface SecureAppViewProps {
+  activeTab: string;
+  tabAnimKey: number;
+  surfaceCard: string;
+  headingColor: string;
+  mutedText: string;
+  switchTab: (tabId: string) => void;
+  darkMode: boolean;
+  exportExecutiveReport: () => void;
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  subSurfaceCard: string;
+  itemSurface: string;
+  getTier: (finding: Finding) => "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
+  weeklyBars: Array<{ day: string; height: string; type: string; label: string }>;
+  completionPct: number;
+  totalCount: number;
+  resolvedCount: number;
+  displayFindings: Finding[];
+  setTierFilter: Dispatch<SetStateAction<string>>;
+  tierFilter: string;
+  exportPriorityCsv: () => void;
+  filteredFindings: Finding[];
+  toggleFindingStatus: (finding: Finding) => Promise<void>;
+  handleCreateScan: FormEventHandler<HTMLFormElement>;
+  scanCve: string;
+  setScanCve: Dispatch<SetStateAction<string>>;
+  scanAssetId: string;
+  setScanAssetId: Dispatch<SetStateAction<string>>;
+  assets: Asset[];
+  scanCvss: string;
+  setScanCvss: Dispatch<SetStateAction<string>>;
+  scanEpss: string;
+  setScanEpss: Dispatch<SetStateAction<string>>;
+  scanKev: boolean;
+  setScanKev: Dispatch<SetStateAction<boolean>>;
+  handleCsvPreview: FormEventHandler<HTMLFormElement>;
+  setCsvFile: Dispatch<SetStateAction<File | null>>;
+  setImportPreview: Dispatch<SetStateAction<ImportPreview | null>>;
+  importPreview: ImportPreview | null;
+  handleCsvCommit: () => Promise<void>;
+  handleCreateAsset: FormEventHandler<HTMLFormElement>;
+  assetHost: string;
+  setAssetHost: Dispatch<SetStateAction<string>>;
+  assetExposure: string;
+  setAssetExposure: Dispatch<SetStateAction<string>>;
+  assetCrit: string;
+  setAssetCrit: Dispatch<SetStateAction<string>>;
+  role: UserRole | "";
+  auditLogs: AuditEntry[];
+  handleCreateUser: FormEventHandler<HTMLFormElement>;
+  newUsername: string;
+  setNewUsername: Dispatch<SetStateAction<string>>;
+  newPassword: string;
+  setNewPassword: Dispatch<SetStateAction<string>>;
+  newRole: string;
+  setNewRole: Dispatch<SetStateAction<string>>;
+  users: UserItem[];
+  selectedFinding: Finding | null;
+  setSelectedFinding: Dispatch<SetStateAction<Finding | null>>;
+}

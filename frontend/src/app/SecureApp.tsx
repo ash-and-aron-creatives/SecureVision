@@ -1,189 +1,80 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback, useSyncExternalStore } from "react";
+import { ApiRequestError, requestApi } from "../api/client";
+import type {
+  Asset,
+  AuditEntry,
+  Finding,
+  LoginResponse,
+  UserItem,
+  UserRole,
+} from "../types";
+import { useLogin } from "../hooks/useLogin";
+import { useScan } from "../hooks/useScan";
+import { useImport } from "../hooks/useImport";
+import { useAssets } from "../hooks/useAssets";
+import { useUsers } from "../hooks/useUsers";
+import { useDashboardData } from "../hooks/useDashboardData";
+import { useFindings } from "../hooks/useFindings";
+import { useDashboard } from "../hooks/useDashboard";
+import { LoginView } from "../components/login/LoginView";
+import { DashboardView } from "../components/dashboard/DashboardView";
+import { FindingsView } from "../components/findings/FindingsView";
+import { FindingDetailsDrawer } from "../components/findings/FindingDetailsDrawer";
+import { ScanView } from "../components/scan/ScanView";
+import { ImportView } from "../components/import/ImportView";
+import { AssetsView } from "../components/assets/AssetsView";
+import { AuditView } from "../components/audit/AuditView";
+import { UsersView } from "../components/users/UsersView";
+import type { SecureAppViewProps } from "../types/views";
+const subscribeToNoChanges = () => () => {};
+const getClientHydrationSnapshot = () => true;
+const getServerHydrationSnapshot = () => false;
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
-
-type UserRole = "admin" | "analyst" | "viewer";
-
-interface Finding {
-  id: number;
-  cve_id: string;
-  asset_id: number;
-  asset_name: string;
-  exposure: string;
-  criticality: number;
-  cvss_score: number;
-  epss: number;
-  in_kev: boolean;
-  priority_tier: string;
-  score: number;
-  status: string;
-  date_found: string;
-  explanation: ScoringExplanation;
-}
-
-interface ScoringExplanation {
-  summary: string;
-  inputs: {
-    in_kev: boolean;
-    internet_facing: boolean;
-    criticality: number;
-    epss_percentile: number | null;
-    cvss_score: number | null;
-  };
-  rationale: string[];
-}
-
-interface Asset {
-  id: number;
-  name: string;
-  exposure: string;
-  criticality: number;
-}
-
-interface AuditEntry {
-  id: number;
-  user: string;
-  action: string;
-  details: string;
-  timestamp: string | null;
-}
-
-interface UserItem {
-  id: number;
-  username: string;
-  role: UserRole;
-}
-
-interface FindingsPage {
-  items: Finding[];
-  total: number;
-  page: number;
-  page_size: number;
-  pages: number;
-  counts: Record<string, number>;
-}
-
-interface ScanResult {
-  finding_id: number;
-  priority_tier: string;
-  score: number;
-  explanation: ScoringExplanation;
-}
-
-interface ImportPreview {
-  summary: {
-    total: number;
-    ok: number;
-    error: number;
-    duplicate: number;
-  };
-  rows: Array<{
-    line: number;
-    asset_name: string;
-    cve_id: string;
-    date_found: string;
-    status: string;
-    reason: string;
-    asset_id: number | null;
-  }>;
-}
-
-interface ImportCommit {
-  imported: number;
-  skipped: number;
-  problems_csv: string;
-}
-
-interface LoginResponse {
-  access_token: string;
-  token_type: string;
-  role: UserRole;
-  username: string;
-}
-
-interface StatusUpdate {
-  message: string;
-  id: number;
-  status: string;
-}
-
-function getErrorMessage(payload: unknown, fallback: string): string {
-  if (typeof payload === "object" && payload !== null && "detail" in payload) {
-    const detail = payload.detail;
-    if (typeof detail === "string") return detail;
-    if (Array.isArray(detail)) {
-      return detail
-        .map((item) =>
-          typeof item === "object" && item !== null && "msg" in item && typeof item.msg === "string"
-            ? item.msg
-            : "",
-        )
-        .filter(Boolean)
-        .join(", ") || fallback;
-    }
-  }
-  return typeof payload === "string" && payload ? payload : fallback;
+function getStoredValue(key: string): string | null {
+  return typeof window === "undefined" ? null : localStorage.getItem(key);
 }
 
 export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) {
-  const [token, setToken] = useState<string | null>(null);
-  const [role, setRole] = useState<UserRole | "">("");
-  const [currentUser, setCurrentUser] = useState<string>("");
+  const isHydrated = useSyncExternalStore(
+    subscribeToNoChanges,
+    getClientHydrationSnapshot,
+    getServerHydrationSnapshot,
+  );
+  const [token, setToken] = useState<string | null>(() => getStoredValue("sv_token"));
+  const [role, setRole] = useState<UserRole | "">(() => {
+    const savedRole = getStoredValue("sv_role");
+    return savedRole === "admin" || savedRole === "analyst" || savedRole === "viewer" ? savedRole : "";
+  });
+  const [currentUser, setCurrentUser] = useState<string>(() => getStoredValue("sv_user") ?? "");
 
-  // Login states
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
-  const [error, setError] = useState("");
-
-  // Navigation, Theme & Motion UI states
-  const [activeTab, setActiveTab] = useState<string>("dashboard");
-  const [tabAnimKey, setTabAnimKey] = useState<number>(0);
-  const [darkMode, setDarkMode] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [tierFilter, setTierFilter] = useState<string>("ALL");
-
-  // Finding explanation drawer, command palette, and mobile drawer states
+  // Feature data
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
-  const [cmdOpen, setCmdOpen] = useState<boolean>(false);
-  const [cmdQuery, setCmdQuery] = useState<string>("");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
-
-  // Data states
   const [findings, setFindings] = useState<Finding[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [actionMessage, setActionMessage] = useState<string>("");
 
-  // New Scan form states
-  const [scanCve, setScanCve] = useState("");
-  const [scanAssetId, setScanAssetId] = useState("");
-  const [scanCvss, setScanCvss] = useState("9.8");
-  const [scanEpss, setScanEpss] = useState("0.0");
-  const [scanKev, setScanKev] = useState(false);
-
-  // New Asset form states
-  const [assetHost, setAssetHost] = useState("");
-  const [assetExposure, setAssetExposure] = useState("internet");
-  const [assetCrit, setAssetCrit] = useState("5");
-
-  // New User form states
-  const [newUsername, setNewUsername] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [newRole, setNewRole] = useState("analyst");
-
-  // CSV upload state
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
-
-  const switchTab = (tabId: string) => {
-    setActiveTab(tabId);
-    setTabAnimKey((prev) => prev + 1);
-    setMobileMenuOpen(false);
-  };
+  const {
+    activeTab,
+    setActiveTab,
+    tabAnimKey,
+    setTabAnimKey,
+    darkMode,
+    searchQuery,
+    setSearchQuery,
+    tierFilter,
+    setTierFilter,
+    cmdOpen,
+    setCmdOpen,
+    cmdQuery,
+    setCmdQuery,
+    mobileMenuOpen,
+    setMobileMenuOpen,
+    switchTab,
+    toggleTheme,
+  } = useDashboard(setSelectedFinding);
 
   const handleLogout = useCallback(() => {
     setToken(null);
@@ -199,496 +90,93 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
       localStorage.removeItem("sv_role");
       localStorage.removeItem("sv_user");
     }
-  }, []);
+  }, [setActiveTab]);
 
   const apiRequest = useCallback(async <T,>(
     path: string,
     authToken: string | null,
     init: RequestInit = {},
   ): Promise<T> => {
-    const headers = new Headers(init.headers);
-    if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
-    const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
-    const responseText = await response.text();
-    let payload: unknown;
     try {
-      payload = responseText ? JSON.parse(responseText) as unknown : undefined;
-    } catch {
-      payload = responseText;
+      return await requestApi<T>(path, authToken, init);
+    } catch (requestError) {
+      if (requestError instanceof ApiRequestError && requestError.status === 401) {
+        handleLogout();
+      }
+      throw requestError;
     }
-
-    if (response.status === 401) handleLogout();
-    if (!response.ok) {
-      throw new Error(getErrorMessage(payload, `Request failed (${response.status}).`));
-    }
-    return payload as T;
   }, [handleLogout]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const savedToken = localStorage.getItem("sv_token");
-    const savedRole = localStorage.getItem("sv_role");
-    const savedUser = localStorage.getItem("sv_user");
-    const savedTheme = localStorage.getItem("sv_theme");
-    if (savedToken) {
-      setToken(savedToken);
-      if (savedRole === "admin" || savedRole === "analyst" || savedRole === "viewer") setRole(savedRole);
-      if (savedUser) setCurrentUser(savedUser);
-    }
-    if (savedTheme === "dark") {
-      setDarkMode(true);
+  const handleAuthenticated = useCallback((data: LoginResponse, rememberMe: boolean) => {
+    setToken(data.access_token);
+    setRole(data.role);
+    setCurrentUser(data.username);
+    if (rememberMe && typeof window !== "undefined") {
+      localStorage.setItem("sv_token", data.access_token);
+      localStorage.setItem("sv_role", data.role);
+      localStorage.setItem("sv_user", data.username);
+    } else if (typeof window !== "undefined") {
+      localStorage.removeItem("sv_token");
+      localStorage.removeItem("sv_role");
+      localStorage.removeItem("sv_user");
     }
   }, []);
 
-  const toggleTheme = () => {
-    setDarkMode((prev) => {
-      const next = !prev;
-      if (typeof window !== "undefined") {
-        localStorage.setItem("sv_theme", next ? "dark" : "light");
-      }
-      return next;
-    });
-  };
+  const {
+    username,
+    setUsername,
+    password,
+    setPassword,
+    showPassword,
+    setShowPassword,
+    rememberMe,
+    setRememberMe,
+    error,
+    handleLogin,
+  } = useLogin(apiRequest, handleAuthenticated);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === "k" || e.key.toLowerCase() === "f")) {
-        e.preventDefault();
-        setCmdOpen((prev) => !prev);
-      } else if (e.key === "Escape") {
-        setCmdOpen(false);
-        setSelectedFinding(null);
-        setMobileMenuOpen(false);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
-  const getTier = (f: Finding): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN" => {
-    const tier = f.priority_tier.toUpperCase();
-    if (tier === "CRITICAL" || tier === "HIGH" || tier === "MEDIUM" || tier === "LOW") {
-      return tier;
-    }
-    return "UNKNOWN";
-  };
-
-  const fetchAllData = useCallback(async (authToken: string) => {
-    try {
-      const [findingsResponse, assetsResponse] = await Promise.all([
-        apiRequest<FindingsPage>("/findings", authToken),
-        apiRequest<Asset[]>("/assets", authToken),
-      ]);
-      setFindings(findingsResponse.items);
-      setAssets(assetsResponse);
-      if (role === "admin") {
-        const [auditResponse, usersResponse] = await Promise.all([
-          apiRequest<AuditEntry[]>("/audit", authToken),
-          apiRequest<UserItem[]>("/users", authToken),
-        ]);
-        setAuditLogs(auditResponse);
-        setUsers(usersResponse);
-      } else {
-        setAuditLogs([]);
-        setUsers([]);
-      }
-    } catch (fetchError) {
-      setActionMessage(fetchError instanceof Error ? fetchError.message : "Unable to load backend data.");
-    }
-  }, [apiRequest, role]);
-
-  useEffect(() => {
-    if (token) {
-      fetchAllData(token);
-    }
-  }, [token, fetchAllData]);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    try {
-      const formBody = new URLSearchParams();
-      formBody.append("username", username.trim());
-      formBody.append("password", password);
-      const data = await apiRequest<LoginResponse>("/token", null, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: formBody,
-      });
-      setToken(data.access_token);
-      setRole(data.role);
-      setCurrentUser(data.username);
-      if (rememberMe && typeof window !== "undefined") {
-        localStorage.setItem("sv_token", data.access_token);
-        localStorage.setItem("sv_role", data.role);
-        localStorage.setItem("sv_user", data.username);
-      } else if (typeof window !== "undefined") {
-        localStorage.removeItem("sv_token");
-        localStorage.removeItem("sv_role");
-        localStorage.removeItem("sv_user");
-      }
-    } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : "Unable to connect to the backend.");
-    }
-  };
-
-  const handleCreateScan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!token || !scanAssetId) {
-      setActionMessage("Select a backend asset before running a scan.");
-      return;
-    }
-    const cveId = scanCve.trim().toUpperCase();
-    const cvssScore = Number(scanCvss);
-    const epssPercentile = Number(scanEpss);
-    if (!/^CVE-\d{4}-\d{4,}$/.test(cveId)) {
-      setActionMessage("CVE ID must look like CVE-2021-44228.");
-      return;
-    }
-    if (!scanCvss.trim() || !Number.isFinite(cvssScore) || cvssScore < 0 || cvssScore > 10) {
-      setActionMessage("CVSS score must be between 0 and 10.");
-      return;
-    }
-    if (!scanEpss.trim() || !Number.isFinite(epssPercentile) || epssPercentile < 0 || epssPercentile > 1) {
-      setActionMessage("EPSS percentile must be between 0 and 1.");
-      return;
-    }
-    setActionMessage("");
-    try {
-      const payload = {
-        asset_id: Number(scanAssetId),
-        cve_id: cveId,
-        cvss_score: cvssScore,
-        in_kev: scanKev,
-        epss_percentile: epssPercentile,
-      };
-      const result = await apiRequest<ScanResult>("/scan", token, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      setActionMessage(`${result.priority_tier} (score ${result.score}/4): ${result.explanation.summary}`);
-      await fetchAllData(token);
-      switchTab("dashboard");
-    } catch (scanError) {
-      setActionMessage(scanError instanceof Error ? scanError.message : "Backend scan failed.");
-    }
-  };
-
-  const handleCsvPreview = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!csvFile || !token) {
-      setActionMessage("Choose a CSV file before previewing.");
-      return;
-    }
-    const formData = new FormData();
-    formData.append("file", csvFile);
-    try {
-      const result = await apiRequest<ImportPreview>("/imports/preview", token, {
-        method: "POST",
-        body: formData,
-      });
-      setImportPreview(result);
-      setActionMessage(`Preview ready: ${result.summary.ok} valid, ${result.summary.error} errors, ${result.summary.duplicate} duplicates.`);
-    } catch (importError) {
-      setActionMessage(importError instanceof Error ? importError.message : "CSV preview failed.");
-    }
-  };
-
-  const handleCsvCommit = async () => {
-    if (!csvFile || !token || !importPreview) return;
-    const formData = new FormData();
-    formData.append("file", csvFile);
-    try {
-      const result = await apiRequest<ImportCommit>("/imports/commit", token, {
-        method: "POST",
-        body: formData,
-      });
-      setActionMessage(`Backend imported ${result.imported} findings; ${result.skipped} skipped.`);
-      await fetchAllData(token);
-      setImportPreview(null);
-      setCsvFile(null);
-    } catch (importError) {
-      setActionMessage(importError instanceof Error ? importError.message : "CSV import failed.");
-    }
-  };
-
-  const handleCreateAsset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assetHost || !token) return;
-    try {
-      const result = await apiRequest<Asset>("/assets", token, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: assetHost,
-          exposure: assetExposure === "internet" ? "Internet" : "Internal",
-          criticality: Number(assetCrit),
-        }),
-      });
-      setAssets((current) => [...current, result]);
-      setAssetHost("");
-      setActionMessage(`Asset ${result.name} registered by the backend.`);
-    } catch (assetError) {
-      setActionMessage(assetError instanceof Error ? assetError.message : "Unable to register asset.");
-    }
-  };
-
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newUsername || !token) return;
-    try {
-      const created = await apiRequest<UserItem>("/users", token, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: newUsername, password: newPassword, role: newRole }),
-      });
-      setUsers((current) => [...current, created]);
-      setNewUsername("");
-      setNewPassword("");
-      setActionMessage(`Operator ${created.username} (${created.role.toUpperCase()}) provisioned.`);
-    } catch (userError) {
-      setActionMessage(userError instanceof Error ? userError.message : "Unable to create user.");
-    }
-  };
-
-  const displayFindings = findings;
-
-  const toggleFindingStatus = async (finding: Finding) => {
-    if (!token) return;
-    const status = finding.status.toUpperCase() === "RESOLVED" ? "Open" : "Resolved";
-    try {
-      const result = await apiRequest<StatusUpdate>(`/findings/${finding.id}/status`, token, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-
-      setFindings((current) =>
-        current.map((item) => item.id === finding.id ? { ...item, status: result.status } : item)
-      );
-      setSelectedFinding((current) =>
-        current?.id === finding.id ? { ...current, status: result.status } : current
-      );
-      setActionMessage(result.message);
-    } catch (statusError) {
-      setActionMessage(statusError instanceof Error ? statusError.message : "Unable to update finding status.");
-    }
-  };
-
-  const criticalCount = displayFindings.filter((f) => getTier(f) === "CRITICAL").length;
-  const highCount = displayFindings.filter((f) => getTier(f) === "HIGH").length;
-  const mediumCount = displayFindings.filter((f) => getTier(f) === "MEDIUM").length;
-  const lowCount = displayFindings.filter((f) => getTier(f) === "LOW").length;
-  const totalCount = displayFindings.length || 1;
-  const resolvedCount = displayFindings.filter((f) => (f.status || "").toUpperCase() === "RESOLVED").length;
-  const completionPct = Math.max(41, Math.round((resolvedCount / totalCount) * 100));
-
-  const filteredFindings = displayFindings.filter((f) => {
-    const matchesTier = tierFilter === "ALL" || getTier(f) === tierFilter;
-    const q = searchQuery.toLowerCase().trim();
-    const matchesSearch =
-      !q ||
-      f.cve_id.toLowerCase().includes(q) ||
-      f.asset_name.toLowerCase().includes(q) ||
-      f.explanation.summary.toLowerCase().includes(q);
-    return matchesTier && matchesSearch;
+  const { fetchAllData, refreshAllData } = useDashboardData({
+    token, role, apiRequest: requestApi, handleLogout, setFindings, setAssets, setAuditLogs, setUsers, setActionMessage,
   });
-
-  const exportPriorityCsv = () => {
-    const headers = ["CVE_ID", "Asset", "CVSS", "Exposure", "Criticality", "Score", "Priority_Tier", "Status", "Explanation"];
-    const rows = filteredFindings.map((f) => {
-      return [
-        f.cve_id,
-        f.asset_name,
-        f.cvss_score,
-        f.exposure,
-        f.criticality,
-        f.score,
-        getTier(f),
-        f.status.toUpperCase(),
-        f.explanation.summary,
-      ].join(",");
-    });
-    const csvContent = [headers.join(","), ...rows].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `SecureVision_Priority_Queue_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setActionMessage(`Exported ${filteredFindings.length} prioritized findings to CSV!`);
-  };
-
-  const exportExecutiveReport = () => {
-    const reportLines = [
-      "====================================================================",
-      " SECUREVISION - PRIORITY EXECUTIVE COMPLIANCE REPORT",
-      "====================================================================",
-      `Generated By : ${currentUser.toUpperCase()} (${role.toUpperCase()})`,
-      `Timestamp    : ${new Date().toUTCString()}`,
-      "Scoring Source : Backend scoring engine",
-      "--------------------------------------------------------------------",
-      " SUMMARY TELEMETRY:",
-      `  • Critical (Open, 24h SLA) : ${criticalCount}`,
-      `  • High     (Open, 72h SLA) : ${highCount}`,
-      `  • Medium   (Open, 14d SLA) : ${mediumCount}`,
-      `  • Low      (Open, 30d SLA) : ${lowCount}`,
-      `  • Overall Mitigation Rate  : ${completionPct}% (${resolvedCount}/${totalCount})`,
-      "--------------------------------------------------------------------",
-      " TOP PRIORITIZED FINDINGS REQUIRING IMMEDIATE ACTION:",
-      ...displayFindings.slice(0, 10).map((f, idx) => {
-        return `  ${idx + 1}. [${getTier(f)}] ${f.cve_id} on ${f.asset_name} | Score: ${f.score}/4 | ${f.explanation.summary}`;
-      }),
-      "====================================================================",
-    ];
-    const blob = new Blob([reportLines.join("\n")], { type: "text/plain;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `SecureVision_Executive_Audit_${new Date().toISOString().slice(0, 10)}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setActionMessage("Downloaded Executive Audit Compliance Report!");
-  };
+  const {
+    scanCve, setScanCve, scanAssetId, setScanAssetId, scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev,
+    handleCreateScan,
+  } = useScan(token, apiRequest, setActionMessage, fetchAllData, switchTab);
+  const {
+    setCsvFile, importPreview, setImportPreview, handleCsvPreview, handleCsvCommit,
+  } = useImport(token, apiRequest, setActionMessage, fetchAllData);
+  const { assetHost, setAssetHost, assetExposure, setAssetExposure, assetCrit, setAssetCrit, handleCreateAsset } =
+    useAssets(token, apiRequest, setAssets, setActionMessage);
+  const { newUsername, setNewUsername, newPassword, setNewPassword, newRole, setNewRole, handleCreateUser } =
+    useUsers(token, apiRequest, setUsers, setActionMessage);
+  const {
+    displayFindings, getTier, toggleFindingStatus, criticalCount, highCount, mediumCount, lowCount,
+    totalCount, resolvedCount, completionPct, filteredFindings, exportPriorityCsv, exportExecutiveReport,
+  } = useFindings({
+    token, apiRequest, findings, setFindings, setSelectedFinding, currentUser, role, searchQuery, tierFilter, setActionMessage,
+  });
 
   // ============================================================================
   // LOGIN VIEW (Quantexa Dark Glassmorphic Portal)
   // ============================================================================
+  if (!isHydrated) return null;
+
   if (!token) {
-    return (
-      <div className="min-h-screen flex flex-col justify-between bg-gradient-to-br from-[#2B125A] via-[#1A0B3B] to-[#0B031D] text-white font-sans relative overflow-hidden">
-        <div className="absolute w-[600px] h-[600px] bg-[#8121D7]/25 blur-[140px] rounded-full -top-32 -left-32 pointer-events-none"></div>
-        <div className="absolute w-[500px] h-[500px] bg-[#00E5C4]/15 blur-[130px] rounded-full -bottom-24 -right-24 pointer-events-none"></div>
-
-        <header className="w-full max-w-7xl mx-auto px-6 sm:px-8 pt-6 flex items-center justify-between z-20">
-          <button
-            type="button"
-            onClick={() => onBackToHome && onBackToHome()}
-            className="inline-flex items-center gap-2.5 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/15 border border-white/15 text-sm font-semibold text-white/90 hover:text-[#00E5C4] transition-all backdrop-blur-md shadow-lg cursor-pointer group"
-          >
-            <svg className="w-4 h-4 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
-            </svg>
-            Back to Home
-          </button>
-
-          <div className="hidden sm:flex items-center gap-2 text-xs text-white/60 bg-white/5 border border-white/10 px-3.5 py-1.5 rounded-full backdrop-blur-md">
-            <span className="w-2 h-2 rounded-full bg-[#00E5C4] animate-pulse"></span>
-            <span>Backend scoring enabled</span>
-          </div>
-        </header>
-
-        <div className="flex-1 flex items-center justify-center px-4 py-8 z-20">
-          <div className="w-full max-w-md bg-[#23114B]/65 backdrop-blur-2xl border border-white/15 rounded-2xl p-6 sm:p-8 shadow-[0_25px_70px_rgba(0,0,0,0.65)] relative">
-            <div className="absolute top-0 left-10 right-10 h-[2px] bg-gradient-to-r from-transparent via-[#00E5C4] to-transparent"></div>
-
-            <div
-              onClick={() => onBackToHome && onBackToHome()}
-              className="flex flex-col items-center mb-7 cursor-pointer group"
-            >
-              <svg viewBox="0 0 120 100" className="w-16 h-14 mb-2 drop-shadow-[0_4px_15px_rgba(0,229,196,0.35)] group-hover:scale-105 transition-transform" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <linearGradient id="loginWingTop" x1="6" y1="20" x2="100" y2="80" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#00E5C4"/>
-                    <stop offset="55%" stopColor="#3B82F6"/>
-                    <stop offset="100%" stopColor="#8121D7"/>
-                  </linearGradient>
-                  <linearGradient id="loginShieldGuard" x1="22" y1="35" x2="105" y2="95" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#00E5C4"/>
-                    <stop offset="45%" stopColor="#6D28D9"/>
-                    <stop offset="100%" stopColor="#3B096C"/>
-                  </linearGradient>
-                  <linearGradient id="loginInnerBevel" x1="50" y1="20" x2="88" y2="75" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#A5F3FC"/>
-                    <stop offset="100%" stopColor="#00E5C4"/>
-                  </linearGradient>
-                </defs>
-                <path d="M 22 40 L 42 40 C 50 40 55 46 59 56 L 73 88 L 93 34 C 96 58 87 82 73 96 C 55 82 45 62 39 50 L 28 50 Z" fill="url(#loginShieldGuard)" />
-                <path d="M 6 22 L 56 22 C 66 22 72 28 75 36 L 73 66 L 94 20 L 106 20 L 73 86 L 56 46 C 52 36 46 32 36 32 L 14 32 Z" fill="url(#loginWingTop)" />
-                <path d="M 52 22 C 68 15 84 15 94 20 L 87 34 C 78 29 66 29 58 33 Z" fill="url(#loginInnerBevel)" opacity="0.85" />
-              </svg>
-              <div className="text-3xl font-extrabold tracking-tight flex items-center">
-                <span className="text-white">Secure</span>
-                <span className="text-[#00E5C4]">Vision</span>
-              </div>
-              <p className="text-xs text-white/60 mt-1.5 text-center">
-                Decision Intelligence & Vulnerability Triage Portal
-              </p>
-            </div>
-
-            {error && (
-              <div className="mb-5 p-3.5 rounded-lg bg-[#FF4A4A]/15 border border-[#FF4A4A]/40 text-[#FF8080] text-xs flex items-center gap-2.5">
-                <span>{error}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-white/75 mb-1.5">
-                  Operator Username
-                </label>
-                <input
-                  type="text"
-                  placeholder="Enter username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-4 py-3 rounded-lg bg-[#12072B]/80 border border-white/15 text-white placeholder-white/35 text-sm focus:outline-none focus:border-[#00E5C4]"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-white/75 mb-1.5">
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg bg-[#12072B]/80 border border-white/15 text-white placeholder-white/35 text-sm focus:outline-none focus:border-[#00E5C4]"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-white/45 hover:text-[#00E5C4] text-xs"
-                  >
-                    {showPassword ? "Hide" : "Show"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-white/65 pt-1">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="rounded border-white/20 bg-[#12072B] text-[#00E5C4]"
-                  />
-                  <span>Remember session (JWT)</span>
-                </label>
-                <span className="text-[#00E5C4]/90 font-medium">RBAC Enforced</span>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3.5 rounded-lg bg-gradient-to-r from-[#8121D7] via-[#93278F] to-[#1ABDD6] hover:opacity-95 text-white font-bold text-sm tracking-wide shadow-[0_0_25px_rgba(0,229,196,0.3)] transition-all cursor-pointer mt-2"
-              >
-                Sign In to Console
-              </button>
-            </form>
-
-          </div>
-        </div>
-      </div>
-    );
-  }
+  return (
+    <LoginView
+      onBackToHome={onBackToHome}
+      error={error}
+      username={username}
+      setUsername={setUsername}
+      password={password}
+      setPassword={setPassword}
+      showPassword={showPassword}
+      setShowPassword={setShowPassword}
+      rememberMe={rememberMe}
+      setRememberMe={setRememberMe}
+      handleLogin={handleLogin}
+    />
+  );
+}
 
   // ============================================================================
   // AUTHENTICATED DASHBOARD VIEW (Responsive Windows Desktop, Tablet & Phone)
@@ -729,6 +217,16 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     : "bg-white border-slate-100 hover:border-[#8121D7]/40 text-slate-800";
   const headingColor = darkMode ? "text-white" : "text-[#1D0C3B]";
   const mutedText = darkMode ? "text-white/55" : "text-slate-400";
+  const viewProps: SecureAppViewProps = {
+    activeTab, tabAnimKey, surfaceCard, headingColor, mutedText, switchTab, darkMode, exportExecutiveReport,
+    criticalCount, highCount, mediumCount, lowCount, subSurfaceCard, itemSurface, getTier, weeklyBars,
+    completionPct, totalCount, resolvedCount, displayFindings, setTierFilter, tierFilter, exportPriorityCsv, filteredFindings,
+    toggleFindingStatus, handleCreateScan, scanCve, setScanCve, scanAssetId, setScanAssetId, assets,
+    scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev, handleCsvPreview, setCsvFile,
+    importPreview, setImportPreview, handleCsvCommit, handleCreateAsset, assetHost, setAssetHost, assetExposure, setAssetExposure,
+    assetCrit, setAssetCrit, role, auditLogs, handleCreateUser, newUsername, setNewUsername, newPassword,
+    setNewPassword, newRole, setNewRole, users, selectedFinding, setSelectedFinding,
+  };
 
   return (
     <div className={`min-h-screen ${shellBg} font-sans p-2.5 sm:p-4 lg:p-5 pb-20 lg:pb-5 flex flex-col lg:flex-row gap-4 lg:gap-5 overflow-x-hidden transition-colors duration-300 relative`}>
@@ -1007,7 +505,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
             <button
               onClick={() => {
                 setTabAnimKey((prev) => prev + 1);
-                if (token) fetchAllData(token);
+                if (token) refreshAllData(token);
               }}
               title="Replay Motion & Refresh Telemetry"
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-all hover:rotate-180 duration-500 cursor-pointer ${
@@ -1059,988 +557,37 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
         {/* =================================================================== */}
         {/* TAB 1: ANIMATED MOTION BENTO DASHBOARD                              */}
         {/* =================================================================== */}
-        {activeTab === "dashboard" && (
-          <div key={`dash-${tabAnimKey}`} className={`rounded-3xl p-4 sm:p-6 md:p-8 border space-y-6 sv-tab-transition transition-colors duration-300 ${surfaceCard}`}>
-            {/* Title Row + Action Buttons */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h1 className={`text-2xl sm:text-3xl font-extrabold tracking-tight ${headingColor}`}>
-                  Dashboard
-                </h1>
-                <p className={`text-xs sm:text-sm mt-1 ${mutedText}`}>
-                  Prioritize, triage, and remediate critical vulnerabilities with deterministic precision.
-                </p>
-              </div>
-              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-2.5 shrink-0 whitespace-nowrap">
-                <button
-                  onClick={() => switchTab("scan")}
-                  className="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full bg-gradient-to-r from-[#5926B6] to-[#8121D7] hover:from-[#4C1D95] hover:to-[#6D28D9] text-white text-xs font-bold shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
-                >
-                  <span>+ New Scan</span>
-                </button>
-                <button
-                  onClick={() => switchTab("import")}
-                  className={`inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full border text-xs font-bold hover:-translate-y-0.5 transition-all cursor-pointer ${
-                    darkMode
-                      ? "bg-white/5 hover:bg-white/15 text-white border-white/20"
-                      : "bg-white hover:bg-slate-50 text-[#2B125A] border-slate-300"
-                  }`}
-                >
-                  <span>Import Data</span>
-                </button>
-                <button
-                  onClick={exportExecutiveReport}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-[#00E5C4]/15 hover:bg-[#00E5C4]/25 text-[#008B76] dark:text-[#00E5C4] border border-[#00E5C4]/30 text-xs font-bold hover:-translate-y-0.5 transition-all cursor-pointer"
-                >
-                  <span>Export Report</span>
-                </button>
-              </div>
-            </div>
-
-            {/* ROW 1: 4 DISTINCT COLORED GRADIENT KPI CARDS */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Card 1: CRITICAL */}
-              <div
-                style={{ animationDelay: "0.04s" }}
-                onClick={() => { setTierFilter("CRITICAL"); switchTab("queue"); }}
-                className="sv-card-pop rounded-3xl p-6 bg-gradient-to-br from-[#2B0948] via-[#881365] to-[#E5007D] text-white shadow-[0_12px_30px_rgba(229,0,125,0.25)] hover:-translate-y-1.5 hover:shadow-[0_18px_38px_rgba(229,0,125,0.35)] transition-all duration-300 relative overflow-hidden cursor-pointer group"
-              >
-                <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-white/10 blur-xl pointer-events-none group-hover:scale-125 transition-transform"></div>
-                <div className="flex items-center justify-between gap-2 mb-3 relative z-10">
-                  <span className="text-sm font-semibold text-white/95 whitespace-nowrap">Critical (Open)</span>
-                  <span className="w-8 h-8 rounded-full bg-white text-[#881365] flex items-center justify-center shrink-0 group-hover:rotate-45 transition-transform duration-300 shadow-sm">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 17L17 7M7 7h10v10" />
-                    </svg>
-                  </span>
-                </div>
-                <div className="text-5xl font-extrabold tracking-tight mb-4 relative z-10">
-                  {criticalCount}
-                </div>
-                <div className="inline-flex items-center gap-1.5 text-[11px] text-pink-100 font-semibold relative z-10">
-                  <span className="px-2 py-0.5 rounded-md bg-white/20 text-white font-bold backdrop-blur-xs">24h SLA</span>
-                  <span>Weaponized / KEV active</span>
-                </div>
-              </div>
-
-              {/* Card 2: HIGH */}
-              <div
-                style={{ animationDelay: "0.10s" }}
-                onClick={() => { setTierFilter("HIGH"); switchTab("queue"); }}
-                className="sv-card-pop rounded-3xl p-6 bg-gradient-to-br from-[#3B147A] via-[#6D28D9] to-[#4F46E5] text-white shadow-[0_12px_30px_rgba(109,40,217,0.24)] hover:-translate-y-1.5 hover:shadow-[0_18px_38px_rgba(109,40,217,0.35)] transition-all duration-300 relative overflow-hidden cursor-pointer group"
-              >
-                <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-[#00E5C4]/15 blur-xl pointer-events-none group-hover:scale-125 transition-transform"></div>
-                <div className="flex items-center justify-between gap-2 mb-3 relative z-10">
-                  <span className="text-sm font-semibold text-white/95 whitespace-nowrap">High (Open)</span>
-                  <span className="w-8 h-8 rounded-full bg-white text-[#5926B6] flex items-center justify-center shrink-0 group-hover:rotate-45 transition-transform duration-300 shadow-sm">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 17L17 7M7 7h10v10" />
-                    </svg>
-                  </span>
-                </div>
-                <div className="text-5xl font-extrabold tracking-tight mb-4 relative z-10">
-                  {highCount}
-                </div>
-                <div className="inline-flex items-center gap-1.5 text-[11px] text-indigo-100 font-semibold relative z-10">
-                  <span className="px-2 py-0.5 rounded-md bg-white/20 text-white font-bold backdrop-blur-xs">72h SLA</span>
-                  <span>Public exploit PoC</span>
-                </div>
-              </div>
-
-              {/* Card 3: MEDIUM */}
-              <div
-                style={{ animationDelay: "0.16s" }}
-                onClick={() => { setTierFilter("MEDIUM"); switchTab("queue"); }}
-                className="sv-card-pop rounded-3xl p-6 bg-gradient-to-br from-[#0F3F6E] via-[#0284C7] to-[#1ABDD6] text-white shadow-[0_12px_30px_rgba(26,189,214,0.24)] hover:-translate-y-1.5 hover:shadow-[0_18px_38px_rgba(26,189,214,0.35)] transition-all duration-300 relative overflow-hidden cursor-pointer group"
-              >
-                <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-white/15 blur-xl pointer-events-none group-hover:scale-125 transition-transform"></div>
-                <div className="flex items-center justify-between gap-2 mb-3 relative z-10">
-                  <span className="text-sm font-semibold text-white/95 whitespace-nowrap">Medium (Open)</span>
-                  <span className="w-8 h-8 rounded-full bg-white text-[#0284C7] flex items-center justify-center shrink-0 group-hover:rotate-45 transition-transform duration-300 shadow-sm">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 17L17 7M7 7h10v10" />
-                    </svg>
-                  </span>
-                </div>
-                <div className="text-5xl font-extrabold tracking-tight mb-4 relative z-10">
-                  {mediumCount}
-                </div>
-                <div className="inline-flex items-center gap-1.5 text-[11px] text-cyan-50 font-semibold relative z-10">
-                  <span className="px-2 py-0.5 rounded-md bg-white/20 text-white font-bold backdrop-blur-xs">14d SLA</span>
-                  <span>Scheduled patch cycle</span>
-                </div>
-              </div>
-
-              {/* Card 4: LOW */}
-              <div
-                style={{ animationDelay: "0.22s" }}
-                onClick={() => { setTierFilter("LOW"); switchTab("queue"); }}
-                className="sv-card-pop rounded-3xl p-6 bg-gradient-to-br from-[#0B3B3C] via-[#0D9488] to-[#00C8A8] text-white shadow-[0_12px_30px_rgba(13,148,136,0.24)] hover:-translate-y-1.5 hover:shadow-[0_18px_38px_rgba(13,148,136,0.35)] transition-all duration-300 relative overflow-hidden cursor-pointer group"
-              >
-                <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-white/15 blur-xl pointer-events-none group-hover:scale-125 transition-transform"></div>
-                <div className="flex items-center justify-between gap-2 mb-3 relative z-10">
-                  <span className="text-sm font-semibold text-white/95 whitespace-nowrap">Low (Open)</span>
-                  <span className="w-8 h-8 rounded-full bg-white text-[#0D9488] flex items-center justify-center shrink-0 group-hover:rotate-45 transition-transform duration-300 shadow-sm">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 17L17 7M7 7h10v10" />
-                    </svg>
-                  </span>
-                </div>
-                <div className="text-5xl font-extrabold tracking-tight mb-4 relative z-10">
-                  {lowCount}
-                </div>
-                <div className="inline-flex items-center gap-1.5 text-[11px] text-emerald-50 font-semibold relative z-10">
-                  <span className="px-2 py-0.5 rounded-md bg-white/20 text-white font-bold backdrop-blur-xs">30d SLA</span>
-                  <span>Internal / non-exploitable</span>
-                </div>
-              </div>
-            </div>
-
-            {/* ROW 2: EXECUTIVE SPLINE AREA ANALYTICS GRAPH (7 COLS) + TOP PRIORITY QUEUE (5 COLS) */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* Col 1 (7 cols): Smooth Dual-Curve Area Analytics Graph */}
-              <div
-                style={{ animationDelay: "0.26s" }}
-                className={`sv-card-pop lg:col-span-7 rounded-3xl p-5 sm:p-6 md:p-7 border flex flex-col justify-between relative overflow-hidden ${subSurfaceCard}`}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                  <div>
-                    <div className="flex items-center gap-2.5">
-                      <h3 className={`text-lg font-extrabold ${headingColor}`}>
-                        Threat Exposure & Remediation Velocity
-                      </h3>
-                      <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-[#00E5C4]/20 text-[#00B89E]">
-                        Live Telemetry
-                      </span>
-                    </div>
-                    <p className={`text-xs mt-0.5 ${mutedText}`}>
-                      30-day correlation between weaponized KEV detections and verified patch mitigations
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-4 text-xs font-semibold">
-                    <span className={`flex items-center gap-1.5 ${darkMode ? "text-white/80" : "text-slate-600"}`}>
-                      <span className="w-3 h-3 rounded-full bg-gradient-to-r from-[#8121D7] to-[#E5007D] inline-block shadow-xs"></span>
-                      Critical / KEV Ingested
-                    </span>
-                    <span className={`flex items-center gap-1.5 ${darkMode ? "text-white/80" : "text-slate-600"}`}>
-                      <span className="w-3 h-3 rounded-full bg-gradient-to-r from-[#00E5C4] to-[#1ABDD6] inline-block shadow-xs"></span>
-                      Remediated Within SLA
-                    </span>
-                  </div>
-                </div>
-
-                {/* Animated SVG Dual-Area Spline Chart */}
-                <div className="relative w-full h-56 my-1">
-                  <svg viewBox="0 0 700 220" className="w-full h-full overflow-visible" preserveAspectRatio="none">
-                    <defs>
-                      <linearGradient id="areaPurple" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#8121D7" stopOpacity="0.38" />
-                        <stop offset="65%" stopColor="#E5007D" stopOpacity="0.10" />
-                        <stop offset="100%" stopColor="#8121D7" stopOpacity="0.0" />
-                      </linearGradient>
-                      <linearGradient id="areaCyan" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#00E5C4" stopOpacity="0.42" />
-                        <stop offset="70%" stopColor="#1ABDD6" stopOpacity="0.12" />
-                        <stop offset="100%" stopColor="#00E5C4" stopOpacity="0.0" />
-                      </linearGradient>
-                      <linearGradient id="linePurple" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#8121D7" />
-                        <stop offset="50%" stopColor="#E5007D" />
-                        <stop offset="100%" stopColor="#8121D7" />
-                      </linearGradient>
-                      <linearGradient id="lineCyan" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#0284C7" />
-                        <stop offset="50%" stopColor="#00E5C4" />
-                        <stop offset="100%" stopColor="#00B89E" />
-                      </linearGradient>
-                    </defs>
-
-                    {[35, 80, 125, 170].map((y, idx) => (
-                      <g key={idx}>
-                        <line
-                          x1="35"
-                          y1={y}
-                          x2="685"
-                          y2={y}
-                          stroke={darkMode ? "rgba(255,255,255,0.08)" : "#E2E8F0"}
-                          strokeDasharray="4 4"
-                          strokeWidth="1"
-                        />
-                        <text x="6" y={y + 4} className="fill-slate-400 text-[10px] font-semibold">
-                          {100 - idx * 25}
-                        </text>
-                      </g>
-                    ))}
-
-                    <path
-                      d="M 40 145 C 110 120, 155 60, 220 78 C 285 95, 330 42, 395 55 C 460 68, 515 115, 575 88 C 620 68, 655 95, 680 105 L 680 190 L 40 190 Z"
-                      fill="url(#areaPurple)"
-                    />
-                    <path
-                      d="M 40 145 C 110 120, 155 60, 220 78 C 285 95, 330 42, 395 55 C 460 68, 515 115, 575 88 C 620 68, 655 95, 680 105"
-                      fill="none"
-                      stroke="url(#linePurple)"
-                      strokeWidth="3.5"
-                      strokeLinecap="round"
-                    />
-
-                    <path
-                      d="M 40 165 C 110 150, 160 110, 220 118 C 285 125, 335 85, 395 72 C 460 58, 515 65, 575 44 C 620 30, 655 38, 680 28 L 680 190 L 40 190 Z"
-                      fill="url(#areaCyan)"
-                    />
-                    <path
-                      d="M 40 165 C 110 150, 160 110, 220 118 C 285 125, 335 85, 395 72 C 460 58, 515 65, 575 44 C 620 30, 655 38, 680 28"
-                      fill="none"
-                      stroke="url(#lineCyan)"
-                      strokeWidth="3.5"
-                      strokeLinecap="round"
-                    />
-
-                    {[
-                      { cx: 220, cy: 78, color: "#E5007D" },
-                      { cx: 395, cy: 55, color: "#8121D7" },
-                      { cx: 575, cy: 44, color: "#00B89E" },
-                      { cx: 680, cy: 28, color: "#00E5C4" },
-                    ].map((pt, i) => (
-                      <g key={i}>
-                        <circle cx={pt.cx} cy={pt.cy} r="6" fill="#fff" stroke={pt.color} strokeWidth="3" />
-                      </g>
-                    ))}
-
-                    <g transform="translate(525, 8)">
-                      <rect x="0" y="0" width="96" height="24" rx="12" fill="#1D0C3B" />
-                      <text x="48" y="15" textAnchor="middle" className="fill-[#00E5C4] text-[10px] font-bold">
-                        +94% SLA Met
-                      </text>
-                    </g>
-
-                    {[
-                      { x: 45, label: "Wk 1" },
-                      { x: 170, label: "Wk 2" },
-                      { x: 295, label: "Wk 3" },
-                      { x: 420, label: "Wk 4" },
-                      { x: 545, label: "Wk 5" },
-                      { x: 665, label: "Now" },
-                    ].map((t, idx) => (
-                      <text
-                        key={idx}
-                        x={t.x}
-                        y="212"
-                        textAnchor="middle"
-                        className="fill-slate-400 text-[11px] font-semibold"
-                      >
-                        {t.label}
-                      </text>
-                    ))}
-                  </svg>
-                </div>
-
-                {/* Bottom KPI Mini-Cards inside Graph Card (Clean 3-Row Stack - Zero Clipping) */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-4">
-                  <div className={`p-4 rounded-2xl border overflow-hidden flex flex-col justify-between gap-1.5 ${itemSurface}`}>
-                    <span className={`text-[11px] font-bold uppercase tracking-wide leading-snug ${mutedText}`}>
-                      Noise Reduction
-                    </span>
-                    <div className={`text-2xl font-extrabold tracking-tight tabular-nums ${headingColor}`}>
-                      85.4%
-                    </div>
-                    <div>
-                      <span className="inline-flex items-center text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#00E5C4]/15 text-[#008B76] dark:text-[#00E5C4]">
-                        Based on backend findings
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className={`p-4 rounded-2xl border overflow-hidden flex flex-col justify-between gap-1.5 ${itemSurface}`}>
-                    <span className={`text-[11px] font-bold uppercase tracking-wide leading-snug ${mutedText}`}>
-                      Mean Time to Triage
-                    </span>
-                    <div className={`text-2xl font-extrabold tracking-tight tabular-nums ${headingColor}`}>
-                      1.8 hrs
-                    </div>
-                    <div>
-                      <span className="inline-flex items-center text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4]">
-                        ⚡ -64% faster
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className={`p-4 rounded-2xl border overflow-hidden flex flex-col justify-between gap-1.5 ${itemSurface}`}>
-                    <span className={`text-[11px] font-bold uppercase tracking-wide leading-snug ${mutedText}`}>
-                      SLA Compliance
-                    </span>
-                    <div className="text-2xl font-extrabold tracking-tight text-[#00B89E] tabular-nums">
-                      99.2%
-                    </div>
-                    <div>
-                      <span className={`inline-flex items-center text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-500/10 ${mutedText}`}>
-                        ⏱ 24h Critical SLA
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Col 2 (5 cols): Streamlined Top Priority Queue */}
-              <div
-                style={{ animationDelay: "0.34s" }}
-                className={`sv-card-pop lg:col-span-5 rounded-3xl p-5 sm:p-6 md:p-7 border flex flex-col justify-between ${subSurfaceCard}`}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-5">
-                    <div>
-                      <h3 className={`text-lg font-extrabold ${headingColor}`}>Priority Queue</h3>
-                      <p className={`text-xs ${mutedText}`}>Click a finding to view the backend scoring explanation</p>
-                    </div>
-                    <button
-                      onClick={() => switchTab("queue")}
-                      className={`text-xs font-bold px-3.5 py-1.5 rounded-full border transition-colors cursor-pointer shrink-0 ${
-                        darkMode
-                          ? "bg-white/5 border-white/15 text-[#00E5C4] hover:bg-[#00E5C4] hover:text-[#120524]"
-                          : "bg-white border-slate-200 text-[#8121D7] hover:bg-[#8121D7] hover:text-white shadow-2xs"
-                      }`}
-                    >
-                      View All →
-                    </button>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    {displayFindings.slice(0, 5).map((f, i) => (
-                        <div
-                          key={f.id}
-                          onClick={() => setSelectedFinding(f)}
-                          className={`flex items-center justify-between gap-3 p-3 rounded-2xl border hover:shadow-sm hover:translate-x-1 transition-all cursor-pointer ${itemSurface}`}
-                        >
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <span
-                              className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-xs font-extrabold shrink-0 shadow-xs ${
-                                i === 0
-                                  ? "bg-gradient-to-br from-[#881365] to-[#E5007D]"
-                                  : i === 1
-                                  ? "bg-gradient-to-br from-[#3B147A] to-[#8121D7]"
-                                  : i === 2
-                                  ? "bg-gradient-to-br from-[#5926B6] to-[#4F46E5]"
-                                  : i === 3
-                                  ? "bg-gradient-to-br from-[#0284C7] to-[#1ABDD6]"
-                                  : "bg-gradient-to-br from-[#0D9488] to-[#00C8A8]"
-                              }`}
-                            >
-                              {f.score}/4
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <p className={`text-xs font-extrabold tracking-tight whitespace-nowrap ${headingColor}`}>
-                                {f.cve_id}
-                              </p>
-                              <p className={`text-[11px] whitespace-nowrap mt-0.5 ${mutedText}`}>
-                                {f.asset_name} • <span className="font-semibold text-[#00B89E]">CVSS {f.cvss_score}</span>
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-end gap-1 shrink-0">
-                            <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4]">
-                              {getTier(f)}
-                            </span>
-                          </div>
-                        </div>
-                    ))}
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => switchTab("scan")}
-                  className="mt-5 w-full py-3 rounded-2xl bg-gradient-to-r from-[#1D0C3B] via-[#4C2396] to-[#00B89E] hover:opacity-95 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
-                >
-                  + Evaluate New CVE Finding
-                </button>
-              </div>
-            </div>
-
-            {/* ROW 3: 7-DAY CAPSULE VELOCITY CHART (7 COLS) + REMEDIATION GAUGE & 2X2 SEVERITY GRID (5 COLS) */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* Col 1 (7 cols): Weekly Ingestion Capsule Chart */}
-              <div
-                style={{ animationDelay: "0.42s" }}
-                className={`sv-card-pop lg:col-span-7 rounded-3xl p-5 sm:p-6 md:p-7 border flex flex-col justify-between ${subSurfaceCard}`}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
-                  <div>
-                    <h3 className={`text-lg font-extrabold ${headingColor}`}>
-                      Weekly Scanner Ingestion
-                    </h3>
-                    <p className={`text-xs ${mutedText}`}>
-                      Daily CVE batch evaluations across Nessus, Qualys & Trivy feeds
-                    </p>
-                  </div>
-                  <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4] flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-[#00E5C4] animate-ping"></span>
-                    Backend data
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-7 gap-3 sm:gap-4 items-end h-48 pt-4 px-1 sm:px-2">
-                  {weeklyBars.map((bar, idx) => (
-                    <div key={idx} className="flex flex-col items-center h-full justify-end group">
-                      <span className="text-[11px] font-extrabold text-[#8121D7] dark:text-[#00E5C4] mb-1.5 opacity-85 group-hover:opacity-100 group-hover:-translate-y-0.5 transition-all">
-                        {bar.label}
-                      </span>
-                      <div
-                        style={{ height: bar.height, animationDelay: `${0.15 + idx * 0.07}s` }}
-                        className={`sv-bar-grow w-full max-w-[48px] rounded-full transition-all duration-300 group-hover:scale-105 ${
-                          bar.type === "purple"
-                            ? "bg-gradient-to-b from-[#8121D7] to-[#4C2396] shadow-md"
-                            : bar.type === "cyan"
-                            ? "bg-gradient-to-b from-[#00E5C4] to-[#1ABDD6] shadow-md"
-                            : bar.type === "deep"
-                            ? "bg-gradient-to-b from-[#2B125A] to-[#E5007D] shadow-md"
-                            : "sv-striped-bar"
-                        }`}
-                      ></div>
-                      <span className={`text-xs font-bold mt-2.5 ${mutedText}`}>{bar.day}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Col 2 (5 cols): Remediation Progress Gauge + Spacious 2x2 Tier Grid */}
-              <div
-                style={{ animationDelay: "0.50s" }}
-                className={`sv-card-pop lg:col-span-5 rounded-3xl p-5 sm:p-6 md:p-7 border flex flex-col justify-between ${subSurfaceCard}`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <h3 className={`text-lg font-extrabold ${headingColor}`}>Remediation Progress</h3>
-                    <p className={`text-xs ${mutedText}`}>Overall SLA mitigation & tier breakdown</p>
-                  </div>
-                  <span className="text-xs font-bold text-[#00B89E] bg-[#00E5C4]/20 px-3 py-1 rounded-full shrink-0">
-                    SLA Healthy
-                  </span>
-                </div>
-
-                {/* Centered Semi-Circle Gauge */}
-                <div className="flex flex-col items-center justify-center my-3">
-                  <svg viewBox="0 0 200 115" className="w-44 h-24 overflow-visible">
-                    <defs>
-                      <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#00E5C4" />
-                        <stop offset="55%" stopColor="#8121D7" />
-                        <stop offset="100%" stopColor="#E5007D" />
-                      </linearGradient>
-                    </defs>
-                    <path
-                      d="M 20 100 A 80 80 0 0 1 180 100"
-                      fill="none"
-                      stroke={darkMode ? "rgba(255,255,255,0.12)" : "#E2E8F0"}
-                      strokeWidth="22"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M 20 100 A 80 80 0 0 1 180 100"
-                      fill="none"
-                      stroke="url(#gaugeGrad)"
-                      strokeWidth="22"
-                      strokeLinecap="round"
-                      strokeDasharray="251.2"
-                      strokeDashoffset={251.2 - (251.2 * completionPct) / 100}
-                      className="sv-gauge-arc"
-                    />
-                  </svg>
-                  <div className="-mt-8 text-center">
-                    <span className={`text-3xl font-extrabold ${headingColor}`}>{completionPct}%</span>
-                    <p className={`text-[11px] font-semibold ${mutedText}`}>Findings Mitigated</p>
-                  </div>
-                </div>
-
-                {/* Spacious 2x2 Grid for Critical, High, Medium, Low */}
-                <div className="grid grid-cols-2 gap-2.5 my-2">
-                  {[
-                    { label: "Critical", count: criticalCount, pct: Math.round((criticalCount / totalCount) * 100), bar: "from-[#881365] to-[#E5007D]", dot: "bg-[#E5007D]" },
-                    { label: "High", count: highCount, pct: Math.round((highCount / totalCount) * 100), bar: "from-[#5926B6] to-[#4F46E5]", dot: "bg-[#6D28D9]" },
-                    { label: "Medium", count: mediumCount, pct: Math.round((mediumCount / totalCount) * 100), bar: "from-[#0284C7] to-[#1ABDD6]", dot: "bg-[#0284C7]" },
-                    { label: "Low", count: lowCount, pct: Math.round((lowCount / totalCount) * 100), bar: "from-[#0D9488] to-[#00C8A8]", dot: "bg-[#0D9488]" },
-                  ].map((row, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() => { setTierFilter(row.label.toUpperCase()); switchTab("queue"); }}
-                      className={`p-3 rounded-2xl border cursor-pointer transition-all ${itemSurface}`}
-                    >
-                      <div className="flex items-center justify-between gap-1 mb-1.5">
-                        <span className="flex items-center gap-1.5 text-xs font-extrabold">
-                          <span className={`w-2 h-2 rounded-full ${row.dot} shrink-0`}></span>
-                          <span className={headingColor}>{row.label}</span>
-                        </span>
-                        <span className={`text-[11px] font-bold tabular-nums whitespace-nowrap ${mutedText}`}>
-                          {row.count} ({row.pct}%)
-                        </span>
-                      </div>
-                      <div className={`w-full h-2 rounded-full overflow-hidden ${darkMode ? "bg-white/10" : "bg-slate-200/80"}`}>
-                        <div
-                          style={{ width: `${Math.max(row.pct, 10)}%` }}
-                          className={`h-full rounded-full bg-gradient-to-r ${row.bar}`}
-                        ></div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className={`w-full flex flex-wrap items-center justify-between gap-2 text-[11px] pt-3 border-t ${darkMode ? "border-white/10 text-white/70" : "border-slate-200/70 text-slate-500"}`}>
-                  <span className="flex items-center gap-1.5 font-semibold whitespace-nowrap">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#00E5C4]"></span>Mitigated ({resolvedCount})
-                  </span>
-                  <span className="flex items-center gap-1.5 font-semibold whitespace-nowrap">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#8121D7]"></span>Open ({totalCount - resolvedCount})
-                  </span>
-                  <span className="text-[#00B89E] font-bold whitespace-nowrap">Total: {totalCount} CVEs</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        <DashboardView {...viewProps} />
 
         {/* =================================================================== */}
         {/* TAB 2: FULL PRIORITY QUEUE TABLE                                    */}
         {/* =================================================================== */}
-        {activeTab === "queue" && (
-          <div key={`queue-${tabAnimKey}`} className={`rounded-3xl p-4 sm:p-6 md:p-8 border sv-tab-transition ${surfaceCard}`}>
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-              <div>
-                <h2 className={`text-2xl font-extrabold ${headingColor}`}>
-                  Priority Queue
-                </h2>
-                <p className={`text-xs ${mutedText}`}>
-                  Click a row to view the backend explanation
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"].map((tier) => (
-                  <button
-                    key={tier}
-                    onClick={() => setTierFilter(tier)}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                      tierFilter === tier
-                        ? "bg-gradient-to-r from-[#8121D7] to-[#1ABDD6] text-white shadow-sm scale-105"
-                        : darkMode
-                        ? "bg-white/10 text-white/70 hover:bg-white/20"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
-                    {tier}
-                  </button>
-                ))}
-                <button
-                  onClick={exportPriorityCsv}
-                  className="ml-1 sm:ml-2 px-4 py-1.5 rounded-full text-xs font-bold bg-[#00E5C4]/15 text-[#00B89E] border border-[#00E5C4]/30 hover:bg-[#00E5C4] hover:text-[#120524] transition-all cursor-pointer"
-                >
-                  ↓ Export CSV
-                </button>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className={`border-b text-[11px] font-bold uppercase tracking-wider ${darkMode ? "border-white/10 text-white/50" : "border-slate-200 text-slate-400"}`}>
-                    <th className="py-3 px-4">CVE ID</th>
-                    <th className="py-3 px-4">Host / Asset</th>
-                    <th className="py-3 px-4">CVSS</th>
-                    <th className="py-3 px-4">Score</th>
-                    <th className="py-3 px-4">Tier</th>
-                    <th className="py-3 px-4">Action</th>
-                  </tr>
-                </thead>
-                <tbody className={`divide-y text-sm ${darkMode ? "divide-white/10" : "divide-slate-100"}`}>
-                  {filteredFindings.map((f, idx) => {
-                    const tier = getTier(f);
-                    const isResolved = (f.status || "OPEN").toUpperCase() === "RESOLVED";
-                    return (
-                      <tr
-                        key={f.id}
-                        onClick={() => setSelectedFinding(f)}
-                        style={{ animationDelay: `${Math.min(idx * 0.03, 0.35)}s` }}
-                        className={`sv-card-pop transition-colors cursor-pointer ${darkMode ? "hover:bg-white/5" : "hover:bg-slate-50/80"}`}
-                      >
-                        <td className={`py-3.5 px-4 font-bold ${headingColor}`}>
-                          {f.cve_id}
-                          <div className={`text-[11px] font-normal ${mutedText}`}>{f.explanation.summary}</div>
-                        </td>
-                        <td className="py-3.5 px-4 font-medium">
-                          {f.asset_name}
-                        </td>
-                        <td className="py-3.5 px-4 font-bold">
-                          {f.cvss_score}
-                        </td>
-                        <td className="py-3.5 px-4 font-extrabold text-[#00B89E]">
-                          {f.score}/4
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span
-                            className={`text-[11px] font-extrabold px-2.5 py-1 rounded-full text-white ${
-                              tier === "CRITICAL"
-                                ? "bg-gradient-to-r from-[#881365] to-[#E5007D]"
-                                : tier === "HIGH"
-                                ? "bg-gradient-to-r from-[#5926B6] to-[#4F46E5]"
-                                : tier === "MEDIUM"
-                                ? "bg-gradient-to-r from-[#0284C7] to-[#1ABDD6]"
-                                : "bg-gradient-to-r from-[#0D9488] to-[#00C8A8]"
-                            }`}
-                          >
-                            {tier}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            onClick={() => toggleFindingStatus(f)}
-                            className={`text-xs font-bold px-3 py-1 rounded-full border cursor-pointer transition-all ${
-                              isResolved
-                                ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30"
-                                : darkMode
-                                ? "bg-white/5 text-white border-white/20 hover:border-[#00E5C4]"
-                                : "bg-white text-slate-700 border-slate-300 hover:border-[#8121D7]"
-                            }`}
-                          >
-                            {isResolved ? "Resolved ✓" : "Mark Resolved"}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        <FindingsView {...viewProps} />
 
         {/* =================================================================== */}
         {/* TAB 3: NEW SCAN EVALUATION                                          */}
         {/* =================================================================== */}
-        {activeTab === "scan" && (
-          <div key={`scan-${tabAnimKey}`} className={`rounded-3xl p-6 md:p-8 border max-w-2xl sv-tab-transition ${surfaceCard}`}>
-            <h2 className={`text-2xl font-extrabold mb-1 ${headingColor}`}>
-              Evaluate New Vulnerability Scan
-            </h2>
-            <p className={`text-xs mb-6 ${mutedText}`}>
-              Submit vulnerability inputs to the backend scoring engine. Exposure and criticality come from the selected asset.
-            </p>
-            <form onSubmit={handleCreateScan} noValidate className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className={`block text-xs font-bold mb-1 ${headingColor}`}>CVE Identifier</label>
-                  <input
-                    type="text"
-                    value={scanCve}
-                    onChange={(e) => setScanCve(e.target.value)}
-                    className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:border-[#00E5C4] ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className={`block text-xs font-bold mb-1 ${headingColor}`}>Asset</label>
-                  <select
-                    value={scanAssetId}
-                    onChange={(e) => setScanAssetId(e.target.value)}
-                    className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:border-[#00E5C4] ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-                    required
-                  >
-                    <option value="">Select an asset</option>
-                    {assets.map((asset) => (
-                      <option key={asset.id} value={asset.id}>
-                        {asset.name} ({asset.exposure}, criticality {asset.criticality})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className={`block text-xs font-bold mb-1 ${headingColor}`}>CVSS (0-10)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="10"
-                    value={scanCvss}
-                    onChange={(e) => setScanCvss(e.target.value)}
-                    className={`w-full px-3 py-2.5 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-                  />
-                </div>
-                <div>
-                  <label className={`block text-xs font-bold mb-1 ${headingColor}`}>EPSS Percentile (0-1)</label>
-                  <input
-                    type="number"
-                    step="0.000001"
-                    min="0"
-                    max="1"
-                    value={scanEpss}
-                    onChange={(e) => setScanEpss(e.target.value)}
-                    className={`w-full px-3 py-2.5 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-                  />
-                </div>
-                <div>
-                  <label className={`block text-xs font-bold mb-1 ${headingColor}`}>CISA KEV</label>
-                  <select
-                    value={scanKev ? "true" : "false"}
-                    onChange={(e) => setScanKev(e.target.value === "true")}
-                    className={`w-full px-3 py-2.5 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-                  >
-                    <option value="false">No</option>
-                    <option value="true">Yes</option>
-                  </select>
-                </div>
-              </div>
-              <button
-                type="submit"
-                className="px-6 py-3 rounded-full bg-gradient-to-r from-[#8121D7] to-[#00B89E] text-white font-bold text-xs shadow-md hover:opacity-95 hover:scale-105 transition-all cursor-pointer"
-              >
-                Score with backend
-              </button>
-            </form>
-          </div>
-        )}
+        <ScanView {...viewProps} />
 
         {/* =================================================================== */}
         {/* TAB 4: IMPORT CSV                                                   */}
         {/* =================================================================== */}
-        {activeTab === "import" && (
-          <div key={`import-${tabAnimKey}`} className={`rounded-3xl p-6 md:p-8 border max-w-2xl sv-tab-transition ${surfaceCard}`}>
-            <h2 className={`text-2xl font-extrabold mb-1 ${headingColor}`}>
-              Bulk Scanner CSV Ingestion
-            </h2>
-            <p className={`text-xs mb-6 ${mutedText}`}>
-              Upload a supported scanner CSV to score findings through the backend.
-            </p>
-            <form onSubmit={handleCsvPreview} className="space-y-4">
-              <div className={`border-2 border-dashed border-[#8121D7]/40 hover:border-[#00B89E] transition-colors rounded-2xl p-8 text-center ${subSurfaceCard}`}>
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={(e) => {
-                    setCsvFile(e.target.files ? e.target.files[0] : null);
-                    setImportPreview(null);
-                  }}
-                  className={`text-sm ${mutedText}`}
-                />
-                <p className={`text-xs mt-2 ${mutedText}`}>
-                  Required columns: asset_name, cve_id, date_found (YYYY-MM-DD)
-                </p>
-              </div>
-              <button
-                type="submit"
-                className="px-6 py-3 rounded-full bg-gradient-to-r from-[#8121D7] to-[#1ABDD6] text-white font-bold text-xs shadow-md hover:scale-105 transition-all cursor-pointer"
-              >
-                Preview CSV
-              </button>
-            </form>
-            {importPreview && (
-              <div className="mt-6 space-y-4">
-                <p className={`text-sm font-bold ${headingColor}`}>
-                  {importPreview.summary.total} rows: {importPreview.summary.ok} valid, {importPreview.summary.error} errors, {importPreview.summary.duplicate} duplicates
-                </p>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className={mutedText}>
-                      <tr>
-                        <th className="p-2">Line</th>
-                        <th className="p-2">Asset</th>
-                        <th className="p-2">CVE</th>
-                        <th className="p-2">Date</th>
-                        <th className="p-2">Status</th>
-                        <th className="p-2">Details</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {importPreview.rows.map((row) => (
-                        <tr key={row.line} className="border-t border-slate-200/30">
-                          <td className="p-2">{row.line}</td>
-                          <td className="p-2">{row.asset_name}</td>
-                          <td className="p-2">{row.cve_id}</td>
-                          <td className="p-2">{row.date_found}</td>
-                          <td className="p-2">{row.status}</td>
-                          <td className="p-2">{row.reason}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleCsvCommit}
-                  className="px-6 py-3 rounded-full bg-gradient-to-r from-[#8121D7] to-[#00B89E] text-white font-bold text-xs shadow-md hover:scale-105 transition-all cursor-pointer"
-                >
-                  Commit Import
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        <ImportView {...viewProps} />
 
         {/* =================================================================== */}
         {/* TAB 5: ASSETS INVENTORY                                             */}
         {/* =================================================================== */}
-        {activeTab === "assets" && (
-          <div key={`assets-${tabAnimKey}`} className={`rounded-3xl p-6 md:p-8 border space-y-6 sv-tab-transition ${surfaceCard}`}>
-            <h2 className={`text-2xl font-extrabold ${headingColor}`}>
-              Enterprise Asset Inventory
-            </h2>
-            <form onSubmit={handleCreateAsset} className={`grid grid-cols-1 sm:grid-cols-5 gap-3 p-4 rounded-2xl border ${subSurfaceCard}`}>
-              <input
-                type="text"
-                placeholder="Hostname (e.g. db-prod-01)"
-                value={assetHost}
-                onChange={(e) => setAssetHost(e.target.value)}
-                className={`px-3.5 py-2 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-                required
-              />
-              <select
-                value={assetExposure}
-                onChange={(e) => setAssetExposure(e.target.value)}
-                className={`px-3.5 py-2 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-              >
-                <option value="internet">Internet-Facing</option>
-                <option value="internal">Internal</option>
-              </select>
-              <select
-                value={assetCrit}
-                onChange={(e) => setAssetCrit(e.target.value)}
-                className={`px-3.5 py-2 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-              >
-                <option value="5">Criticality Tier 5</option>
-                <option value="4">Criticality Tier 4</option>
-                <option value="3">Criticality Tier 3</option>
-              </select>
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#8121D7] to-[#1ABDD6] text-white font-bold text-xs cursor-pointer"
-              >
-                + Register Asset
-              </button>
-            </form>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {assets.map((a, idx) => (
-                <div
-                  key={a.id}
-                  style={{ animationDelay: `${idx * 0.06}s` }}
-                  className={`sv-card-pop p-5 rounded-2xl border hover:-translate-y-1 transition-all flex items-center justify-between ${subSurfaceCard}`}
-                >
-                  <div>
-                    <p className={`font-bold text-sm ${headingColor}`}>{a.name}</p>
-                    <p className={`text-xs ${mutedText}`}>{a.exposure}</p>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4]">
-                    Tier {a.criticality}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <AssetsView {...viewProps} />
 
         {/* =================================================================== */}
         {/* TAB 6: AUDIT LOG                                                    */}
         {/* =================================================================== */}
-        {activeTab === "audit" && role === "admin" && (
-          <div key={`audit-${tabAnimKey}`} className={`rounded-3xl p-6 md:p-8 border sv-tab-transition ${surfaceCard}`}>
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
-              <div>
-                <h2 className={`text-2xl font-extrabold ${headingColor}`}>
-                  Immutable Security Audit Log
-                </h2>
-                <p className={`text-xs ${mutedText}`}>
-                  Cryptographically verifiable operator and backend scoring trail
-                </p>
-              </div>
-              <button
-                onClick={exportExecutiveReport}
-                className="px-4 py-2 rounded-full text-xs font-bold bg-gradient-to-r from-[#8121D7] to-[#00B89E] text-white shadow-sm cursor-pointer"
-              >
-                ↓ Download Executive Audit Report
-              </button>
-            </div>
-            <div className="space-y-2.5">
-              {auditLogs.map((log, idx) => (
-                <div
-                  key={log.id}
-                  style={{ animationDelay: `${idx * 0.06}s` }}
-                  className={`sv-card-pop p-4 rounded-2xl border transition-all flex items-center justify-between text-xs ${subSurfaceCard}`}
-                >
-                  <div>
-                    <span className="font-extrabold text-[#00B89E] mr-2">[{log.action}]</span>
-                    <span className={`font-semibold ${headingColor}`}>{log.user}</span>
-                    <span className={`ml-2 ${mutedText}`}>{log.details}</span>
-                  </div>
-                  <span className={mutedText}>{log.timestamp || "Recorded"}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <AuditView {...viewProps} />
 
         {/* =================================================================== */}
         {/* TAB 7: USERS (RBAC)                                                 */}
         {/* =================================================================== */}
-        {activeTab === "users" && role === "admin" && (
-          <div key={`users-${tabAnimKey}`} className={`rounded-3xl p-6 md:p-8 border space-y-6 sv-tab-transition ${surfaceCard}`}>
-            <h2 className={`text-2xl font-extrabold ${headingColor}`}>
-              Role-Based Access Control (RBAC)
-            </h2>
-            <form onSubmit={handleCreateUser} className={`grid grid-cols-1 sm:grid-cols-4 gap-3 p-4 rounded-2xl border ${subSurfaceCard}`}>
-              <input
-                type="text"
-                placeholder="New Operator Username"
-                value={newUsername}
-                onChange={(e) => setNewUsername(e.target.value)}
-                className={`px-3.5 py-2 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-                required
-              />
-              <input
-                type="password"
-                placeholder="Temporary Password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className={`px-3.5 py-2 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-                required
-              />
-              <select
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value)}
-                className={`px-3.5 py-2 rounded-xl border text-sm ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
-              >
-                <option value="admin">Admin (Full Control)</option>
-                <option value="analyst">Analyst (Triage & Scan)</option>
-                <option value="viewer">Viewer (Read-Only Audit)</option>
-              </select>
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#8121D7] to-[#00B89E] text-white font-bold text-xs cursor-pointer"
-              >
-                + Provision Operator
-              </button>
-            </form>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {users.map((u, idx) => (
-                <div
-                  key={u.id}
-                  style={{ animationDelay: `${idx * 0.06}s` }}
-                  className={`sv-card-pop p-5 rounded-2xl border hover:-translate-y-1 transition-all flex items-center justify-between ${subSurfaceCard}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#8121D7] to-[#00E5C4] text-white font-bold text-xs flex items-center justify-center">
-                      {u.username.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className={`font-bold text-sm ${headingColor}`}>{u.username}</p>
-                      <p className={`text-[11px] ${mutedText}`}>JWT Authenticated</p>
-                    </div>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold uppercase bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4]">
-                    {u.role}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <UsersView {...viewProps} />
       </div>
 
       {/* MOBILE & TABLET BOTTOM NAVIGATION BAR (< lg) */}
@@ -2079,80 +626,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
       </nav>
 
       {/* Backend scoring explanation drawer */}
-      {selectedFinding && (() => {
-        const tier = getTier(selectedFinding);
-        const isResolved = selectedFinding.status.toUpperCase() === "RESOLVED";
-        return (
-          <div
-            onClick={() => setSelectedFinding(null)}
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-end"
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="sv-drawer-enter w-full max-w-lg bg-gradient-to-b from-[#1D0C3B] via-[#15082E] to-[#0B031D] text-white h-full p-6 md:p-8 overflow-y-auto border-l border-white/15 shadow-2xl flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between pb-4 border-b border-white/10">
-                  <div className="flex items-center gap-2.5">
-                    <span className="px-2.5 py-1 rounded-md bg-[#00E5C4]/15 text-[#00E5C4] border border-[#00E5C4]/30 font-mono text-xs font-extrabold">
-                      Backend scoring explanation
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setSelectedFinding(null)}
-                    className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                <div className="mt-6">
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-2xl font-extrabold tracking-tight text-white">
-                      {selectedFinding.cve_id}
-                    </h2>
-                    <span className="text-3xl font-extrabold text-[#00E5C4]">
-                      {selectedFinding.score}<span className="text-xs text-white/50">/4</span>
-                    </span>
-                  </div>
-                  <p className="text-sm text-white/75 mt-1">{selectedFinding.asset_name}</p>
-                  <span className="mt-3 inline-flex text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#E5007D]/25 text-pink-200 border border-[#E5007D]/40">
-                    Priority: {tier}
-                  </span>
-                </div>
-
-                <section className="mt-6 bg-white/5 border border-white/10 rounded-2xl p-5">
-                  <p className="text-sm text-white/90 leading-relaxed">
-                    {selectedFinding.explanation.summary}
-                  </p>
-                  <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                    <div><dt className="text-white/50">KEV</dt><dd>{selectedFinding.explanation.inputs.in_kev ? "Yes" : "No"}</dd></div>
-                    <div><dt className="text-white/50">Internet-facing</dt><dd>{selectedFinding.explanation.inputs.internet_facing ? "Yes" : "No"}</dd></div>
-                    <div><dt className="text-white/50">Criticality</dt><dd>{selectedFinding.explanation.inputs.criticality}/5</dd></div>
-                    <div><dt className="text-white/50">EPSS percentile</dt><dd>{selectedFinding.explanation.inputs.epss_percentile ?? "Missing"}</dd></div>
-                    <div><dt className="text-white/50">CVSS</dt><dd>{selectedFinding.explanation.inputs.cvss_score ?? "Missing"}</dd></div>
-                  </dl>
-                </section>
-              </div>
-
-              <div className="pt-6 border-t border-white/10 flex gap-3 mt-6">
-                <button
-                  onClick={() => toggleFindingStatus(selectedFinding)}
-                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-[#8121D7] to-[#00B89E] text-white font-bold text-xs shadow-lg cursor-pointer"
-                >
-                  {isResolved ? "Reopen Finding" : "Mark Finding Resolved ✓"}
-                </button>
-                <button
-                  onClick={() => setSelectedFinding(null)}
-                  className="px-5 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      <FindingDetailsDrawer {...viewProps} />
 
       {/* INTERACTIVE COMMAND PALETTE MODAL (⌘F / Ctrl+K) */}
       {cmdOpen && (

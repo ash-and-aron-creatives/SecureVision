@@ -20,6 +20,14 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
 
+## SecureVision frontend layout
+
+- `src/components/` contains the login, dashboard, findings, scan, import, assets, audit, and users views.
+- `src/hooks/` contains the corresponding UI state and feature workflows.
+- `src/api/` contains the shared request client and feature endpoint functions.
+- `src/types/` contains API models and view prop types.
+- `src/app/SecureApp.tsx` composes the feature views into the application shell.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
