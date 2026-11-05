@@ -1,6 +1,13 @@
 import datetime as dt
 import pytest
-from backend.csv_import import (ImportFileError, MAX_BYTES, parse_and_validate, problems_to_csv, safe_cell)
+from backend.csv_import import (
+    ImportFileError,
+    MAX_BYTES,
+    MAX_ROWS,
+    parse_and_validate,
+    problems_to_csv,
+    safe_cell,
+)
 
 ASSETS = {"Payment-DB": 1, "Public Website": 2}
 TODAY = dt.date(2026, 10, 12)
@@ -39,6 +46,28 @@ def test_limits_and_encoding():
     with pytest.raises(ImportFileError, match="UTF-8"): parse_and_validate("asset_name,cve_id,date_found\n\xe9".encode("latin-1"), ASSETS, set(), TODAY)
     with pytest.raises(ImportFileError, match="5,000"): run("asset_name,cve_id,date_found\n" + "Payment-DB,CVE-2021-44228,2026-10-01\n" * 5001)
     with pytest.raises(ImportFileError, match="empty"): run("")
+
+def test_accepts_csv_at_exact_byte_and_row_limits():
+    header = b"asset_name,cve_id,date_found,notes\n"
+    row_prefix = b"Payment-DB,CVE-2021-44228,2026-10-01,"
+    padding = MAX_BYTES - len(header) - MAX_ROWS * (len(row_prefix) + 1)
+    padding_per_row, extra_padding = divmod(padding, MAX_ROWS)
+    data_rows = (
+        row_prefix + b"x" * (padding_per_row + (index < extra_padding)) + b"\n"
+        for index in range(MAX_ROWS)
+    )
+    data = header + b"".join(data_rows)
+
+    assert len(data) == MAX_BYTES
+    rows, summary = parse_and_validate(data, ASSETS, set(), TODAY)
+
+    assert len(rows) == MAX_ROWS
+    assert summary == {
+        "total": MAX_ROWS,
+        "ok": 1,
+        "error": 0,
+        "duplicate": MAX_ROWS - 1,
+    }
 
 def test_error_report_blocks_formula_injection():
     rows, _ = run("asset_name,cve_id,date_found\n=HYPERLINK(\"http://x\"),CVE-2021-44228,2026-10-01\n")

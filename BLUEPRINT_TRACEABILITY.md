@@ -1,12 +1,13 @@
-# SecureVision ? Master Blueprint Traceability Matrix
+# SecureVision Blueprint Traceability
 
-| Blueprint Requirement | Backend Implementation | Frontend View / Hook | Automated Verification (`pytest`) |
-| :--- | :--- | :--- | :--- |
-| **Core: 320-Rule Deterministic Scoring Engine** | `backend/scoring_engine.py` (`calculate_priority`, 320 combinations) | Dashboard Queue & Provenance Modal (`selectedFinding`) | `test_scoring.py::test_scoring_monotonicity_and_exhaustiveness` (1/1) |
-| **Auth: JWT & Bcrypt Authentication** | `backend/auth.py` (`os.getenv("SECRET_KEY")`, `/token`) | Login Screen (`handleLogin`, Bearer token header) | `test_auth.py` (3/3: hashing, login 200/401, missing/invalid JWT 401) |
-| **Step 1: Batch CSV Import & Validation** | `backend/csv_import.py` (`/imports/preview`, `/imports/commit`, 2MB/1000-row limits, BOM, formula guard) | `view === "import"` (2-step Preview & Commit wizard) | `test_csv_import.py` (8/8 tests) |
-| **Step 2: Prioritized Queue & Triage** | `backend/main.py` (`GET /findings`, ` GET /findings/{id}`, `PUT /findings/{id}/status`) | `view === "dashboard"` (Filter bar, Queue table, Explain modal) | `test_findings_api.py` (4/4 tests) |
-| **Step 3: Executive PDF & CSV Reports** | `backend/reports.py` (`/reports/findings.csv`, `/reports/executive.pdf`, SHA-256 digest) | Dashboard Export CSV & Export PDF buttons | `test_reports.py` (6/6 tests) |
-| **Step 4: Admin RBAC & User Management** | `backend/users.py` (`/users` CRUD, self-demotion/deletion guards, role matrix) | `view === "users"` (Admin RBAC management table) | `test_users_rbac.py` (4/4 tests) |
-| **Security: True Audit Trail Immutability** | `backend/models.py` (ORM listeners) + `backend/database.py` (SQLite `BEFORE UPDATE/DELETE` triggers) | `view === "audit"` (Chronological security audit table) | `test_scan_assets_audit.py` (3/3 tests) |
-| **Demo Readiness: Pre-Seeded Dataset** | `seed_db.py` & `securevision.db` (Enterprise assets + realistic CVEs) | Populated immediately on login | Verified live at `http://localhost:3000` |
+| Requirement | Backend implementation | Frontend surface | Automated verification |
+|---|---|---|---|
+| Deterministic vulnerability scoring | `backend/scoring_engine.py` (`calculate_priority`) evaluates KEV, exposure, criticality, EPSS, and CVSS. | Dashboard and finding detail explain the tier, score, and scoring inputs. | `backend/tests/test_scoring.py::test_scoring_matches_documented_expected_tier_table` checks all 320 rows in `docs/scoring_matrix_v1.csv`; `test_scoring_epss_boundaries` and `test_scoring_cvss_boundaries` check band boundaries. |
+| JWT authentication and PBKDF2-HMAC-SHA256 password hashing | `backend/auth.py` hashes passwords with PBKDF2-HMAC-SHA256, not bcrypt, and signs JWTs with the configured `SECRET_KEY`. | `frontend/src/app/SecureApp.tsx` login flow. | `backend/tests/test_auth.py` covers password hashing, configured signing keys, login, rejected tokens, and configured CORS origins. |
+| Initial administrator setup and password rotation | `init_db.py` creates the `admin` account from `ADMIN_INITIAL_PASSWORD` if it does not exist; `update_admin.py` rotates its password and records an audit event. | The login form accepts the administrator's credentials. | `backend/tests/test_auth.py` covers password hashing and login; the scripts provide the bootstrap and rotation paths. |
+| Batch CSV import and validation | `backend/csv_import.py` validates UTF-8 CSVs up to 5 MiB (5 × 1024 × 1024 bytes) and 5,000 data rows; `backend/main.py` exposes preview and commit endpoints. | `SecureApp.tsx` provides CSV preview, validation results, and commit. | `backend/tests/test_csv_import.py::test_limits_and_encoding` checks over-limit rejection; `test_accepts_csv_at_exact_byte_and_row_limits` checks acceptance at both limits. |
+| Finding queue and triage | `backend/main.py` provides paginated, filtered findings, finding details, and status updates. | Dashboard and Queue tabs in `SecureApp.tsx`. | `backend/tests/test_findings_api.py`. |
+| Findings and executive reports | `backend/reports.py` provides CSV and PDF report endpoints. | Finding export actions in `SecureApp.tsx`. | `backend/tests/test_reports.py`. |
+| Role-based user management | `backend/users.py` provides user management endpoints with role and self-management checks. | Admin-only Users tab in `SecureApp.tsx`. | `backend/tests/test_users_rbac.py`. |
+| Audit trail | `backend/models.py` and `backend/database.py` enforce audit-record immutability for SQLite; administrative actions are recorded by the backend. | Admin-only Audit tab in `SecureApp.tsx`. | `backend/tests/test_scan_assets_audit.py`. |
+| Seeded demonstration data | `seed_db.py` populates the configured database with demonstration data. | Findings and assets appear in the application after sign-in. | Seed data is provided by the script; this is not represented as an automated pytest assertion. |
