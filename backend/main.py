@@ -160,7 +160,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
 
     cve_clean = req.cve_id.strip().upper()
     if not CVE_ID_PATTERN.fullmatch(cve_clean):
-        raise HTTPException(status_code=400, detail="cve_id must look like CVE-2021-44228.")
+        raise HTTPException(status_code=422, detail="cve_id must look like CVE-2021-44228.")
     cvss_score = req.cvss_score
     epss_percentile = req.epss_percentile
     if cvss_score is None or epss_percentile is None:

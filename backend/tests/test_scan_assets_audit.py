@@ -84,7 +84,7 @@ def test_manual_scan_rejects_empty_or_invalid_cve(env):
             },
             headers=h,
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
 
 
 def test_scan_does_not_score_when_required_intel_is_unavailable(env, monkeypatch):
