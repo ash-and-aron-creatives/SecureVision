@@ -1,0 +1,22 @@
+* text=auto
+
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+*.gz binary
+*.joblib binary
+*.pkl binary
+*.pickle binary
+*.zip binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.xlsx binary
