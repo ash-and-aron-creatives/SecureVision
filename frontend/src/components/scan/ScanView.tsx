@@ -3,12 +3,12 @@ import type { SecureAppViewProps } from "@/types/views";
 
 export function ScanView(props: SecureAppViewProps) {
   const {
-    activeTab, tabAnimKey, surfaceCard, headingColor, mutedText,
+    activeTab, tabAnimKey, surfaceCard, headingColor, mutedText, role,
     darkMode, handleCreateScan, scanCve, setScanCve, scanAssetId,
     setScanAssetId, assets, scanCvss, setScanCvss, scanEpss,
     setScanEpss, scanKev, setScanKev,
   } = props;
-  return (activeTab === "scan" && (
+  return (activeTab === "scan" && (role === "admin" || role === "analyst") && (
           <div key={`scan-${tabAnimKey}`} className={`rounded-3xl p-6 md:p-8 border max-w-2xl sv-tab-transition ${surfaceCard}`}>
             <h2 className={`text-2xl font-extrabold mb-1 ${headingColor}`}>
               Evaluate New Vulnerability Scan

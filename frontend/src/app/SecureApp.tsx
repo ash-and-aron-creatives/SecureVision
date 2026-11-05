@@ -184,8 +184,10 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   const menuItems = [
     { id: "dashboard", label: "Dashboard", badge: null, icon: "grid" },
     { id: "queue", label: "Priority Queue", badge: `${criticalCount + highCount}+`, icon: "tasks" },
-    { id: "scan", label: "New Scan", badge: null, icon: "scan" },
-    { id: "import", label: "Import CSV", badge: null, icon: "upload" },
+    ...(role === "admin" || role === "analyst" ? [
+      { id: "scan", label: "New Scan", badge: null, icon: "scan" },
+      { id: "import", label: "Import CSV", badge: null, icon: "upload" },
+    ] : []),
     { id: "assets", label: "Assets", badge: null, icon: "server" },
     ...(role === "admin" ? [
       { id: "audit", label: "Audit Log", badge: null, icon: "shield" },
@@ -601,7 +603,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
         {[
           { id: "dashboard", label: "Dashboard" },
           { id: "queue", label: "Queue" },
-          { id: "scan", label: "Scan" },
+          ...(role === "admin" || role === "analyst" ? [{ id: "scan", label: "Scan" }] : []),
           { id: "assets", label: "Assets" },
           ...(role === "admin" ? [{ id: "audit", label: "Audit" }] : []),
         ].map((tab) => {

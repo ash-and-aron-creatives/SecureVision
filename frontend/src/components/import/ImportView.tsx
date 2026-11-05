@@ -3,11 +3,11 @@ import type { SecureAppViewProps } from "@/types/views";
 
 export function ImportView(props: SecureAppViewProps) {
   const {
-    activeTab, tabAnimKey, surfaceCard, headingColor, mutedText,
+    activeTab, tabAnimKey, surfaceCard, headingColor, mutedText, role,
     subSurfaceCard, handleCsvPreview, setCsvFile, setImportPreview, importPreview,
     handleCsvCommit,
   } = props;
-  return (activeTab === "import" && (
+  return (activeTab === "import" && (role === "admin" || role === "analyst") && (
           <div key={`import-${tabAnimKey}`} className={`rounded-3xl p-6 md:p-8 border max-w-2xl sv-tab-transition ${surfaceCard}`}>
             <h2 className={`text-2xl font-extrabold mb-1 ${headingColor}`}>
               Bulk Scanner CSV Ingestion

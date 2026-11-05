@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import hashlib
+import os
 import re
 
 from backend import models, auth
@@ -27,7 +28,21 @@ from backend.schemas import (
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="SecureVision Backend API")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Disposition", "X-Content-SHA256", "X-Row-Count"])
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+if "*" in cors_origins:
+    raise RuntimeError("CORS_ORIGINS must contain explicit origins, not '*'.")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Content-SHA256", "X-Row-Count"],
+)
 app.include_router(reports_router)
 app.include_router(users_router)
 

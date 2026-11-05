@@ -558,7 +558,7 @@ export default function LandingFlow() {
                 </span>
                 <h3 className="text-2xl font-bold mt-4 mb-3">Eliminate 85% of Alert Noise</h3>
                 <p className="text-white/70 text-sm leading-relaxed mb-6">
-                  Traditional CVSS-only sorting floods teams with thousands of "High" vulnerabilities that have zero public exploit code and sit on isolated internal networks. SecureVision isolates the 3/5% of findings that represent imminent breach pathways.
+                  Traditional CVSS-only sorting floods teams with thousands of &quot;High&quot; vulnerabilities that have zero public exploit code and sit on isolated internal networks. SecureVision isolates the 3/5% of findings that represent imminent breach pathways.
                 </p>
               </div>
               <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/10 text-center">

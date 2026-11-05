@@ -1,10 +1,27 @@
 # Python / Environment
+.venv/
 venv/
 __pycache__/
+.pytest_cache/
 *.pyc
+
+# Frontend
+node_modules/
+.next/
 
 # Data (Strictly do not commit raw or processed datasets)
 data/
 
 # Environment variables
 .env
+.env.*
+!.env.example
+
+# Local databases
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3

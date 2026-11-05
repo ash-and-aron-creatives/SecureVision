@@ -3,7 +3,7 @@ import type { SecureAppViewProps } from "@/types/views";
 
 export function FindingDetailsDrawer(props: SecureAppViewProps) {
   const {
-    getTier, toggleFindingStatus, selectedFinding, setSelectedFinding,
+    getTier, toggleFindingStatus, selectedFinding, setSelectedFinding, role,
   } = props;
   return (selectedFinding && (() => {
         const tier = getTier(selectedFinding);
@@ -62,12 +62,14 @@ export function FindingDetailsDrawer(props: SecureAppViewProps) {
               </div>
 
               <div className="pt-6 border-t border-white/10 flex gap-3 mt-6">
-                <button
-                  onClick={() => toggleFindingStatus(selectedFinding)}
-                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-[#8121D7] to-[#00B89E] text-white font-bold text-xs shadow-lg cursor-pointer"
-                >
-                  {isResolved ? "Reopen Finding" : "Mark Finding Resolved ✓"}
-                </button>
+                {(role === "admin" || role === "analyst") && (
+                  <button
+                    onClick={() => toggleFindingStatus(selectedFinding)}
+                    className="flex-1 py-3 rounded-xl bg-gradient-to-r from-[#8121D7] to-[#00B89E] text-white font-bold text-xs shadow-lg cursor-pointer"
+                  >
+                    {isResolved ? "Reopen Finding" : "Mark Finding Resolved ✓"}
+                  </button>
+                )}
                 <button
                   onClick={() => setSelectedFinding(null)}
                   className="px-5 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs cursor-pointer"

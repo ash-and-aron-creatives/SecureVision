@@ -1,22 +1,32 @@
-from backend.database import SessionLocal, init_db
-from backend.models import User, LikelihoodProvider
-from backend.auth import get_password_hash
-import sys
+from backend.database import Base, SessionLocal, engine
+from backend.models import AuditLog, User
+from backend.auth import get_initial_admin_password, get_password_hash
 
 def seed_database():
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
     try:
-        init_db()
-        db = SessionLocal()
-        admin_user = User(username="admin", hashed_password=get_password_hash("password123"), role="admin")
-        db.add(admin_user)
-        provider = LikelihoodProvider(name="EPSS+KEV", version="1.0", is_default=True)
-        db.add(provider)
-        db.commit()
+        admin_user = db.query(User).filter(User.username == "admin").first()
+        if admin_user is None:
+            admin_user = User(
+                username="admin",
+                hashed_password=get_password_hash(get_initial_admin_password()),
+                role="admin",
+            )
+            db.add(admin_user)
+            db.flush()
+            db.add(
+                AuditLog(
+                    action="ADMIN_BOOTSTRAPPED",
+                    details="Initial administrator account created from deployment configuration.",
+                )
+            )
+            db.commit()
+            print("Database initialized. Initial admin created.")
+        else:
+            print("Database initialized. Admin already exists; use update_admin.py to rotate its password.")
+    finally:
         db.close()
-        print("Database Initialized Successfully. Admin created.")
-    except Exception as e:
-        print(f"DATABASE INIT ERROR: {e}")
-        sys.exit(1)
 
 if __name__ == "__main__":
     seed_database()

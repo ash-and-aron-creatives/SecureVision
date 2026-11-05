@@ -5,7 +5,7 @@ export function FindingsView(props: SecureAppViewProps) {
   const {
     activeTab, tabAnimKey, surfaceCard, headingColor, mutedText,
     darkMode, getTier, setTierFilter, tierFilter, exportPriorityCsv,
-    filteredFindings, toggleFindingStatus, setSelectedFinding,
+    filteredFindings, toggleFindingStatus, setSelectedFinding, role,
   } = props;
   return (activeTab === "queue" && (
           <div key={`queue-${tabAnimKey}`} className={`rounded-3xl p-4 sm:p-6 md:p-8 border sv-tab-transition ${surfaceCard}`}>
@@ -95,18 +95,20 @@ export function FindingsView(props: SecureAppViewProps) {
                           </span>
                         </td>
                         <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            onClick={() => toggleFindingStatus(f)}
-                            className={`text-xs font-bold px-3 py-1 rounded-full border cursor-pointer transition-all ${
-                              isResolved
-                                ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30"
-                                : darkMode
-                                ? "bg-white/5 text-white border-white/20 hover:border-[#00E5C4]"
-                                : "bg-white text-slate-700 border-slate-300 hover:border-[#8121D7]"
-                            }`}
-                          >
-                            {isResolved ? "Resolved ✓" : "Mark Resolved"}
-                          </button>
+                          {(role === "admin" || role === "analyst") && (
+                            <button
+                              onClick={() => toggleFindingStatus(f)}
+                              className={`text-xs font-bold px-3 py-1 rounded-full border cursor-pointer transition-all ${
+                                isResolved
+                                  ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30"
+                                  : darkMode
+                                  ? "bg-white/5 text-white border-white/20 hover:border-[#00E5C4]"
+                                  : "bg-white text-slate-700 border-slate-300 hover:border-[#8121D7]"
+                              }`}
+                            >
+                              {isResolved ? "Resolved ✓" : "Mark Resolved"}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );

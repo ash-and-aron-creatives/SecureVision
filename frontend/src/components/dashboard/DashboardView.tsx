@@ -7,7 +7,7 @@ export function DashboardView(props: SecureAppViewProps) {
     switchTab, darkMode, exportExecutiveReport, criticalCount, highCount,
     mediumCount, lowCount, subSurfaceCard, itemSurface, getTier,
     weeklyBars, completionPct, totalCount, resolvedCount, displayFindings,
-    setTierFilter, setSelectedFinding,
+    setTierFilter, setSelectedFinding, role,
   } = props;
   return (activeTab === "dashboard" && (
           <div key={`dash-${tabAnimKey}`} className={`rounded-3xl p-4 sm:p-6 md:p-8 border space-y-6 sv-tab-transition transition-colors duration-300 ${surfaceCard}`}>
@@ -22,22 +22,26 @@ export function DashboardView(props: SecureAppViewProps) {
                 </p>
               </div>
               <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-2.5 shrink-0 whitespace-nowrap">
-                <button
-                  onClick={() => switchTab("scan")}
-                  className="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full bg-gradient-to-r from-[#5926B6] to-[#8121D7] hover:from-[#4C1D95] hover:to-[#6D28D9] text-white text-xs font-bold shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
-                >
-                  <span>+ New Scan</span>
-                </button>
-                <button
-                  onClick={() => switchTab("import")}
-                  className={`inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full border text-xs font-bold hover:-translate-y-0.5 transition-all cursor-pointer ${
-                    darkMode
-                      ? "bg-white/5 hover:bg-white/15 text-white border-white/20"
-                      : "bg-white hover:bg-slate-50 text-[#2B125A] border-slate-300"
-                  }`}
-                >
-                  <span>Import Data</span>
-                </button>
+                {(role === "admin" || role === "analyst") && (
+                  <>
+                    <button
+                      onClick={() => switchTab("scan")}
+                      className="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full bg-gradient-to-r from-[#5926B6] to-[#8121D7] hover:from-[#4C1D95] hover:to-[#6D28D9] text-white text-xs font-bold shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
+                    >
+                      <span>+ New Scan</span>
+                    </button>
+                    <button
+                      onClick={() => switchTab("import")}
+                      className={`inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full border text-xs font-bold hover:-translate-y-0.5 transition-all cursor-pointer ${
+                        darkMode
+                          ? "bg-white/5 hover:bg-white/15 text-white border-white/20"
+                          : "bg-white hover:bg-slate-50 text-[#2B125A] border-slate-300"
+                      }`}
+                    >
+                      <span>Import Data</span>
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={exportExecutiveReport}
                   className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-[#00E5C4]/15 hover:bg-[#00E5C4]/25 text-[#008B76] dark:text-[#00E5C4] border border-[#00E5C4]/30 text-xs font-bold hover:-translate-y-0.5 transition-all cursor-pointer"

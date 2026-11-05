@@ -31,6 +31,30 @@ def test_password_hashing():
     assert auth.verify_password('secret123', hashed) is True
     assert auth.verify_password('wrongpass', hashed) is False
 
+def test_token_creation_requires_configured_secret(monkeypatch):
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):
+        auth.create_access_token({"sub": "admin"})
+
+def test_cors_allows_only_configured_origins(client):
+    allowed = client.options(
+        "/token",
+        headers={
+            "Origin": "http://testserver",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert allowed.headers["access-control-allow-origin"] == "http://testserver"
+
+    rejected = client.options(
+        "/token",
+        headers={
+            "Origin": "https://unconfigured.example",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert "access-control-allow-origin" not in rejected.headers
+
 def test_login_success_and_failure(client):
     ok = client.post('/token', data={'username': 'admin', 'password': 'password123'})
     assert ok.status_code == 200
