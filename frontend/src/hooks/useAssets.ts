@@ -2,12 +2,11 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { createAsset } from "../api/assets";
 import type { ApiRequester } from "../api/types";
-import type { Asset } from "../types";
 
 export function useAssets(
   token: string | null,
   apiRequest: ApiRequester,
-  setAssets: (update: (current: Asset[]) => Asset[]) => void,
+  refreshAllData: (authToken: string) => Promise<boolean>,
   setActionMessage: (message: string) => void,
 ) {
   const [assetHost, setAssetHost] = useState("");
@@ -23,9 +22,9 @@ export function useAssets(
         exposure: assetExposure === "internet" ? "Internet" : "Internal",
         criticality: Number(assetCrit),
       });
-      setAssets((current) => [...current, result]);
       setAssetHost("");
       setActionMessage(`Asset ${result.name} registered by the backend.`);
+      await refreshAllData(token);
     } catch (assetError) {
       setActionMessage(assetError instanceof Error ? assetError.message : "Unable to register asset.");
     }

@@ -2,6 +2,31 @@
 import { useState, useEffect } from "react";
 import { SecureApp } from "./SecureApp";
 
+function hasStoredSession(): boolean {
+  try {
+    if (sessionStorage.getItem("sv_token")) return true;
+    const token = localStorage.getItem("sv_token");
+    const role = localStorage.getItem("sv_role");
+    const username = localStorage.getItem("sv_user");
+    if (
+      !token ||
+      (role !== "admin" && role !== "analyst" && role !== "viewer") ||
+      !username
+    ) {
+      return false;
+    }
+    sessionStorage.setItem("sv_token", token);
+    sessionStorage.setItem("sv_role", role);
+    sessionStorage.setItem("sv_user", username);
+    localStorage.removeItem("sv_token");
+    localStorage.removeItem("sv_role");
+    localStorage.removeItem("sv_user");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function LandingFlow() {
   const [stage, setStage] = useState("splash"); // 'splash', 'landing', 'app'
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
@@ -10,11 +35,10 @@ export default function LandingFlow() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
-    if (stage === "splash") {
-      const timer = setTimeout(() => setStage("landing"), 900);
-      return () => clearTimeout(timer);
-    }
-  }, [stage]);
+    const nextStage = hasStoredSession() ? "app" : "landing";
+    const timer = setTimeout(() => setStage(nextStage), nextStage === "app" ? 0 : 900);
+    return () => clearTimeout(timer);
+  }, []);
 
   if (stage === "app") return <SecureApp onBackToHome={() => setStage("landing")} />;
 

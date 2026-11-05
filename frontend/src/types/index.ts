@@ -85,6 +85,7 @@ export interface DashboardAnalytics {
 
 export interface ScanResult {
   finding_id: number;
+  action: "created" | "updated";
   priority_tier: string;
   score: number;
   explanation: ScoringExplanation;

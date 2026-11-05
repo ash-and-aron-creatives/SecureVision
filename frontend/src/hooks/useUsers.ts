@@ -2,12 +2,11 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { createUser } from "../api/users";
 import type { ApiRequester } from "../api/types";
-import type { UserItem } from "../types";
 
 export function useUsers(
   token: string | null,
   apiRequest: ApiRequester,
-  setUsers: (update: (current: UserItem[]) => UserItem[]) => void,
+  refreshAllData: (authToken: string) => Promise<boolean>,
   setActionMessage: (message: string) => void,
 ) {
   const [newUsername, setNewUsername] = useState("");
@@ -23,10 +22,10 @@ export function useUsers(
         password: newPassword,
         role: newRole,
       });
-      setUsers((current) => [...current, created]);
       setNewUsername("");
       setNewPassword("");
       setActionMessage(`Operator ${created.username} (${created.role.toUpperCase()}) provisioned.`);
+      await refreshAllData(token);
     } catch (userError) {
       setActionMessage(userError instanceof Error ? userError.message : "Unable to create user.");
     }

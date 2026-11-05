@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useCallback, useSyncExternalStore } from "react";
+import React, { useState, useCallback, useEffect, useSyncExternalStore } from "react";
 import { ApiRequestError, requestApi } from "../api/client";
 import type {
   Asset,
@@ -33,7 +33,12 @@ const getClientHydrationSnapshot = () => true;
 const getServerHydrationSnapshot = () => false;
 
 function getStoredValue(key: string): string | null {
-  return typeof window === "undefined" ? null : localStorage.getItem(key);
+  if (typeof window === "undefined") return null;
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
 }
 
 export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) {
@@ -78,6 +83,18 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     toggleTheme,
   } = useDashboard(setSelectedFinding);
 
+  useEffect(() => {
+    if (!token) return;
+    try {
+      sessionStorage.setItem("sv_view", activeTab);
+    } catch {
+      window.setTimeout(
+        () => setActionMessage("Browser session storage is unavailable; the current view will not survive a refresh."),
+        0,
+      );
+    }
+  }, [activeTab, token, setActionMessage]);
+
   const handleLogout = useCallback(() => {
     setToken(null);
     setRole("");
@@ -88,12 +105,26 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     setAnalytics(null);
     setAuditLogs([]);
     setUsers([]);
+    setSelectedFinding(null);
+    setActionMessage("");
     if (typeof window !== "undefined") {
-      localStorage.removeItem("sv_token");
-      localStorage.removeItem("sv_role");
-      localStorage.removeItem("sv_user");
+      try {
+        sessionStorage.removeItem("sv_token");
+        sessionStorage.removeItem("sv_role");
+        sessionStorage.removeItem("sv_user");
+        sessionStorage.removeItem("sv_view");
+      } catch {
+        setActionMessage("Unable to clear the browser session storage.");
+      }
+      try {
+        localStorage.removeItem("sv_token");
+        localStorage.removeItem("sv_role");
+        localStorage.removeItem("sv_user");
+      } catch {
+        setActionMessage("Unable to clear legacy browser session data.");
+      }
     }
-  }, [setActiveTab]);
+  }, [setActiveTab, setActionMessage]);
 
   const apiRequest = useCallback(async <T,>(
     path: string,
@@ -109,20 +140,28 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
       throw requestError;
     }
   }, [handleLogout]);
-  const handleAuthenticated = useCallback((data: LoginResponse, rememberMe: boolean) => {
+  const handleAuthenticated = useCallback((data: LoginResponse) => {
     setToken(data.access_token);
     setRole(data.role);
     setCurrentUser(data.username);
-    if (rememberMe && typeof window !== "undefined") {
-      localStorage.setItem("sv_token", data.access_token);
-      localStorage.setItem("sv_role", data.role);
-      localStorage.setItem("sv_user", data.username);
-    } else if (typeof window !== "undefined") {
-      localStorage.removeItem("sv_token");
-      localStorage.removeItem("sv_role");
-      localStorage.removeItem("sv_user");
+    setActionMessage("");
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem("sv_token", data.access_token);
+        sessionStorage.setItem("sv_role", data.role);
+        sessionStorage.setItem("sv_user", data.username);
+      } catch {
+        setActionMessage("Browser session storage is unavailable; this session will not survive a refresh.");
+      }
+      try {
+        localStorage.removeItem("sv_token");
+        localStorage.removeItem("sv_role");
+        localStorage.removeItem("sv_user");
+      } catch {
+        setActionMessage("Unable to clear legacy browser session data.");
+      }
     }
-  }, []);
+  }, [setActionMessage]);
 
   const {
     username,
@@ -137,20 +176,20 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     handleLogin,
   } = useLogin(apiRequest, handleAuthenticated);
 
-  const { fetchAllData, refreshAllData } = useDashboardData({
+  const { refreshAllData } = useDashboardData({
     token, role, apiRequest: requestApi, handleLogout, setFindings, setAssets, setAnalytics, setAuditLogs, setUsers, setActionMessage,
   });
   const {
     scanCve, setScanCve, scanAssetId, setScanAssetId, scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev,
     handleCreateScan, handleLookupIntel, intelMessage, isLookingUpIntel,
-  } = useScan(token, apiRequest, setActionMessage, fetchAllData, switchTab);
+  } = useScan(token, apiRequest, setActionMessage, refreshAllData, switchTab);
   const {
     setCsvFile, importPreview, setImportPreview, handleCsvPreview, handleCsvCommit,
-  } = useImport(token, apiRequest, setActionMessage, fetchAllData);
+  } = useImport(token, apiRequest, setActionMessage, refreshAllData);
   const { assetHost, setAssetHost, assetExposure, setAssetExposure, assetCrit, setAssetCrit, handleCreateAsset } =
-    useAssets(token, apiRequest, setAssets, setActionMessage);
+    useAssets(token, apiRequest, refreshAllData, setActionMessage);
   const { newUsername, setNewUsername, newPassword, setNewPassword, newRole, setNewRole, handleCreateUser } =
-    useUsers(token, apiRequest, setUsers, setActionMessage);
+    useUsers(token, apiRequest, refreshAllData, setActionMessage);
   const {
     displayFindings, getTier, toggleFindingStatus, criticalCount, highCount, mediumCount, lowCount,
     totalCount, resolvedCount, completionPct, filteredFindings, exportPriorityCsv, exportExecutiveReport,
@@ -168,7 +207,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   return (
     <LoginView
       onBackToHome={onBackToHome}
-      error={error}
+      error={error || actionMessage}
       username={username}
       setUsername={setUsername}
       password={password}
@@ -511,7 +550,11 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
             <button
               onClick={() => {
                 setTabAnimKey((prev) => prev + 1);
-                if (token) refreshAllData(token);
+                if (token) {
+                  void refreshAllData(token).then((refreshed) => {
+                    if (refreshed) setActionMessage("Backend data refreshed.");
+                  });
+                }
               }}
               title="Replay Motion & Refresh Telemetry"
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-all hover:rotate-180 duration-500 cursor-pointer ${

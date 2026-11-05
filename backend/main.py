@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import hashlib
@@ -197,15 +198,31 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
     scoring = calculate_priority(req.in_kev, internet_facing, asset.criticality, epss_percentile, cvss_score)
     tier = scoring["tier"]
 
-    finding = models.Finding(
-        asset_id=asset.id,
-        cve_id=cve_clean,
-        cvss_score=cvss_score,
-        in_kev=req.in_kev,
-        status="Open",
+    finding = (
+        db.query(models.Finding)
+        .filter(
+            models.Finding.asset_id == asset.id,
+            func.upper(models.Finding.cve_id) == cve_clean,
+        )
+        .order_by(models.Finding.id.asc())
+        .first()
     )
+    action = "created" if finding is None else "updated"
     try:
-        db.add(finding)
+        if finding is None:
+            finding = models.Finding(
+                asset_id=asset.id,
+                cve_id=cve_clean,
+                cvss_score=cvss_score,
+                in_kev=req.in_kev,
+                status="Open",
+            )
+            db.add(finding)
+        else:
+            finding.cvss_score = cvss_score
+            finding.in_kev = req.in_kev
+            if (finding.status or "").casefold() == "resolved":
+                finding.status = "Open"
         db.flush()
         score = models.FindingScore(
             finding_id=finding.id,
@@ -226,7 +243,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
         db.add(models.AuditLog(
             user_id=current_user.id,
             action="SCAN_RUN",
-            details=f"finding_id={finding.id} Scanned {cve_clean} on {asset.name} -> {tier}",
+            details=f"finding_id={finding.id} Finding {action}: scanned {cve_clean} on {asset.name} -> {tier}",
         ))
         db.commit()
     except Exception:
@@ -234,6 +251,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
         raise
     return {
         "finding_id": finding.id,
+        "action": action,
         "priority_tier": tier,
         "score": scoring["score"],
         "explanation": scoring["explanation"],

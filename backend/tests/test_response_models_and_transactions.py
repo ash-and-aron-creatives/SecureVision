@@ -143,7 +143,8 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
     )
     assert scan_response.status_code == 200
     scan_body = scan_response.json()
-    assert set(scan_body) == {"finding_id", "priority_tier", "score", "explanation"}
+    assert set(scan_body) == {"finding_id", "action", "priority_tier", "score", "explanation"}
+    assert scan_body["action"] == "created"
     assert scan_body["score"] == 2
     assert set(scan_body["explanation"]) == {"summary", "inputs", "rationale"}
     assert set(scan_body["explanation"]["inputs"]) == {

@@ -21,6 +21,7 @@ export function useLogin(
     try {
       const data = await login(apiRequest, username, password);
       onAuthenticated(data, rememberMe);
+      setPassword("");
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "Unable to connect to the backend.");
     }

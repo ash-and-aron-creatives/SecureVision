@@ -34,43 +34,41 @@ export function useDashboardData({
     [apiRequest, role],
   );
 
-  useEffect(() => {
-    if (!token) return;
-    let active = true;
-    fetchAllData(token)
-      .then(({ findings: nextFindings, assets: nextAssets, analytics, auditLogs: nextAuditLogs, users: nextUsers }) => {
-        if (!active) return;
-        setFindings(nextFindings);
-        setAssets(nextAssets);
-        setAnalytics(analytics);
-        setAuditLogs(nextAuditLogs);
-        setUsers(nextUsers);
-      })
-      .catch((fetchError: unknown) => {
-        if (active) {
-          if (fetchError instanceof ApiRequestError && fetchError.status === 401) handleLogout();
-          setActionMessage(fetchError instanceof Error ? fetchError.message : "Unable to load backend data.");
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [handleLogout, token, fetchAllData, setFindings, setAssets, setAnalytics, setAuditLogs, setUsers, setActionMessage]);
-
-  const refreshAllData = async (authToken: string) => {
+  const refreshAllData = useCallback(async (
+    authToken: string,
+    isCurrent: () => boolean = () => true,
+  ): Promise<boolean> => {
     try {
-      const { findings: nextFindings, assets: nextAssets, analytics, auditLogs: nextAuditLogs, users: nextUsers } =
-        await fetchAllData(authToken);
+      const {
+        findings: nextFindings,
+        assets: nextAssets,
+        analytics,
+        auditLogs: nextAuditLogs,
+        users: nextUsers,
+      } = await fetchAllData(authToken);
+      if (!isCurrent()) return false;
       setFindings(nextFindings);
       setAssets(nextAssets);
       setAnalytics(analytics);
       setAuditLogs(nextAuditLogs);
       setUsers(nextUsers);
+      return true;
     } catch (fetchError) {
+      if (!isCurrent()) return false;
       if (fetchError instanceof ApiRequestError && fetchError.status === 401) handleLogout();
       setActionMessage(fetchError instanceof Error ? fetchError.message : "Unable to load backend data.");
+      return false;
     }
-  };
+  }, [fetchAllData, handleLogout, setActionMessage, setAnalytics, setAssets, setAuditLogs, setFindings, setUsers]);
 
-  return { fetchAllData, refreshAllData };
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    void refreshAllData(token, () => active);
+    return () => {
+      active = false;
+    };
+  }, [token, refreshAllData]);
+
+  return { refreshAllData };
 }

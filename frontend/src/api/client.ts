@@ -14,6 +14,15 @@ function getErrorMessage(payload: unknown, fallback: string): string {
         .filter(Boolean)
         .join(", ") || fallback;
     }
+    if (typeof detail === "object" && detail !== null) {
+      const message = "message" in detail && typeof detail.message === "string"
+        ? detail.message
+        : "";
+      const errors = "errors" in detail && Array.isArray(detail.errors)
+        ? detail.errors.filter((item): item is string => typeof item === "string")
+        : [];
+      return [message, ...errors].filter(Boolean).join(" ") || fallback;
+    }
   }
   return typeof payload === "string" && payload ? payload : fallback;
 }

@@ -8,7 +8,7 @@ export function useScan(
   token: string | null,
   apiRequest: ApiRequester,
   setActionMessage: (message: string) => void,
-  fetchAllData: (authToken: string) => Promise<unknown>,
+  refreshAllData: (authToken: string) => Promise<boolean>,
   switchTab: (tabId: string) => void,
 ) {
   const [scanCve, setScanCve] = useState("");
@@ -82,8 +82,8 @@ export function useScan(
         in_kev: scanKev,
         epss_percentile: epssPercentile,
       });
-      setActionMessage(`${result.priority_tier} (score ${result.score}/4): ${result.explanation.summary}`);
-      await fetchAllData(token);
+      setActionMessage(`Finding ${result.action}: ${result.priority_tier} (score ${result.score}/4): ${result.explanation.summary}`);
+      await refreshAllData(token);
       switchTab("dashboard");
     } catch (scanError) {
       setActionMessage(scanError instanceof Error ? scanError.message : "Backend scan failed.");

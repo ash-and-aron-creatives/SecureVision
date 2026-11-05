@@ -15,7 +15,7 @@ interface UseFindingsProps {
   tierFilter: string;
   setActionMessage: (message: string) => void;
   analytics: DashboardAnalytics | null;
-  refreshAllData: (authToken: string) => Promise<void>;
+  refreshAllData: (authToken: string) => Promise<boolean>;
 }
 
 export function useFindings({

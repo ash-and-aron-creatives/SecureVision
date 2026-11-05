@@ -8,7 +8,7 @@ export function useImport(
   token: string | null,
   apiRequest: ApiRequester,
   setActionMessage: (message: string) => void,
-  fetchAllData: (authToken: string) => Promise<unknown>,
+  refreshAllData: (authToken: string) => Promise<boolean>,
 ) {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
@@ -33,7 +33,7 @@ export function useImport(
     try {
       const result = await commitImport(apiRequest, token, csvFile);
       setActionMessage(`Backend imported ${result.imported} findings; ${result.skipped} skipped.`);
-      await fetchAllData(token);
+      await refreshAllData(token);
       setImportPreview(null);
       setCsvFile(null);
     } catch (importError) {

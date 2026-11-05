@@ -65,6 +65,50 @@ def test_manual_scan_creates_scored_finding_and_audit(env):
     assert db.query(AuditLog).count() >= 1
 
 
+def test_repeated_scan_updates_existing_finding_and_reopens_resolved(env):
+    client, db = env
+    headers = _hdrs(client)
+    asset = Asset(name="REPEAT-SCAN-SRV", exposure="Internet", criticality=5)
+    db.add(asset)
+    db.commit()
+    payload = {
+        "asset_id": asset.id,
+        "cve_id": "CVE-2025-4321",
+        "cvss_score": 9.8,
+        "in_kev": True,
+        "epss_percentile": 0.95,
+    }
+
+    created = client.post("/scan", json=payload, headers=headers)
+    assert created.status_code == 200
+    assert created.json()["action"] == "created"
+    finding = db.query(Finding).filter_by(asset_id=asset.id, cve_id=payload["cve_id"]).one()
+    finding.status = "In Progress"
+    db.commit()
+
+    payload.update(cvss_score=5.0, in_kev=False, epss_percentile=0.2)
+    updated = client.post("/scan", json=payload, headers=headers)
+    assert updated.status_code == 200
+    assert updated.json()["action"] == "updated"
+    assert updated.json()["finding_id"] == finding.id
+    assert updated.json()["priority_tier"] != created.json()["priority_tier"]
+    assert updated.json()["explanation"] != created.json()["explanation"]
+    assert db.query(Finding).filter_by(asset_id=asset.id, cve_id=payload["cve_id"]).count() == 1
+    db.refresh(finding)
+    assert finding.cvss_score == 5.0
+    assert finding.status == "In Progress"
+    assert db.query(AuditLog).filter(AuditLog.details.contains("Finding updated")).count() == 1
+
+    finding.status = "Resolved"
+    db.commit()
+    reopened = client.post("/scan", json=payload, headers=headers)
+    assert reopened.status_code == 200
+    assert reopened.json()["action"] == "updated"
+    db.refresh(finding)
+    assert finding.status == "Open"
+    assert db.query(Finding).filter_by(asset_id=asset.id, cve_id=payload["cve_id"]).count() == 1
+
+
 def test_manual_scan_rejects_empty_or_invalid_cve(env):
     client, db = env
     h = _hdrs(client)

@@ -149,6 +149,7 @@ class FindingDetailResponse(ResponseSchema):
 
 class ScanResultResponse(ResponseSchema):
     finding_id: int
+    action: Literal["created", "updated"]
     priority_tier: str
     score: int
     explanation: ScoringExplanationResponse

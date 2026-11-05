@@ -2,14 +2,33 @@ import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { Finding } from "../types";
 
-function getStoredValue(key: string): string | null {
-  return typeof window === "undefined" ? null : localStorage.getItem(key);
+function getStoredSessionValue(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function getStoredTheme(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem("sv_theme");
+  } catch {
+    return null;
+  }
 }
 
 export function useDashboard(setSelectedFinding: Dispatch<SetStateAction<Finding | null>>) {
-  const [activeTab, setActiveTab] = useState<string>("dashboard");
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    const savedTab = getStoredSessionValue("sv_view");
+    return savedTab && ["dashboard", "queue", "scan", "import", "assets", "audit", "users"].includes(savedTab)
+      ? savedTab
+      : "dashboard";
+  });
   const [tabAnimKey, setTabAnimKey] = useState<number>(0);
-  const [darkMode, setDarkMode] = useState<boolean>(() => getStoredValue("sv_theme") === "dark");
+  const [darkMode, setDarkMode] = useState<boolean>(() => getStoredTheme() === "dark");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [tierFilter, setTierFilter] = useState<string>("ALL");
   const [cmdOpen, setCmdOpen] = useState<boolean>(false);
