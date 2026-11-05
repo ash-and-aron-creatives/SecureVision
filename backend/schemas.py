@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -68,7 +68,7 @@ class FindingResponse(ResponseSchema):
     priority_tier: str
     score: int
     status: str
-    date_found: str
+    date_found: str | None
     explanation: ScoringExplanationResponse
 
 
@@ -79,6 +79,30 @@ class FindingsPageResponse(ResponseSchema):
     page_size: int
     pages: int
     counts: dict[str, int]
+
+
+class DashboardActivityDayResponse(ResponseSchema):
+    date: date
+    ingested_count: int
+    resolved_count: int
+
+
+class DashboardAnalyticsResponse(ResponseSchema):
+    total_findings: int
+    resolved_findings: int
+    mitigation_pct: float | None
+    critical_count: int
+    high_count: int
+    medium_count: int
+    low_count: int
+    open_critical_count: int
+    open_high_count: int
+    open_medium_count: int
+    open_low_count: int
+    mean_time_to_triage_hours: float | None
+    sla_compliance_pct: float | None
+    weekly_activity: list[DashboardActivityDayResponse]
+    ingestion_has_history: bool
 
 
 class AssetSummaryResponse(ResponseSchema):
@@ -110,7 +134,7 @@ class FindingDetailResponse(ResponseSchema):
     id: int
     cve_id: str
     status: str
-    date_found: str
+    date_found: str | None
     cvss_score: float
     in_kev: bool
     asset: AssetSummaryResponse

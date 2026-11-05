@@ -6,6 +6,7 @@ from pydantic import BaseModel
 import hashlib
 import os
 import re
+from datetime import date, datetime, timedelta, timezone
 
 from backend import models, auth
 from backend.database import engine, get_db
@@ -17,6 +18,7 @@ from backend.users import router as users_router
 from backend.schemas import (
     AssetResponse,
     AuditEntryResponse,
+    DashboardAnalyticsResponse,
     FindingDetailResponse,
     FindingsPageResponse,
     IntelResponse,
@@ -51,6 +53,12 @@ app.include_router(users_router)
 TIER_RANK = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Unknown": 0}
 VALID_STATUSES = {"Open", "In Progress", "Resolved"}
 CVE_ID_PATTERN = re.compile(r"CVE-\d{4}-\d{4,}")
+STATUS_CHANGE_PATTERN = re.compile(
+    r"^finding_id=(\d+)\b.* status changed from (Open|In Progress|Resolved) "
+    r"to (Open|In Progress|Resolved)$"
+)
+IMPORT_COUNT_PATTERN = re.compile(r"\bimported=(\d+)\s+skipped=\d+(?:\s+finding_ids=[\d,]+)?$")
+IMPORT_FINDING_IDS_PATTERN = re.compile(r"\bfinding_ids=([\d,]+)$")
 
 
 def _stored_score(score: models.FindingScore | None, tier: str) -> int:
@@ -80,6 +88,14 @@ def _stored_explanation(
         },
         "rationale": [],
     }
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 class AssetCreateRequest(BaseModel):
@@ -290,7 +306,7 @@ def get_findings(
             "priority_tier": tier,
             "score": _stored_score(latest, tier),
             "status": str(f.status or "Open"),
-            "date_found": str(f.date_found or "2026-10-01"),
+            "date_found": str(f.date_found) if f.date_found else None,
             "explanation": explanation,
         })
 
@@ -328,6 +344,118 @@ def get_findings(
         "counts": open_counts,
     }
 
+
+@app.get("/dashboard/analytics", response_model=DashboardAnalyticsResponse)
+def get_dashboard_analytics(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    findings = db.query(models.Finding).all()
+    latest_scores: dict[int, models.FindingScore] = {}
+    for score in db.query(models.FindingScore).order_by(models.FindingScore.id.asc()).all():
+        latest_scores[score.finding_id] = score
+
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    first_day = today - timedelta(days=6)
+    weekly_counts = {
+        first_day + timedelta(days=offset): {"ingested_count": 0, "resolved_count": 0}
+        for offset in range(7)
+    }
+
+    triage_at: dict[int, datetime] = {}
+    resolved_at: dict[int, datetime] = {}
+    created_at: dict[int, datetime] = {}
+    ingestion_has_history = False
+
+    for log in db.query(models.AuditLog).order_by(models.AuditLog.id.asc()).all():
+        event_time = _as_utc(log.timestamp)
+        if log.action == "STATUS_UPDATE":
+            match = STATUS_CHANGE_PATTERN.match(log.details or "")
+            if match and event_time:
+                finding_id = int(match.group(1))
+                old_status, new_status = match.group(2), match.group(3)
+                if old_status == "Open" and new_status in ("In Progress", "Resolved"):
+                    triage_at.setdefault(finding_id, event_time)
+                if new_status == "Resolved":
+                    resolved_at[finding_id] = event_time
+                    if first_day <= event_time.date() <= today:
+                        weekly_counts[event_time.date()]["resolved_count"] += 1
+        elif log.action == "SCAN_RUN":
+            ingestion_has_history = True
+            finding_match = re.match(r"^finding_id=(\d+)\b", log.details or "")
+            if finding_match and event_time:
+                created_at[int(finding_match.group(1))] = event_time
+            if event_time and first_day <= event_time.date() <= today:
+                weekly_counts[event_time.date()]["ingested_count"] += 1
+        elif log.action == "IMPORT":
+            imported_match = IMPORT_COUNT_PATTERN.search(log.details or "")
+            imported = int(imported_match.group(1)) if imported_match else 0
+            imported_ids_match = IMPORT_FINDING_IDS_PATTERN.search(log.details or "")
+            if imported_ids_match and event_time:
+                for finding_id in imported_ids_match.group(1).split(","):
+                    created_at[int(finding_id)] = event_time
+            if imported > 0:
+                ingestion_has_history = True
+                if event_time and first_day <= event_time.date() <= today:
+                    weekly_counts[event_time.date()]["ingested_count"] += imported
+
+    tier_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
+    open_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
+    resolved_findings = 0
+    triage_durations: list[float] = []
+    sla_eligible = 0
+    sla_met = 0
+    sla_hours = {"Critical": 24, "High": 72, "Medium": 14 * 24, "Low": 30 * 24}
+
+    for finding in findings:
+        score = latest_scores.get(finding.id)
+        tier = score.priority_tier if score and score.priority_tier else "Low"
+        if tier not in tier_counts:
+            tier = "Low"
+        tier_counts[tier] += 1
+        if finding.status == "Open":
+            open_counts[tier] += 1
+        if finding.status == "Resolved":
+            resolved_findings += 1
+
+        finding_created = created_at.get(finding.id)
+        if finding_created is None:
+            continue
+
+        first_triage = triage_at.get(finding.id)
+        if first_triage and first_triage >= finding_created:
+            triage_durations.append((first_triage - finding_created).total_seconds() / 3600)
+
+        resolution = resolved_at.get(finding.id)
+        if finding.status == "Resolved" and resolution and resolution >= finding_created:
+            sla_eligible += 1
+            if (resolution - finding_created).total_seconds() <= sla_hours[tier] * 3600:
+                sla_met += 1
+
+    total_findings = len(findings)
+    return {
+        "total_findings": total_findings,
+        "resolved_findings": resolved_findings,
+        "mitigation_pct": round(resolved_findings * 100 / total_findings, 1) if total_findings else None,
+        "critical_count": tier_counts["Critical"],
+        "high_count": tier_counts["High"],
+        "medium_count": tier_counts["Medium"],
+        "low_count": tier_counts["Low"],
+        "open_critical_count": open_counts["Critical"],
+        "open_high_count": open_counts["High"],
+        "open_medium_count": open_counts["Medium"],
+        "open_low_count": open_counts["Low"],
+        "mean_time_to_triage_hours": round(sum(triage_durations) / len(triage_durations), 1)
+        if triage_durations else None,
+        "sla_compliance_pct": round(sla_met * 100 / sla_eligible, 1) if sla_eligible else None,
+        "weekly_activity": [
+            {"date": day, **counts} for day, counts in weekly_counts.items()
+        ],
+        "ingestion_has_history": ingestion_has_history,
+    }
+
+
 @app.get("/findings/{finding_id}", response_model=FindingDetailResponse)
 def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     f = db.query(models.Finding).filter(models.Finding.id == finding_id).first()
@@ -351,12 +479,24 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_u
             .limit(20)
             .all()
         )
+        import_logs = (
+            db.query(models.AuditLog)
+            .filter(models.AuditLog.action == "IMPORT")
+            .order_by(models.AuditLog.id.desc())
+            .all()
+        )
+        for log in import_logs:
+            imported_ids = IMPORT_FINDING_IDS_PATTERN.search(log.details or "")
+            if imported_ids and str(f.id) in imported_ids.group(1).split(","):
+                related_logs.append(log)
+                break
+        related_logs = sorted(related_logs, key=lambda log: log.id, reverse=True)[:20]
 
     return {
         "id": f.id,
         "cve_id": f.cve_id,
         "status": f.status,
-        "date_found": f.date_found or "2026-10-01",
+        "date_found": f.date_found,
         "cvss_score": float(f.cvss_score or 0.0),
         "in_kev": bool(f.in_kev),
         "asset": {
@@ -446,6 +586,7 @@ async def commit_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
 
     asset_by_id = {a.id: a for a in db.query(models.Asset).all()}
     imported = 0
+    imported_finding_ids = []
 
     try:
         for r in ok:
@@ -489,6 +630,7 @@ async def commit_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
                 explanation=scoring["explanation"]["summary"],
             )
             db.add(score)
+            imported_finding_ids.append(finding.id)
             imported += 1
 
         skipped = len(rows) - imported
@@ -496,7 +638,12 @@ async def commit_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
         db.add(models.AuditLog(
             user_id=current_user.id,
             action="IMPORT",
-            details=f"file={file.filename} sha256={digest} imported={imported} skipped={skipped}",
+            details=(
+                f"file={file.filename} sha256={digest} imported={imported} skipped={skipped} "
+                f"finding_ids={','.join(str(finding_id) for finding_id in imported_finding_ids)}"
+                if imported_finding_ids else
+                f"file={file.filename} sha256={digest} imported={imported} skipped={skipped}"
+            ),
         ))
         db.commit()
     except Exception:
