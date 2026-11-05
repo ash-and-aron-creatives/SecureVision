@@ -31,14 +31,14 @@ export default function LandingFlow() {
       id: "platform",
       items: [
         { title: "Backend Scoring Engine", desc: "One auditable scorer returns the priority tier, score, and rationale.", badge: "CORE" },
-        { title: "Multi-Scanner Ingestion", desc: "Unify Nessus, Qualys, OpenVAS, and Trivy CSVs into one schema.", badge: "INGEST" },
+        { title: "CSV Finding Import", desc: "Validate vulnerability CSVs and map findings to assets.", badge: "INGEST" },
         { title: "Asset Context Correlation", desc: "Weight CVEs by internet exposure, data sensitivity, and criticality.", badge: "CONTEXT" },
       ],
     },
     Solutions: {
       id: "solutions",
       items: [
-        { title: "Exploit-Led Remediation", desc: "Cut patch volume by 85% by isolating active wild exploits.", badge: "SECOPS" },
+        { title: "Exploit-Led Remediation", desc: "Prioritize findings using exploit status, threat likelihood, and asset context.", badge: "SECOPS" },
         { title: "Executive & Audit Compliance", desc: "Generate cryptographically verifiable PDF/CSV triage trails.", badge: "GRC" },
         { title: "Role-Based Team Workflows", desc: "Granular JWT RBAC for Admins, Analysts, and Read-Only Auditors.", badge: "RBAC" },
       ],
@@ -56,7 +56,7 @@ export default function LandingFlow() {
       items: [
         { title: "Our Mission", desc: "Eliminating alert fatigue for modern security operations centers.", badge: "ABOUT" },
         { title: "Security & Architecture", desc: "Built on zero-trust principles with full audit log immutability.", badge: "TRUST" },
-        { title: "Book a Live Walkthrough", desc: "See SecureVision prioritize 10,000 findings in under 2 seconds.", badge: "DEMO" },
+        { title: "Book a Walkthrough", desc: "See how SecureVision prioritizes findings using threat and asset context.", badge: "DEMO" },
       ],
     },
   };
@@ -386,12 +386,11 @@ export default function LandingFlow() {
           <div className="bg-[#2D1B69]/45 backdrop-blur-xl border border-white/15 rounded-xl p-6 shadow-2xl relative z-10">
             <div className="flex justify-between items-end mb-6">
               <div>
-                <h3 className="text-white font-semibold text-lg">Priority queue</h3>
-                <p className="text-white/50 text-xs">Live deterministic ranking</p>
+                <h3 className="text-white font-semibold text-lg">Example priority queue</h3>
+                <p className="text-white/50 text-xs">Illustrative preview — not live data</p>
               </div>
               <div className="text-right">
-                <p className="text-white font-semibold text-sm">1,284 open findings</p>
-                <p className="text-[#00E5C4] text-xs font-medium">7 need action this week</p>
+                <p className="text-white font-semibold text-sm">Sample findings</p>
               </div>
             </div>
 
@@ -406,7 +405,7 @@ export default function LandingFlow() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end">
-                  <span className="text-[#FF4A4A] font-bold text-2xl">98</span>
+                  <span className="text-[#FF4A4A] font-bold text-sm">Critical</span>
                   <div className="w-8 h-1 bg-[#FF4A4A] rounded-full mt-1"></div>
                 </div>
               </div>
@@ -421,7 +420,7 @@ export default function LandingFlow() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end">
-                  <span className="text-[#FF4A4A] font-bold text-2xl">91</span>
+                  <span className="text-[#FF4A4A] font-bold text-sm">High</span>
                   <div className="w-8 h-1 bg-[#FF4A4A] rounded-full mt-1"></div>
                 </div>
               </div>
@@ -433,7 +432,7 @@ export default function LandingFlow() {
                   <span className="text-[10px] text-white/60 px-2 py-0.5 border border-white/20 rounded">Public exploit code</span>
                 </div>
                 <div className="flex flex-col items-end">
-                  <span className="text-[#FFB340] font-bold text-2xl">76</span>
+                  <span className="text-[#FFB340] font-bold text-sm">Medium</span>
                   <div className="w-8 h-1 bg-[#FFB340] rounded-full mt-1"></div>
                 </div>
               </div>
@@ -445,7 +444,7 @@ export default function LandingFlow() {
                   <span className="text-[10px] text-white/60 px-2 py-0.5 border border-white/20 rounded">Internal only</span>
                 </div>
                 <div className="flex flex-col items-end">
-                  <span className="text-[#00E5C4] font-bold text-2xl">38</span>
+                  <span className="text-[#00E5C4] font-bold text-sm">Low</span>
                   <div className="w-8 h-1 bg-[#00E5C4] rounded-full mt-1"></div>
                 </div>
               </div>
@@ -476,9 +475,9 @@ export default function LandingFlow() {
             <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">CISA KEV</div>
             <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">FIRST EPSS</div>
             <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">NIST NVD</div>
-            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">NESSUS PRO</div>
-            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">QUALYS VMDR</div>
-            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">TRIVY / OPENVAS</div>
+            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">CSV FINDING IMPORTS</div>
+            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">ASSET INVENTORY</div>
+            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">AUDIT LOG</div>
           </div>
         </div>
       </div>
@@ -503,10 +502,10 @@ export default function LandingFlow() {
               </div>
               <h3 className="text-xl font-bold mb-3">Multi-Scanner Normalization</h3>
               <p className="text-white/65 text-sm leading-relaxed mb-6">
-                Ingest raw CSV exports or API streams from Nessus, Qualys, and OpenVAS. SecureVision deduplicates findings and maps hostnames to your canonical asset inventory.
+                Import validated finding CSVs, deduplicate matching asset/CVE pairs, and map results to your asset inventory.
               </p>
               <div className="text-xs font-mono text-[#00E5C4] bg-black/30 p-3 rounded border border-white/5">
-                POST /api/v1/scans/import-csv / 200 OK
+                POST /imports/commit
               </div>
             </div>
 
@@ -556,23 +555,23 @@ export default function LandingFlow() {
                 <span className="px-3 py-1 text-[10px] font-bold uppercase bg-[#E5007D]/20 text-[#FF61D2] border border-[#E5007D]/40 rounded-full">
                   SecOps & Vulnerability Management
                 </span>
-                <h3 className="text-2xl font-bold mt-4 mb-3">Eliminate 85% of Alert Noise</h3>
+                <h3 className="text-2xl font-bold mt-4 mb-3">Prioritize by Exploitability</h3>
                 <p className="text-white/70 text-sm leading-relaxed mb-6">
-                  Traditional CVSS-only sorting floods teams with thousands of &quot;High&quot; vulnerabilities that have zero public exploit code and sit on isolated internal networks. SecureVision isolates the 3/5% of findings that represent imminent breach pathways.
+                  Combine exploit status, threat likelihood, severity, and asset context to focus remediation on findings with the highest risk.
                 </p>
               </div>
               <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/10 text-center">
                 <div>
-                  <p className="text-2xl font-extrabold text-[#00E5C4]">85%</p>
-                  <p className="text-[11px] text-white/50">Noise Reduction</p>
+                  <p className="text-sm font-extrabold text-[#00E5C4]">Context-aware</p>
+                  <p className="text-[11px] text-white/50">Risk prioritization</p>
                 </div>
                 <div>
                   <p className="text-2xl font-extrabold text-white">1</p>
                   <p className="text-[11px] text-white/50">Canonical Scorer</p>
                 </div>
                 <div>
-                  <p className="text-2xl font-extrabold text-[#FF4A4A]">&lt; 2s</p>
-                  <p className="text-[11px] text-white/50">Batch Scoring</p>
+                  <p className="text-sm font-extrabold text-[#FF4A4A]">Explainable</p>
+                  <p className="text-[11px] text-white/50">Scoring rationale</p>
                 </div>
               </div>
             </div>
@@ -653,7 +652,7 @@ export default function LandingFlow() {
                 </p>
               </div>
               <button onClick={() => setStage("app")} className="mt-6 text-left text-xs font-bold text-[#00E5C4] hover:underline">
-                View Live Dashboard /
+                Open Dashboard /
               </button>
             </div>
           </div>

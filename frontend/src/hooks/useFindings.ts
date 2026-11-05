@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { updateFindingStatus } from "../api/findings";
 import type { ApiRequester } from "../api/types";
-import type { Finding, UserRole } from "../types";
+import type { DashboardAnalytics, Finding, UserRole } from "../types";
 
 interface UseFindingsProps {
   token: string | null;
@@ -14,6 +14,8 @@ interface UseFindingsProps {
   searchQuery: string;
   tierFilter: string;
   setActionMessage: (message: string) => void;
+  analytics: DashboardAnalytics | null;
+  refreshAllData: (authToken: string) => Promise<void>;
 }
 
 export function useFindings({
@@ -27,6 +29,8 @@ export function useFindings({
   searchQuery,
   tierFilter,
   setActionMessage,
+  analytics,
+  refreshAllData,
 }: UseFindingsProps) {
   const displayFindings = findings;
 
@@ -50,18 +54,26 @@ export function useFindings({
         current?.id === finding.id ? { ...current, status: result.status } : current
       );
       setActionMessage(result.message);
+      await refreshAllData(token);
     } catch (statusError) {
       setActionMessage(statusError instanceof Error ? statusError.message : "Unable to update finding status.");
     }
   };
 
-  const criticalCount = displayFindings.filter((f) => getTier(f) === "CRITICAL").length;
-  const highCount = displayFindings.filter((f) => getTier(f) === "HIGH").length;
-  const mediumCount = displayFindings.filter((f) => getTier(f) === "MEDIUM").length;
-  const lowCount = displayFindings.filter((f) => getTier(f) === "LOW").length;
-  const totalCount = displayFindings.length || 1;
-  const resolvedCount = displayFindings.filter((f) => (f.status || "").toUpperCase() === "RESOLVED").length;
-  const completionPct = Math.max(41, Math.round((resolvedCount / totalCount) * 100));
+  const criticalCount = analytics?.open_critical_count ??
+    displayFindings.filter((f) => getTier(f) === "CRITICAL" && f.status === "Open").length;
+  const highCount = analytics?.open_high_count ??
+    displayFindings.filter((f) => getTier(f) === "HIGH" && f.status === "Open").length;
+  const mediumCount = analytics?.open_medium_count ??
+    displayFindings.filter((f) => getTier(f) === "MEDIUM" && f.status === "Open").length;
+  const lowCount = analytics?.open_low_count ??
+    displayFindings.filter((f) => getTier(f) === "LOW" && f.status === "Open").length;
+  const totalCount = analytics?.total_findings ?? displayFindings.length;
+  const resolvedCount = analytics?.resolved_findings ??
+    displayFindings.filter((f) => (f.status || "").toUpperCase() === "RESOLVED").length;
+  const completionPct = analytics
+    ? analytics.mitigation_pct
+    : totalCount > 0 ? Math.round((resolvedCount / totalCount) * 100) : null;
 
   const filteredFindings = displayFindings.filter((f) => {
     const matchesTier = tierFilter === "ALL" || getTier(f) === tierFilter;
@@ -114,7 +126,7 @@ export function useFindings({
       `  • High     (Open, 72h SLA) : ${highCount}`,
       `  • Medium   (Open, 14d SLA) : ${mediumCount}`,
       `  • Low      (Open, 30d SLA) : ${lowCount}`,
-      `  • Overall Mitigation Rate  : ${completionPct}% (${resolvedCount}/${totalCount})`,
+      `  • Overall Mitigation Rate  : ${completionPct === null ? "No data yet" : `${completionPct}% (${resolvedCount}/${totalCount})`}`,
       "--------------------------------------------------------------------",
       " TOP PRIORITIZED FINDINGS REQUIRING IMMEDIATE ACTION:",
       ...displayFindings.slice(0, 10).map((f, idx) => {

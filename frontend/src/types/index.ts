@@ -13,7 +13,7 @@ export interface Finding {
   priority_tier: string;
   score: number;
   status: string;
-  date_found: string;
+  date_found: string | null;
   explanation: ScoringExplanation;
 }
 
@@ -57,6 +57,30 @@ export interface FindingsPage {
   page_size: number;
   pages: number;
   counts: Record<string, number>;
+}
+
+export interface DashboardActivityDay {
+  date: string;
+  ingested_count: number;
+  resolved_count: number;
+}
+
+export interface DashboardAnalytics {
+  total_findings: number;
+  resolved_findings: number;
+  mitigation_pct: number | null;
+  critical_count: number;
+  high_count: number;
+  medium_count: number;
+  low_count: number;
+  open_critical_count: number;
+  open_high_count: number;
+  open_medium_count: number;
+  open_low_count: number;
+  mean_time_to_triage_hours: number | null;
+  sla_compliance_pct: number | null;
+  weekly_activity: DashboardActivityDay[];
+  ingestion_has_history: boolean;
 }
 
 export interface ScanResult {

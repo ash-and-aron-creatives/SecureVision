@@ -2,6 +2,7 @@ import type { Dispatch, FormEventHandler, SetStateAction } from "react";
 import type {
   Asset,
   AuditEntry,
+  DashboardAnalytics,
   Finding,
   ImportPreview,
   UserItem,
@@ -38,8 +39,9 @@ export interface SecureAppViewProps {
   subSurfaceCard: string;
   itemSurface: string;
   getTier: (finding: Finding) => "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
-  weeklyBars: Array<{ day: string; height: string; type: string; label: string }>;
-  completionPct: number;
+  analytics: DashboardAnalytics | null;
+  weeklyBars: Array<{ day: string; height: string; label: string }>;
+  completionPct: number | null;
   totalCount: number;
   resolvedCount: number;
   displayFindings: Finding[];

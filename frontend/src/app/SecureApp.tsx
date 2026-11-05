@@ -4,6 +4,7 @@ import { ApiRequestError, requestApi } from "../api/client";
 import type {
   Asset,
   AuditEntry,
+  DashboardAnalytics,
   Finding,
   LoginResponse,
   UserItem,
@@ -52,6 +53,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [actionMessage, setActionMessage] = useState<string>("");
@@ -83,6 +85,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     setActiveTab("dashboard");
     setFindings([]);
     setAssets([]);
+    setAnalytics(null);
     setAuditLogs([]);
     setUsers([]);
     if (typeof window !== "undefined") {
@@ -135,7 +138,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   } = useLogin(apiRequest, handleAuthenticated);
 
   const { fetchAllData, refreshAllData } = useDashboardData({
-    token, role, apiRequest: requestApi, handleLogout, setFindings, setAssets, setAuditLogs, setUsers, setActionMessage,
+    token, role, apiRequest: requestApi, handleLogout, setFindings, setAssets, setAnalytics, setAuditLogs, setUsers, setActionMessage,
   });
   const {
     scanCve, setScanCve, scanAssetId, setScanAssetId, scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev,
@@ -153,6 +156,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     totalCount, resolvedCount, completionPct, filteredFindings, exportPriorityCsv, exportExecutiveReport,
   } = useFindings({
     token, apiRequest, findings, setFindings, setSelectedFinding, currentUser, role, searchQuery, tierFilter, setActionMessage,
+    analytics, refreshAllData,
   });
 
   // ============================================================================
@@ -183,7 +187,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   // ============================================================================
   const menuItems = [
     { id: "dashboard", label: "Dashboard", badge: null, icon: "grid" },
-    { id: "queue", label: "Priority Queue", badge: `${criticalCount + highCount}+`, icon: "tasks" },
+    { id: "queue", label: "Priority Queue", badge: analytics ? String(criticalCount + highCount) : null, icon: "tasks" },
     ...(role === "admin" || role === "analyst" ? [
       { id: "scan", label: "New Scan", badge: null, icon: "scan" },
       { id: "import", label: "Import CSV", badge: null, icon: "upload" },
@@ -195,15 +199,14 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     ] : []),
   ];
 
-  const weeklyBars = [
-    { day: "S", height: "58%", type: "striped", label: "18" },
-    { day: "M", height: "82%", type: "purple", label: "34" },
-    { day: "T", height: "74%", type: "cyan", label: "79%" },
-    { day: "W", height: "96%", type: "deep", label: "48" },
-    { day: "T", height: "88%", type: "striped", label: "39" },
-    { day: "F", height: "66%", type: "striped", label: "24" },
-    { day: "S", height: "72%", type: "striped", label: "29" },
-  ];
+  const maxIngested = Math.max(0, ...(analytics?.weekly_activity.map((day) => day.ingested_count) ?? []));
+  const weeklyBars = analytics?.ingestion_has_history
+    ? analytics.weekly_activity.map((day) => ({
+        day: new Date(`${day.date}T00:00:00Z`).toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" }),
+        height: maxIngested > 0 ? `${(day.ingested_count / maxIngested) * 100}%` : "0%",
+        label: String(day.ingested_count),
+      }))
+    : [];
 
   const shellBg = darkMode
     ? "bg-gradient-to-br from-[#120629] via-[#1B0B3B] to-[#0B031D] text-white"
@@ -221,7 +224,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   const mutedText = darkMode ? "text-white/55" : "text-slate-400";
   const viewProps: SecureAppViewProps = {
     activeTab, tabAnimKey, surfaceCard, headingColor, mutedText, switchTab, darkMode, exportExecutiveReport,
-    criticalCount, highCount, mediumCount, lowCount, subSurfaceCard, itemSurface, getTier, weeklyBars,
+    criticalCount, highCount, mediumCount, lowCount, subSurfaceCard, itemSurface, getTier, weeklyBars, analytics,
     completionPct, totalCount, resolvedCount, displayFindings, setTierFilter, tierFilter, exportPriorityCsv, filteredFindings,
     toggleFindingStatus, handleCreateScan, handleLookupIntel, intelMessage, isLookingUpIntel,
     scanCve, setScanCve, scanAssetId, setScanAssetId, assets,

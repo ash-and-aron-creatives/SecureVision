@@ -6,9 +6,26 @@ export function DashboardView(props: SecureAppViewProps) {
     activeTab, tabAnimKey, surfaceCard, headingColor, mutedText,
     switchTab, darkMode, exportExecutiveReport, criticalCount, highCount,
     mediumCount, lowCount, subSurfaceCard, itemSurface, getTier,
-    weeklyBars, completionPct, totalCount, resolvedCount, displayFindings,
+    analytics, weeklyBars, completionPct, totalCount, resolvedCount, displayFindings,
     setTierFilter, setSelectedFinding, role,
   } = props;
+  const activity = analytics?.weekly_activity ?? [];
+  const maxActivity = Math.max(
+    1,
+    ...activity.map((day) => Math.max(day.ingested_count, day.resolved_count)),
+  );
+  const chartPoints = (key: "ingested_count" | "resolved_count") =>
+    activity.map((day, index) => ({
+      x: activity.length > 1 ? 40 + (640 / (activity.length - 1)) * index : 360,
+      y: 170 - (day[key] / maxActivity) * 130,
+    }));
+  const ingestionPoints = chartPoints("ingested_count");
+  const resolutionPoints = chartPoints("resolved_count");
+  const pathFor = (points: Array<{ x: number; y: number }>) =>
+    points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  const areaFor = (points: Array<{ x: number; y: number }>) =>
+    `${pathFor(points)} L ${points[points.length - 1]?.x ?? 680} 190 L ${points[0]?.x ?? 40} 190 Z`;
+  const hasActivity = activity.some((day) => day.ingested_count > 0 || day.resolved_count > 0);
   return (activeTab === "dashboard" && (
           <div key={`dash-${tabAnimKey}`} className={`rounded-3xl p-4 sm:p-6 md:p-8 border space-y-6 sv-tab-transition transition-colors duration-300 ${surfaceCard}`}>
             {/* Title Row + Action Buttons */}
@@ -150,9 +167,9 @@ export function DashboardView(props: SecureAppViewProps) {
               </div>
             </div>
 
-            {/* ROW 2: EXECUTIVE SPLINE AREA ANALYTICS GRAPH (7 COLS) + TOP PRIORITY QUEUE (5 COLS) */}
+            {/* ROW 2: AUDIT ACTIVITY GRAPH (7 COLS) + TOP PRIORITY QUEUE (5 COLS) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* Col 1 (7 cols): Smooth Dual-Curve Area Analytics Graph */}
+              {/* Col 1 (7 cols): Finding Activity Graph */}
               <div
                 style={{ animationDelay: "0.26s" }}
                 className={`sv-card-pop lg:col-span-7 rounded-3xl p-5 sm:p-6 md:p-7 border flex flex-col justify-between relative overflow-hidden ${subSurfaceCard}`}
@@ -161,32 +178,31 @@ export function DashboardView(props: SecureAppViewProps) {
                   <div>
                     <div className="flex items-center gap-2.5">
                       <h3 className={`text-lg font-extrabold ${headingColor}`}>
-                        Threat Exposure & Remediation Velocity
+                        Finding Activity (Last 7 Days)
                       </h3>
                       <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-[#00E5C4]/20 text-[#00B89E]">
-                        Live Telemetry
+                        Audit history
                       </span>
                     </div>
                     <p className={`text-xs mt-0.5 ${mutedText}`}>
-                      30-day correlation between weaponized KEV detections and verified patch mitigations
+                      Scan/import activity and resolution events
                     </p>
                   </div>
 
                   <div className="flex items-center gap-4 text-xs font-semibold">
                     <span className={`flex items-center gap-1.5 ${darkMode ? "text-white/80" : "text-slate-600"}`}>
                       <span className="w-3 h-3 rounded-full bg-gradient-to-r from-[#8121D7] to-[#E5007D] inline-block shadow-xs"></span>
-                      Critical / KEV Ingested
+                      Findings Ingested
                     </span>
                     <span className={`flex items-center gap-1.5 ${darkMode ? "text-white/80" : "text-slate-600"}`}>
                       <span className="w-3 h-3 rounded-full bg-gradient-to-r from-[#00E5C4] to-[#1ABDD6] inline-block shadow-xs"></span>
-                      Remediated Within SLA
+                      Resolution Events
                     </span>
                   </div>
                 </div>
 
-                {/* Animated SVG Dual-Area Spline Chart */}
                 <div className="relative w-full h-56 my-1">
-                  <svg viewBox="0 0 700 220" className="w-full h-full overflow-visible" preserveAspectRatio="none">
+                  {hasActivity ? <svg viewBox="0 0 700 220" className="w-full h-full overflow-visible" preserveAspectRatio="none">
                     <defs>
                       <linearGradient id="areaPurple" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#8121D7" stopOpacity="0.38" />
@@ -222,72 +238,39 @@ export function DashboardView(props: SecureAppViewProps) {
                           strokeWidth="1"
                         />
                         <text x="6" y={y + 4} className="fill-slate-400 text-[10px] font-semibold">
-                          {100 - idx * 25}
+                          {Math.round(maxActivity * (1 - idx / 3))}
                         </text>
                       </g>
                     ))}
 
-                    <path
-                      d="M 40 145 C 110 120, 155 60, 220 78 C 285 95, 330 42, 395 55 C 460 68, 515 115, 575 88 C 620 68, 655 95, 680 105 L 680 190 L 40 190 Z"
-                      fill="url(#areaPurple)"
-                    />
-                    <path
-                      d="M 40 145 C 110 120, 155 60, 220 78 C 285 95, 330 42, 395 55 C 460 68, 515 115, 575 88 C 620 68, 655 95, 680 105"
-                      fill="none"
-                      stroke="url(#linePurple)"
-                      strokeWidth="3.5"
-                      strokeLinecap="round"
-                    />
+                    <path d={areaFor(ingestionPoints)} fill="url(#areaPurple)" />
+                    <path d={pathFor(ingestionPoints)} fill="none" stroke="url(#linePurple)" strokeWidth="3.5" strokeLinecap="round" />
+                    <path d={areaFor(resolutionPoints)} fill="url(#areaCyan)" />
+                    <path d={pathFor(resolutionPoints)} fill="none" stroke="url(#lineCyan)" strokeWidth="3.5" strokeLinecap="round" />
 
-                    <path
-                      d="M 40 165 C 110 150, 160 110, 220 118 C 285 125, 335 85, 395 72 C 460 58, 515 65, 575 44 C 620 30, 655 38, 680 28 L 680 190 L 40 190 Z"
-                      fill="url(#areaCyan)"
-                    />
-                    <path
-                      d="M 40 165 C 110 150, 160 110, 220 118 C 285 125, 335 85, 395 72 C 460 58, 515 65, 575 44 C 620 30, 655 38, 680 28"
-                      fill="none"
-                      stroke="url(#lineCyan)"
-                      strokeWidth="3.5"
-                      strokeLinecap="round"
-                    />
-
-                    {[
-                      { cx: 220, cy: 78, color: "#E5007D" },
-                      { cx: 395, cy: 55, color: "#8121D7" },
-                      { cx: 575, cy: 44, color: "#00B89E" },
-                      { cx: 680, cy: 28, color: "#00E5C4" },
-                    ].map((pt, i) => (
-                      <g key={i}>
-                        <circle cx={pt.cx} cy={pt.cy} r="6" fill="#fff" stroke={pt.color} strokeWidth="3" />
-                      </g>
+                    {ingestionPoints.map((point, idx) => (
+                      <circle key={`ingested-${idx}`} cx={point.x} cy={point.y} r="4" fill="#fff" stroke="#8121D7" strokeWidth="2.5" />
+                    ))}
+                    {resolutionPoints.map((point, idx) => (
+                      <circle key={`resolved-${idx}`} cx={point.x} cy={point.y} r="4" fill="#fff" stroke="#00B89E" strokeWidth="2.5" />
                     ))}
 
-                    <g transform="translate(525, 8)">
-                      <rect x="0" y="0" width="96" height="24" rx="12" fill="#1D0C3B" />
-                      <text x="48" y="15" textAnchor="middle" className="fill-[#00E5C4] text-[10px] font-bold">
-                        +94% SLA Met
-                      </text>
-                    </g>
-
-                    {[
-                      { x: 45, label: "Wk 1" },
-                      { x: 170, label: "Wk 2" },
-                      { x: 295, label: "Wk 3" },
-                      { x: 420, label: "Wk 4" },
-                      { x: 545, label: "Wk 5" },
-                      { x: 665, label: "Now" },
-                    ].map((t, idx) => (
+                    {activity.map((day, idx) => (
                       <text
-                        key={idx}
-                        x={t.x}
+                        key={day.date}
+                        x={activity.length > 1 ? 40 + (640 / (activity.length - 1)) * idx : 360}
                         y="212"
                         textAnchor="middle"
                         className="fill-slate-400 text-[11px] font-semibold"
                       >
-                        {t.label}
+                        {new Date(`${day.date}T00:00:00Z`).toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" })}
                       </text>
                     ))}
-                  </svg>
+                  </svg> : (
+                    <div className={`h-full flex items-center justify-center text-sm font-semibold ${mutedText}`}>
+                      No data yet
+                    </div>
+                  )}
                 </div>
 
                 {/* Bottom KPI Mini-Cards inside Graph Card (Clean 3-Row Stack - Zero Clipping) */}
@@ -297,11 +280,11 @@ export function DashboardView(props: SecureAppViewProps) {
                       Noise Reduction
                     </span>
                     <div className={`text-2xl font-extrabold tracking-tight tabular-nums ${headingColor}`}>
-                      85.4%
+                      No data yet
                     </div>
                     <div>
-                      <span className="inline-flex items-center text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#00E5C4]/15 text-[#008B76] dark:text-[#00E5C4]">
-                        Based on backend findings
+                      <span className={`inline-flex items-center text-[10px] font-semibold ${mutedText}`}>
+                        Duplicate-import telemetry is not recorded
                       </span>
                     </div>
                   </div>
@@ -311,11 +294,13 @@ export function DashboardView(props: SecureAppViewProps) {
                       Mean Time to Triage
                     </span>
                     <div className={`text-2xl font-extrabold tracking-tight tabular-nums ${headingColor}`}>
-                      1.8 hrs
+                      {analytics?.mean_time_to_triage_hours == null
+                        ? "No data yet"
+                        : `${analytics.mean_time_to_triage_hours.toFixed(1)} hrs`}
                     </div>
                     <div>
-                      <span className="inline-flex items-center text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4]">
-                        ⚡ -64% faster
+                      <span className={`inline-flex items-center text-[10px] font-semibold ${mutedText}`}>
+                        From recorded creation to first status change
                       </span>
                     </div>
                   </div>
@@ -325,11 +310,13 @@ export function DashboardView(props: SecureAppViewProps) {
                       SLA Compliance
                     </span>
                     <div className="text-2xl font-extrabold tracking-tight text-[#00B89E] tabular-nums">
-                      99.2%
+                      {analytics?.sla_compliance_pct == null
+                        ? "No data yet"
+                        : `${analytics.sla_compliance_pct.toFixed(1)}%`}
                     </div>
                     <div>
                       <span className={`inline-flex items-center text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-500/10 ${mutedText}`}>
-                        ⏱ 24h Critical SLA
+                        Resolved findings with recorded creation and resolution
                       </span>
                     </div>
                   </div>
@@ -420,19 +407,18 @@ export function DashboardView(props: SecureAppViewProps) {
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
                   <div>
                     <h3 className={`text-lg font-extrabold ${headingColor}`}>
-                      Weekly Scanner Ingestion
+                      Weekly Finding Ingestion
                     </h3>
                     <p className={`text-xs ${mutedText}`}>
-                      Daily CVE batch evaluations across Nessus, Qualys & Trivy feeds
+                      Daily findings recorded by scan and import audit events
                     </p>
                   </div>
-                  <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4] flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-[#00E5C4] animate-ping"></span>
-                    Backend data
+                  <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4]">
+                    Last 7 days
                   </span>
                 </div>
 
-                <div className="grid grid-cols-7 gap-3 sm:gap-4 items-end h-48 pt-4 px-1 sm:px-2">
+                {weeklyBars.length ? <div className="grid grid-cols-7 gap-3 sm:gap-4 items-end h-48 pt-4 px-1 sm:px-2">
                   {weeklyBars.map((bar, idx) => (
                     <div key={idx} className="flex flex-col items-center h-full justify-end group">
                       <span className="text-[11px] font-extrabold text-[#8121D7] dark:text-[#00E5C4] mb-1.5 opacity-85 group-hover:opacity-100 group-hover:-translate-y-0.5 transition-all">
@@ -440,20 +426,16 @@ export function DashboardView(props: SecureAppViewProps) {
                       </span>
                       <div
                         style={{ height: bar.height, animationDelay: `${0.15 + idx * 0.07}s` }}
-                        className={`sv-bar-grow w-full max-w-[48px] rounded-full transition-all duration-300 group-hover:scale-105 ${
-                          bar.type === "purple"
-                            ? "bg-gradient-to-b from-[#8121D7] to-[#4C2396] shadow-md"
-                            : bar.type === "cyan"
-                            ? "bg-gradient-to-b from-[#00E5C4] to-[#1ABDD6] shadow-md"
-                            : bar.type === "deep"
-                            ? "bg-gradient-to-b from-[#2B125A] to-[#E5007D] shadow-md"
-                            : "sv-striped-bar"
-                        }`}
+                        className="sv-bar-grow w-full max-w-[48px] rounded-full bg-gradient-to-b from-[#8121D7] to-[#4C2396] shadow-md transition-all duration-300 group-hover:scale-105"
                       ></div>
                       <span className={`text-xs font-bold mt-2.5 ${mutedText}`}>{bar.day}</span>
                     </div>
                   ))}
-                </div>
+                </div> : (
+                  <div className={`h-48 flex items-center justify-center text-sm font-semibold ${mutedText}`}>
+                    No data yet
+                  </div>
+                )}
               </div>
 
               {/* Col 2 (5 cols): Remediation Progress Gauge + Spacious 2x2 Tier Grid */}
@@ -464,10 +446,12 @@ export function DashboardView(props: SecureAppViewProps) {
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <h3 className={`text-lg font-extrabold ${headingColor}`}>Remediation Progress</h3>
-                    <p className={`text-xs ${mutedText}`}>Overall SLA mitigation & tier breakdown</p>
+                    <p className={`text-xs ${mutedText}`}>Resolved findings and open severity counts</p>
                   </div>
                   <span className="text-xs font-bold text-[#00B89E] bg-[#00E5C4]/20 px-3 py-1 rounded-full shrink-0">
-                    SLA Healthy
+                    {analytics?.sla_compliance_pct == null
+                      ? "No SLA data yet"
+                      : `${analytics.sla_compliance_pct.toFixed(1)}% within SLA`}
                   </span>
                 </div>
 
@@ -495,12 +479,14 @@ export function DashboardView(props: SecureAppViewProps) {
                       strokeWidth="22"
                       strokeLinecap="round"
                       strokeDasharray="251.2"
-                      strokeDashoffset={251.2 - (251.2 * completionPct) / 100}
+                      strokeDashoffset={completionPct == null ? 251.2 : 251.2 - (251.2 * completionPct) / 100}
                       className="sv-gauge-arc"
                     />
                   </svg>
                   <div className="-mt-8 text-center">
-                    <span className={`text-3xl font-extrabold ${headingColor}`}>{completionPct}%</span>
+                    <span className={`text-3xl font-extrabold ${headingColor}`}>
+                      {completionPct == null ? "No data yet" : `${completionPct.toFixed(1)}%`}
+                    </span>
                     <p className={`text-[11px] font-semibold ${mutedText}`}>Findings Mitigated</p>
                   </div>
                 </div>
@@ -508,10 +494,10 @@ export function DashboardView(props: SecureAppViewProps) {
                 {/* Spacious 2x2 Grid for Critical, High, Medium, Low */}
                 <div className="grid grid-cols-2 gap-2.5 my-2">
                   {[
-                    { label: "Critical", count: criticalCount, pct: Math.round((criticalCount / totalCount) * 100), bar: "from-[#881365] to-[#E5007D]", dot: "bg-[#E5007D]" },
-                    { label: "High", count: highCount, pct: Math.round((highCount / totalCount) * 100), bar: "from-[#5926B6] to-[#4F46E5]", dot: "bg-[#6D28D9]" },
-                    { label: "Medium", count: mediumCount, pct: Math.round((mediumCount / totalCount) * 100), bar: "from-[#0284C7] to-[#1ABDD6]", dot: "bg-[#0284C7]" },
-                    { label: "Low", count: lowCount, pct: Math.round((lowCount / totalCount) * 100), bar: "from-[#0D9488] to-[#00C8A8]", dot: "bg-[#0D9488]" },
+                    { label: "Critical", count: criticalCount, tierCount: analytics?.critical_count ?? 0, bar: "from-[#881365] to-[#E5007D]", dot: "bg-[#E5007D]" },
+                    { label: "High", count: highCount, tierCount: analytics?.high_count ?? 0, bar: "from-[#5926B6] to-[#4F46E5]", dot: "bg-[#6D28D9]" },
+                    { label: "Medium", count: mediumCount, tierCount: analytics?.medium_count ?? 0, bar: "from-[#0284C7] to-[#1ABDD6]", dot: "bg-[#0284C7]" },
+                    { label: "Low", count: lowCount, tierCount: analytics?.low_count ?? 0, bar: "from-[#0D9488] to-[#00C8A8]", dot: "bg-[#0D9488]" },
                   ].map((row, idx) => (
                     <div
                       key={idx}
@@ -524,12 +510,12 @@ export function DashboardView(props: SecureAppViewProps) {
                           <span className={headingColor}>{row.label}</span>
                         </span>
                         <span className={`text-[11px] font-bold tabular-nums whitespace-nowrap ${mutedText}`}>
-                          {row.count} ({row.pct}%)
+                          {row.count} open / {row.tierCount} total
                         </span>
                       </div>
                       <div className={`w-full h-2 rounded-full overflow-hidden ${darkMode ? "bg-white/10" : "bg-slate-200/80"}`}>
                         <div
-                          style={{ width: `${Math.max(row.pct, 10)}%` }}
+                          style={{ width: `${row.tierCount > 0 ? (row.count / row.tierCount) * 100 : 0}%` }}
                           className={`h-full rounded-full bg-gradient-to-r ${row.bar}`}
                         ></div>
                       </div>
@@ -539,10 +525,10 @@ export function DashboardView(props: SecureAppViewProps) {
 
                 <div className={`w-full flex flex-wrap items-center justify-between gap-2 text-[11px] pt-3 border-t ${darkMode ? "border-white/10 text-white/70" : "border-slate-200/70 text-slate-500"}`}>
                   <span className="flex items-center gap-1.5 font-semibold whitespace-nowrap">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#00E5C4]"></span>Mitigated ({resolvedCount})
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#00E5C4]"></span>Resolved ({resolvedCount})
                   </span>
                   <span className="flex items-center gap-1.5 font-semibold whitespace-nowrap">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#8121D7]"></span>Open ({totalCount - resolvedCount})
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#8121D7]"></span>Not resolved ({totalCount - resolvedCount})
                   </span>
                   <span className="text-[#00B89E] font-bold whitespace-nowrap">Total: {totalCount} CVEs</span>
                 </div>

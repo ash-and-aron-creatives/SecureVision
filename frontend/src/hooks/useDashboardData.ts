@@ -2,7 +2,7 @@ import { useCallback, useEffect } from "react";
 import { fetchDashboardData } from "../api/dashboard";
 import { ApiRequestError } from "../api/client";
 import type { ApiRequester } from "../api/types";
-import type { Asset, AuditEntry, Finding, UserItem, UserRole } from "../types";
+import type { Asset, AuditEntry, DashboardAnalytics, Finding, UserItem, UserRole } from "../types";
 
 interface UseDashboardDataProps {
   token: string | null;
@@ -11,6 +11,7 @@ interface UseDashboardDataProps {
   handleLogout: () => void;
   setFindings: (findings: Finding[]) => void;
   setAssets: (assets: Asset[]) => void;
+  setAnalytics: (analytics: DashboardAnalytics) => void;
   setAuditLogs: (logs: AuditEntry[]) => void;
   setUsers: (users: UserItem[]) => void;
   setActionMessage: (message: string) => void;
@@ -23,6 +24,7 @@ export function useDashboardData({
   handleLogout,
   setFindings,
   setAssets,
+  setAnalytics,
   setAuditLogs,
   setUsers,
   setActionMessage,
@@ -36,10 +38,11 @@ export function useDashboardData({
     if (!token) return;
     let active = true;
     fetchAllData(token)
-      .then(({ findings: nextFindings, assets: nextAssets, auditLogs: nextAuditLogs, users: nextUsers }) => {
+      .then(({ findings: nextFindings, assets: nextAssets, analytics, auditLogs: nextAuditLogs, users: nextUsers }) => {
         if (!active) return;
         setFindings(nextFindings);
         setAssets(nextAssets);
+        setAnalytics(analytics);
         setAuditLogs(nextAuditLogs);
         setUsers(nextUsers);
       })
@@ -52,14 +55,15 @@ export function useDashboardData({
     return () => {
       active = false;
     };
-  }, [handleLogout, token, fetchAllData, setFindings, setAssets, setAuditLogs, setUsers, setActionMessage]);
+  }, [handleLogout, token, fetchAllData, setFindings, setAssets, setAnalytics, setAuditLogs, setUsers, setActionMessage]);
 
   const refreshAllData = async (authToken: string) => {
     try {
-      const { findings: nextFindings, assets: nextAssets, auditLogs: nextAuditLogs, users: nextUsers } =
+      const { findings: nextFindings, assets: nextAssets, analytics, auditLogs: nextAuditLogs, users: nextUsers } =
         await fetchAllData(authToken);
       setFindings(nextFindings);
       setAssets(nextAssets);
+      setAnalytics(analytics);
       setAuditLogs(nextAuditLogs);
       setUsers(nextUsers);
     } catch (fetchError) {
