@@ -17,23 +17,17 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-The backend reads configuration from its process environment. `.env.example` lists the variable names and example values, but the Python scripts do not load that file automatically. Configure the variables in the same PowerShell session used to initialize and run the backend:
-
-```powershell
-$env:SECRET_KEY = python -c "import secrets; print(secrets.token_urlsafe(48))"
-$env:DATABASE_URL = "sqlite:///./securevision.db"
-$env:CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
-```
+Run `.\setup_dev.ps1` from the repository root to create local configuration files if they do not already exist and initialize `securevision_dev.db`. The script generates a random signing key and initial administrator password, then prints the initial credentials once when it creates the backend configuration. The script never targets `securevision.db`.
 
 | Variable | Purpose |
 |---|---|
 | `SECRET_KEY` | Private JWT signing key; required by the API and must be at least 32 characters. |
 | `ADMIN_INITIAL_PASSWORD` | Password used when bootstrapping or rotating the `admin` account; must be at least 8 characters. |
-| `DATABASE_URL` | SQLAlchemy database URL. Defaults to `sqlite:///./securevision.db`, relative to the backend process's working directory. |
+| `DATABASE_URL` | SQLAlchemy database URL. The local setup script sets this to `sqlite:///./securevision_dev.db`, relative to the repository root. |
 | `CORS_ORIGINS` | Comma-separated, exact browser origins allowed to call the API. The default is empty; `*` is rejected. |
 | `NEXT_PUBLIC_API_BASE` | Frontend API URL. Defaults to `http://localhost:8000`; set it in `frontend/.env.local` when needed. |
 
-`frontend/.env.example` is the frontend template. Next.js reads `frontend/.env.local` automatically; that local file is ignored by Git.
+`backend/.env` and `frontend/.env.local` are ignored by Git. Next.js reads `frontend/.env.local` automatically. Python does not load `backend/.env` automatically, so load it into the backend terminal before starting the API as shown below.
 
 ## Administrator bootstrap and password rotation
 
@@ -57,26 +51,35 @@ Remove-Item Env:ADMIN_INITIAL_PASSWORD
 
 Both scripts must be run from the repository root so Python can import the `backend` package.
 
-## Run the applications
+## Run locally
 
-Run the backend in one PowerShell terminal from the repository root. Set `SECRET_KEY`, `DATABASE_URL`, and `CORS_ORIGINS` as shown above; initialize a new database first if needed:
+Initialize the development database after completing the dependency setup above:
 
 ```powershell
-python -m uvicorn backend.main:app --reload
+.\setup_dev.ps1
 ```
 
-The API is available at `http://localhost:8000`, with interactive API documentation at `http://localhost:8000/docs`.
+In a PowerShell terminal at the repository root, load the generated backend settings and start the API on port 8000:
 
-In a second terminal, install and start the frontend:
+```powershell
+.\.venv\Scripts\Activate.ps1
+Get-Content backend\.env | ForEach-Object {
+    if ($_ -match '^\s*([^#=]+?)\s*=\s*(.*?)\s*$') {
+        [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
+    }
+}
+python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+In a second terminal, install and start the frontend on port 3000:
 
 ```powershell
 Set-Location frontend
-Copy-Item .env.example .env.local
 npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. If the backend is hosted elsewhere, update `NEXT_PUBLIC_API_BASE` in `frontend/.env.local` and restart the frontend process.
+The API is available at `http://localhost:8000` and its interactive documentation at `http://localhost:8000/docs`; open the frontend at `http://localhost:3000`.
 
 ## CVE intelligence and scoring
 
