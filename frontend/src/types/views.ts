@@ -49,6 +49,9 @@ export interface SecureAppViewProps {
   filteredFindings: Finding[];
   toggleFindingStatus: (finding: Finding) => Promise<void>;
   handleCreateScan: FormEventHandler<HTMLFormElement>;
+  handleLookupIntel: () => Promise<void>;
+  intelMessage: string;
+  isLookingUpIntel: boolean;
   scanCve: string;
   setScanCve: Dispatch<SetStateAction<string>>;
   scanAssetId: string;

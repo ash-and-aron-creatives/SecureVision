@@ -92,9 +92,17 @@ export interface ImportCommit {
 
 export interface LoginResponse {
   access_token: string;
-  token_type: string;
+  token_type: "bearer";
   role: UserRole;
   username: string;
+}
+
+export interface IntelResponse {
+  cve_id: string;
+  epss: number | null;
+  cvss: number | null;
+  available: boolean;
+  errors: string[];
 }
 
 export interface StatusUpdate {

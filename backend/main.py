@@ -19,10 +19,12 @@ from backend.schemas import (
     AuditEntryResponse,
     FindingDetailResponse,
     FindingsPageResponse,
+    IntelResponse,
     ImportCommitResponse,
     ImportPreviewResponse,
     ScanResultResponse,
     StatusUpdateResponse,
+    TokenResponse,
 )
 
 models.Base.metadata.create_all(bind=engine)
@@ -48,6 +50,7 @@ app.include_router(users_router)
 
 TIER_RANK = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Unknown": 0}
 VALID_STATUSES = {"Open", "In Progress", "Resolved"}
+CVE_ID_PATTERN = re.compile(r"CVE-\d{4}-\d{4,}")
 
 
 def _stored_score(score: models.FindingScore | None, tier: str) -> int:
@@ -87,14 +90,14 @@ class AssetCreateRequest(BaseModel):
 class ScanRequest(BaseModel):
     asset_id: int
     cve_id: str
-    cvss_score: float = 0.0
+    cvss_score: float | None = None
     in_kev: bool = False
-    epss_percentile: float = 0.0
+    epss_percentile: float | None = None
 
 class StatusUpdateRequest(BaseModel):
     status: str
 
-@app.post("/token")
+@app.post("/token", response_model=TokenResponse)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == form_data.username).first()
     if not user or not auth.verify_password(form_data.password, user.hashed_password):
@@ -140,12 +143,15 @@ def create_asset(
 def get_assets(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return db.query(models.Asset).order_by(models.Asset.id.asc()).all()
 
-@app.get("/intel/{cve_id}")
+@app.get("/intel/{cve_id}", response_model=IntelResponse)
 async def get_intel(cve_id: str, current_user: models.User = Depends(auth.get_current_user)):
-    return await fetch_cve_data(cve_id.strip().upper())
+    cve_clean = cve_id.strip().upper()
+    if not CVE_ID_PATTERN.fullmatch(cve_clean):
+        raise HTTPException(status_code=422, detail="cve_id must look like CVE-2021-44228.")
+    return await fetch_cve_data(cve_clean)
 
 @app.post("/scan", response_model=ScanResultResponse)
-def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role == "viewer":
         raise HTTPException(status_code=403, detail="Viewers cannot run scans.")
     asset = db.query(models.Asset).filter(models.Asset.id == req.asset_id).first()
@@ -153,16 +159,32 @@ def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), current_
         raise HTTPException(status_code=404, detail="Asset not found")
 
     cve_clean = req.cve_id.strip().upper()
-    if not re.fullmatch(r"CVE-\d{4}-\d{4,}", cve_clean):
+    if not CVE_ID_PATTERN.fullmatch(cve_clean):
         raise HTTPException(status_code=400, detail="cve_id must look like CVE-2021-44228.")
+    cvss_score = req.cvss_score
+    epss_percentile = req.epss_percentile
+    if cvss_score is None or epss_percentile is None:
+        intel = await fetch_cve_data(cve_clean)
+        if cvss_score is None:
+            cvss_score = intel["cvss"]
+        if epss_percentile is None:
+            epss_percentile = intel["epss"]
+        if cvss_score is None or epss_percentile is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "message": "Threat intelligence is unavailable; scan was not scored.",
+                    "errors": intel["errors"],
+                },
+            )
     internet_facing = (asset.exposure.lower() == "internet")
-    scoring = calculate_priority(req.in_kev, internet_facing, asset.criticality, req.epss_percentile, req.cvss_score)
+    scoring = calculate_priority(req.in_kev, internet_facing, asset.criticality, epss_percentile, cvss_score)
     tier = scoring["tier"]
 
     finding = models.Finding(
         asset_id=asset.id,
         cve_id=cve_clean,
-        cvss_score=req.cvss_score,
+        cvss_score=cvss_score,
         in_kev=req.in_kev,
         status="Open",
     )
@@ -172,13 +194,13 @@ def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), current_
         score = models.FindingScore(
             finding_id=finding.id,
             provider_id=1,
-            likelihood=req.epss_percentile,
+            likelihood=epss_percentile,
             priority_tier=tier,
             provenance={
                 "source": "Manual Scan",
                 "in_kev": req.in_kev,
-                "cvss": req.cvss_score,
-                "epss": req.epss_percentile,
+                "cvss": cvss_score,
+                "epss": epss_percentile,
                 "score": scoring["score"],
                 "scoring_explanation": scoring["explanation"],
             },
@@ -420,10 +442,7 @@ async def commit_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
 
     intel = {}
     for cve in cves:
-        try:
-            intel[cve] = await fetch_cve_data(cve)
-        except Exception:
-            intel[cve] = None
+        intel[cve] = await fetch_cve_data(cve)
 
     asset_by_id = {a.id: a for a in db.query(models.Asset).all()}
     imported = 0
@@ -431,15 +450,16 @@ async def commit_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
     try:
         for r in ok:
             info = intel.get(r.cve_id)
-            if not info:
-                r.status, r.reason = "error", "No intel data available."
+            if not info or not info["available"] or info["epss"] is None or info["cvss"] is None:
+                errors = "; ".join(info["errors"]) if info else "Threat intelligence lookup failed."
+                r.status, r.reason = "error", errors
                 continue
 
             asset = asset_by_id[r.asset_id]
             internet_facing = (asset.exposure.lower() == "internet")
             in_kev = bool(info.get("in_kev", False))
-            cvss_val = float(info.get("cvss", 0.0))
-            epss_val = float(info.get("epss", 0.0))
+            cvss_val = info["cvss"]
+            epss_val = info["epss"]
             scoring = calculate_priority(in_kev, internet_facing, asset.criticality, epss_val, cvss_val)
             tier = scoring["tier"]
 

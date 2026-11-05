@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -12,6 +12,21 @@ class UserResponse(ResponseSchema):
     id: int
     username: str
     role: str
+
+
+class TokenResponse(ResponseSchema):
+    access_token: str
+    token_type: Literal["bearer"]
+    role: Literal["admin", "analyst", "viewer"]
+    username: str
+
+
+class IntelResponse(ResponseSchema):
+    cve_id: str
+    epss: float | None
+    cvss: float | None
+    available: bool
+    errors: list[str]
 
 
 class DeletedUserResponse(ResponseSchema):

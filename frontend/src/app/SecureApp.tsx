@@ -139,7 +139,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   });
   const {
     scanCve, setScanCve, scanAssetId, setScanAssetId, scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev,
-    handleCreateScan,
+    handleCreateScan, handleLookupIntel, intelMessage, isLookingUpIntel,
   } = useScan(token, apiRequest, setActionMessage, fetchAllData, switchTab);
   const {
     setCsvFile, importPreview, setImportPreview, handleCsvPreview, handleCsvCommit,
@@ -223,7 +223,8 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     activeTab, tabAnimKey, surfaceCard, headingColor, mutedText, switchTab, darkMode, exportExecutiveReport,
     criticalCount, highCount, mediumCount, lowCount, subSurfaceCard, itemSurface, getTier, weeklyBars,
     completionPct, totalCount, resolvedCount, displayFindings, setTierFilter, tierFilter, exportPriorityCsv, filteredFindings,
-    toggleFindingStatus, handleCreateScan, scanCve, setScanCve, scanAssetId, setScanAssetId, assets,
+    toggleFindingStatus, handleCreateScan, handleLookupIntel, intelMessage, isLookingUpIntel,
+    scanCve, setScanCve, scanAssetId, setScanAssetId, assets,
     scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev, handleCsvPreview, setCsvFile,
     importPreview, setImportPreview, handleCsvCommit, handleCreateAsset, assetHost, setAssetHost, assetExposure, setAssetExposure,
     assetCrit, setAssetCrit, role, auditLogs, handleCreateUser, newUsername, setNewUsername, newPassword,

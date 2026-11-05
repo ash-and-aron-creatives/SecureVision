@@ -7,9 +7,9 @@ export function createScan(
   payload: {
     asset_id: number;
     cve_id: string;
-    cvss_score: number;
+    cvss_score: number | null;
     in_kev: boolean;
-    epss_percentile: number;
+    epss_percentile: number | null;
   },
 ): Promise<ScanResult> {
   return apiRequest<ScanResult>("/scan", authToken, {

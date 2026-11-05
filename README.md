@@ -1,6 +1,6 @@
 # SecureVision
 
-SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. The backend scores findings using KEV, internet exposure, asset criticality, EPSS, and CVSS; the frontend provides dashboards, triage, CSV import, asset management, and administrator views.
+SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. The backend scores findings using KEV, internet exposure, asset criticality, EPSS, and CVSS; the frontend provides dashboards, triage, CVE intelligence lookup, CSV import, asset management, and administrator views.
 
 ## Requirements
 
@@ -77,6 +77,12 @@ npm run dev
 ```
 
 Open `http://localhost:3000`. If the backend is hosted elsewhere, update `NEXT_PUBLIC_API_BASE` in `frontend/.env.local` and restart the frontend process.
+
+## CVE intelligence and scoring
+
+`POST /token` returns a typed bearer-token response. Authenticated `GET /intel/{cve_id}` validates identifiers using the same `CVE-YYYY-NNNN...` format as scans and returns EPSS and CVSS as nullable values, with an `available` flag and provider errors. A provider failure or missing score is not represented as a numeric zero.
+
+The scan form can look up scores before submission. Blank score fields are resolved by the backend; if a score required for scoring cannot be obtained, `POST /scan` returns `503` and does not create a finding. CSV imports likewise skip rows whose intelligence is unavailable and report the provider error in the row result. Explicitly entered scan scores remain manual inputs.
 
 ## Tests
 

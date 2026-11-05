@@ -4,7 +4,8 @@ import type { SecureAppViewProps } from "@/types/views";
 export function ScanView(props: SecureAppViewProps) {
   const {
     activeTab, tabAnimKey, surfaceCard, headingColor, mutedText, role,
-    darkMode, handleCreateScan, scanCve, setScanCve, scanAssetId,
+    darkMode, handleCreateScan, handleLookupIntel, intelMessage, isLookingUpIntel,
+    scanCve, setScanCve, scanAssetId,
     setScanAssetId, assets, scanCvss, setScanCvss, scanEpss,
     setScanEpss, scanKev, setScanKev,
   } = props;
@@ -27,6 +28,17 @@ export function ScanView(props: SecureAppViewProps) {
                     className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:border-[#00E5C4] ${darkMode ? "bg-[#15082E] border-white/15 text-white" : "bg-white border-slate-200"}`}
                     required
                   />
+                  <button
+                    type="button"
+                    onClick={handleLookupIntel}
+                    disabled={isLookingUpIntel}
+                    className="mt-2 text-xs font-semibold text-[#00B89E] hover:underline disabled:opacity-50"
+                  >
+                    {isLookingUpIntel ? "Looking up..." : "Look up CVE scores"}
+                  </button>
+                  {intelMessage && (
+                    <p className={`mt-2 text-xs ${mutedText}`} role="status">{intelMessage}</p>
+                  )}
                 </div>
                 <div>
                   <label className={`block text-xs font-bold mb-1 ${headingColor}`}>Asset</label>
@@ -46,6 +58,9 @@ export function ScanView(props: SecureAppViewProps) {
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <p className={`sm:col-span-3 text-xs ${mutedText}`}>
+                  Leave either score blank to retrieve it during scoring. If a required score is unavailable, the scan is rejected rather than scored as zero.
+                </p>
                 <div>
                   <label className={`block text-xs font-bold mb-1 ${headingColor}`}>CVSS (0-10)</label>
                   <input

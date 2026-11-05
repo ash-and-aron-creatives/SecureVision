@@ -92,6 +92,34 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
     client, db = api
     headers = _headers(client)
 
+    token_response = client.post(
+        "/token",
+        data={"username": "test-admin", "password": "test-password"},
+    )
+    assert set(token_response.json()) == {"access_token", "token_type", "role", "username"}
+
+    async def unavailable_intel(cve_id):
+        return {
+            "cve_id": cve_id,
+            "epss": None,
+            "cvss": None,
+            "available": False,
+            "errors": ["EPSS lookup failed.", "NVD lookup failed."],
+        }
+
+    monkeypatch.setattr(main, "fetch_cve_data", unavailable_intel)
+    invalid_intel = client.get("/intel/not-a-cve", headers=headers)
+    assert invalid_intel.status_code == 422
+    unavailable_response = client.get("/intel/CVE-2025-1111", headers=headers)
+    assert unavailable_response.status_code == 200
+    assert unavailable_response.json() == {
+        "cve_id": "CVE-2025-1111",
+        "epss": None,
+        "cvss": None,
+        "available": False,
+        "errors": ["EPSS lookup failed.", "NVD lookup failed."],
+    }
+
     asset_response = client.post(
         "/assets",
         json={"name": "SCHEMA-ASSET", "exposure": "Internal", "criticality": 3},
@@ -105,7 +133,12 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
 
     scan_response = client.post(
         "/scan",
-        json={"asset_id": 1, "cve_id": "CVE-2025-5678", "cvss_score": 8.0},
+        json={
+            "asset_id": 1,
+            "cve_id": "CVE-2025-5678",
+            "cvss_score": 8.0,
+            "epss_percentile": 0.0,
+        },
         headers=headers,
     )
     assert scan_response.status_code == 200
@@ -151,7 +184,14 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
     }
 
     async def fetch_cve_data(cve_id):
-        return {"in_kev": False, "cvss": 7.0, "epss": 0.4}
+        return {
+            "cve_id": cve_id,
+            "in_kev": False,
+            "cvss": 7.0,
+            "epss": 0.4,
+            "available": True,
+            "errors": [],
+        }
 
     monkeypatch.setattr(main, "fetch_cve_data", fetch_cve_data)
     committed = client.post(
@@ -162,6 +202,34 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
     assert committed.status_code == 200
     assert set(committed.json()) == {"imported", "skipped", "problems_csv"}
     assert committed.json()["imported"] == 1
+
+
+def test_csv_import_skips_findings_when_intel_is_unavailable(api, monkeypatch):
+    client, db = api
+    headers = _headers(client)
+
+    async def unavailable_intel(cve_id):
+        return {
+            "cve_id": cve_id,
+            "epss": 0.2,
+            "cvss": None,
+            "available": False,
+            "errors": ["NVD CVSS score is unavailable."],
+        }
+
+    monkeypatch.setattr(main, "fetch_cve_data", unavailable_intel)
+    csv_data = b"asset_name,cve_id,date_found\nTEST-ASSET,CVE-2025-9876,2026-10-01\n"
+    response = client.post(
+        "/imports/commit",
+        files={"file": ("findings.csv", io.BytesIO(csv_data), "text/csv")},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["imported"] == 0
+    assert response.json()["skipped"] == 1
+    assert "NVD CVSS score is unavailable." in response.json()["problems_csv"]
+    assert db.query(Finding).filter_by(cve_id="CVE-2025-9876").first() is None
 
 
 def test_viewer_is_read_only_and_admin_only_routes_remain_restricted(api):
@@ -226,7 +294,12 @@ def test_scan_rolls_back_when_audit_insert_fails(api):
         db,
         lambda: client.post(
             "/scan",
-            json={"asset_id": 1, "cve_id": "CVE-2025-6789", "cvss_score": 7.0},
+            json={
+                "asset_id": 1,
+                "cve_id": "CVE-2025-6789",
+                "cvss_score": 7.0,
+                "epss_percentile": 0.0,
+            },
             headers=headers,
         ),
         lambda: db.query(Finding).filter_by(cve_id="CVE-2025-6789").first() is None,
@@ -287,7 +360,14 @@ def test_import_commit_rolls_back_when_audit_insert_fails(api, monkeypatch):
     csv_data = b"asset_name,cve_id,date_found\nTEST-ASSET,CVE-2025-9876,2026-10-01\n"
 
     async def fetch_cve_data(cve_id):
-        return {"in_kev": False, "cvss": 7.0, "epss": 0.4}
+        return {
+            "cve_id": cve_id,
+            "in_kev": False,
+            "cvss": 7.0,
+            "epss": 0.4,
+            "available": True,
+            "errors": [],
+        }
 
     monkeypatch.setattr(main, "fetch_cve_data", fetch_cve_data)
     _assert_audit_failure_rolls_back(

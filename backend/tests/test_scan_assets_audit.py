@@ -7,6 +7,7 @@ from sqlalchemy.pool import StaticPool
 from backend.main import app
 from backend.database import Base, get_db
 from backend import auth
+from backend import main
 from backend.models import Asset, AuditLog, User, Finding
 
 @pytest.fixture
@@ -84,6 +85,35 @@ def test_manual_scan_rejects_empty_or_invalid_cve(env):
             headers=h,
         )
         assert response.status_code == 400
+
+
+def test_scan_does_not_score_when_required_intel_is_unavailable(env, monkeypatch):
+    client, db = env
+    headers = _hdrs(client)
+    asset = Asset(name="INTEL-FAILURE-SRV", exposure="Internal", criticality=3)
+    db.add(asset)
+    db.commit()
+
+    async def unavailable_intel(cve_id):
+        return {
+            "cve_id": cve_id,
+            "epss": None,
+            "cvss": None,
+            "available": False,
+            "errors": ["EPSS lookup failed.", "NVD lookup failed."],
+        }
+
+    monkeypatch.setattr(main, "fetch_cve_data", unavailable_intel)
+    response = client.post(
+        "/scan",
+        json={"asset_id": asset.id, "cve_id": "CVE-2025-6789"},
+        headers=headers,
+    )
+
+    assert response.status_code == 503
+    assert "was not scored" in response.json()["detail"]["message"]
+    assert db.query(Finding).filter_by(cve_id="CVE-2025-6789").first() is None
+
 
 def test_audit_log_immutability_enforced(env):
     client, db = env
