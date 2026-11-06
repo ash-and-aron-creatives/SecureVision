@@ -87,6 +87,23 @@ The API is available at `http://localhost:8000` and its interactive documentatio
 
 The scan form can look up scores before submission. Blank score fields are resolved by the backend; if a score required for scoring cannot be obtained, `POST /scan` returns `503` and does not create a finding. CSV imports likewise skip rows whose intelligence is unavailable and report the provider error in the row result. Explicitly entered scan scores remain manual inputs.
 
+## CSV scanner imports
+
+The Import tab previews generic CSVs and Nessus, Qualys, and OpenVAS/Greenbone
+exports. The preview identifies the detected format, expands multi-CVE cells
+into separate findings, and reports all validation problems for each imported
+row. Inputs support UTF-8 (including a BOM), quoted CSV fields, ISO dates,
+ISO datetimes, and slash dates in day/month/year or month/day/year order
+(ambiguous slash dates are interpreted day-first). CVSS supplied by the file
+is used when present; otherwise the backend uses threat intelligence. Findings
+are skipped when the required intelligence remains unavailable.
+
+The optional **Create missing assets** checkbox defaults off. When enabled,
+missing assets are created as Internal with criticality 3 and marked **Needs
+review** in the asset inventory. Their creation and the import audit record are
+committed atomically with the findings. CSV limits remain 5 MiB and 5,000 data
+rows. Example files for each supported format are in [`sample_data/`](./sample_data/).
+
 ## Tests
 
 Run all backend tests from the repository root with the Python environment activated:
