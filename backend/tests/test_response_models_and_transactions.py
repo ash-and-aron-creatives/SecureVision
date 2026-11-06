@@ -126,9 +126,9 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
         headers=headers,
     )
     assert asset_response.status_code == 200
-    assert set(asset_response.json()) == {"id", "name", "exposure", "criticality"}
+    assert set(asset_response.json()) == {"id", "name", "exposure", "criticality", "needs_review"}
     assert set(client.get("/assets", headers=headers).json()[0]) == {
-        "id", "name", "exposure", "criticality",
+        "id", "name", "exposure", "criticality", "needs_review",
     }
 
     scan_response = client.post(
@@ -143,7 +143,9 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
     )
     assert scan_response.status_code == 200
     scan_body = scan_response.json()
-    assert set(scan_body) == {"finding_id", "action", "priority_tier", "score", "explanation"}
+    assert set(scan_body) == {
+        "finding_id", "action", "reopened", "priority_tier", "score", "explanation",
+    }
     assert scan_body["action"] == "created"
     assert scan_body["score"] == 2
     assert set(scan_body["explanation"]) == {"summary", "inputs", "rationale"}
@@ -178,10 +180,11 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
         headers=headers,
     )
     assert preview.status_code == 200
-    assert set(preview.json()) == {"summary", "rows"}
+    assert set(preview.json()) == {"detected_format", "summary", "rows"}
     assert set(preview.json()["summary"]) == {"total", "ok", "error", "duplicate"}
     assert set(preview.json()["rows"][0]) == {
         "line", "asset_name", "cve_id", "date_found", "status", "reason", "asset_id",
+        "cvss_score",
     }
 
     async def fetch_cve_data(cve_id):
@@ -231,6 +234,58 @@ def test_csv_import_skips_findings_when_intel_is_unavailable(api, monkeypatch):
     assert response.json()["skipped"] == 1
     assert "NVD CVSS score is unavailable." in response.json()["problems_csv"]
     assert db.query(Finding).filter_by(cve_id="CVE-2025-9876").first() is None
+
+
+def test_csv_import_creates_missing_asset_with_review_flag_and_file_cvss(api, monkeypatch):
+    client, db = api
+    headers = _headers(client)
+
+    async def available_epSS_only(cve_id):
+        return {
+            "cve_id": cve_id,
+            "epss": 0.4,
+            "cvss": None,
+            "available": True,
+            "errors": ["NVD CVSS score is unavailable."],
+        }
+
+    monkeypatch.setattr(main, "fetch_cve_data", available_epSS_only)
+    csv_data = (
+        b"Hostname,CVE,First Discovered,CVSS v3.1 Base Score\n"
+        b"new-db,CVE-2025-9877,2026-10-01,8.2\n"
+    )
+    preview = client.post(
+        "/imports/preview",
+        data={"create_missing_assets": "true"},
+        files={"file": ("findings.csv", io.BytesIO(csv_data), "text/csv")},
+        headers=headers,
+    )
+    assert preview.status_code == 200
+    assert preview.json()["detected_format"] == "Generic"
+    assert preview.json()["summary"]["ok"] == 1
+
+    response = client.post(
+        "/imports/commit",
+        data={"create_missing_assets": "true"},
+        files={"file": ("findings.csv", io.BytesIO(csv_data), "text/csv")},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["imported"] == 1
+    asset = db.query(Asset).filter_by(name="new-db").one()
+    assert asset.exposure == "Internal"
+    assert asset.criticality == 3
+    assert asset.needs_review is True
+    listed_asset = next(
+        item for item in client.get("/assets", headers=headers).json()
+        if item["id"] == asset.id
+    )
+    assert listed_asset["needs_review"] is True
+    finding = db.query(Finding).filter_by(cve_id="CVE-2025-9877").one()
+    assert finding.asset_id == asset.id
+    assert finding.cvss_score == 8.2
+    audit = db.query(AuditLog).filter_by(action="IMPORT").one()
+    assert "created_assets=new-db" in audit.details
 
 
 def test_viewer_is_read_only_and_admin_only_routes_remain_restricted(api):

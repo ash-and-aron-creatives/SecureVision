@@ -16,6 +16,7 @@ class Asset(Base):
     name = Column(String, index=True)
     exposure = Column(String)
     criticality = Column(Integer)
+    needs_review = Column(Boolean, default=False, nullable=False)
     findings = relationship('Finding', back_populates='asset')
 
 class Finding(Base):

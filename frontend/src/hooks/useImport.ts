@@ -12,6 +12,7 @@ export function useImport(
 ) {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [createMissingAssets, setCreateMissingAssets] = useState(false);
 
   const handleCsvPreview = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -20,18 +21,18 @@ export function useImport(
       return;
     }
     try {
-      const result = await previewImport(apiRequest, token, csvFile);
+      const result = await previewImport(apiRequest, token, csvFile, createMissingAssets);
       setImportPreview(result);
-      setActionMessage(`Preview ready: ${result.summary.ok} valid, ${result.summary.error} errors, ${result.summary.duplicate} duplicates.`);
+      setActionMessage(`Preview ready (${result.detected_format}): ${result.summary.ok} valid, ${result.summary.error} errors, ${result.summary.duplicate} duplicates.`);
     } catch (importError) {
       setActionMessage(importError instanceof Error ? importError.message : "CSV preview failed.");
     }
   };
 
   const handleCsvCommit = async () => {
-    if (!csvFile || !token || !importPreview) return;
+    if (!csvFile || !token || !importPreview || importPreview.summary.ok === 0) return;
     try {
-      const result = await commitImport(apiRequest, token, csvFile);
+      const result = await commitImport(apiRequest, token, csvFile, createMissingAssets);
       setActionMessage(`Backend imported ${result.imported} findings; ${result.skipped} skipped.`);
       await refreshAllData(token);
       setImportPreview(null);
@@ -44,6 +45,8 @@ export function useImport(
   return {
     csvFile,
     setCsvFile,
+    createMissingAssets,
+    setCreateMissingAssets,
     importPreview,
     setImportPreview,
     handleCsvPreview,

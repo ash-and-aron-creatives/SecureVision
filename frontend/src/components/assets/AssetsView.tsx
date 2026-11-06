@@ -58,6 +58,11 @@ export function AssetsView(props: SecureAppViewProps) {
                   <div>
                     <p className={`font-bold text-sm ${headingColor}`}>{a.name}</p>
                     <p className={`text-xs ${mutedText}`}>{a.exposure}</p>
+                    {a.needs_review && (
+                      <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-300">
+                        Needs review
+                      </p>
+                    )}
                   </div>
                   <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4]">
                     Tier {a.criticality}

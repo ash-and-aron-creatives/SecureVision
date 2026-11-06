@@ -34,6 +34,7 @@ export interface Asset {
   name: string;
   exposure: string;
   criticality: number;
+  needs_review: boolean;
 }
 
 export interface AuditEntry {
@@ -86,12 +87,14 @@ export interface DashboardAnalytics {
 export interface ScanResult {
   finding_id: number;
   action: "created" | "updated";
+  reopened: boolean;
   priority_tier: string;
   score: number;
   explanation: ScoringExplanation;
 }
 
 export interface ImportPreview {
+  detected_format: string;
   summary: {
     total: number;
     ok: number;
@@ -106,6 +109,7 @@ export interface ImportPreview {
     status: string;
     reason: string;
     asset_id: number | null;
+    cvss_score: number | null;
   }>;
 }
 

@@ -39,6 +39,7 @@ class AssetResponse(ResponseSchema):
     name: str
     exposure: str
     criticality: int
+    needs_review: bool
 
 
 class ScoringInputsResponse(ResponseSchema):
@@ -150,6 +151,7 @@ class FindingDetailResponse(ResponseSchema):
 class ScanResultResponse(ResponseSchema):
     finding_id: int
     action: Literal["created", "updated"]
+    reopened: bool
     priority_tier: str
     score: int
     explanation: ScoringExplanationResponse
@@ -176,9 +178,11 @@ class ImportRowResponse(ResponseSchema):
     status: str
     reason: str
     asset_id: int | None
+    cvss_score: float | None
 
 
 class ImportPreviewResponse(ResponseSchema):
+    detected_format: str
     summary: ImportSummaryResponse
     rows: list[ImportRowResponse]
 

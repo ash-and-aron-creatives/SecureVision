@@ -184,7 +184,8 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     handleCreateScan, handleLookupIntel, intelMessage, isLookingUpIntel,
   } = useScan(token, apiRequest, setActionMessage, refreshAllData, switchTab);
   const {
-    setCsvFile, importPreview, setImportPreview, handleCsvPreview, handleCsvCommit,
+    setCsvFile, createMissingAssets, setCreateMissingAssets, importPreview, setImportPreview,
+    handleCsvPreview, handleCsvCommit,
   } = useImport(token, apiRequest, setActionMessage, refreshAllData);
   const { assetHost, setAssetHost, assetExposure, setAssetExposure, assetCrit, setAssetCrit, handleCreateAsset } =
     useAssets(token, apiRequest, refreshAllData, setActionMessage);
@@ -268,6 +269,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     toggleFindingStatus, handleCreateScan, handleLookupIntel, intelMessage, isLookingUpIntel,
     scanCve, setScanCve, scanAssetId, setScanAssetId, assets,
     scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev, handleCsvPreview, setCsvFile,
+    createMissingAssets, setCreateMissingAssets,
     importPreview, setImportPreview, handleCsvCommit, handleCreateAsset, assetHost, setAssetHost, assetExposure, setAssetExposure,
     assetCrit, setAssetCrit, role, auditLogs, handleCreateUser, newUsername, setNewUsername, newPassword,
     setNewPassword, newRole, setNewRole, users, selectedFinding, setSelectedFinding,

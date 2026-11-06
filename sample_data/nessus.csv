@@ -1,0 +1,2 @@
+Plugin ID,Hostname,IP Address,CVE,First Discovered,CVSS v3.1 Base Score
+19506,payment-db,192.0.2.10,CVE-2021-44228,2026-10-01T10:20:30Z,9.8

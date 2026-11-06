@@ -90,6 +90,7 @@ def test_repeated_scan_updates_existing_finding_and_reopens_resolved(env):
     updated = client.post("/scan", json=payload, headers=headers)
     assert updated.status_code == 200
     assert updated.json()["action"] == "updated"
+    assert updated.json()["reopened"] is False
     assert updated.json()["finding_id"] == finding.id
     assert updated.json()["priority_tier"] != created.json()["priority_tier"]
     assert updated.json()["explanation"] != created.json()["explanation"]
@@ -104,6 +105,7 @@ def test_repeated_scan_updates_existing_finding_and_reopens_resolved(env):
     reopened = client.post("/scan", json=payload, headers=headers)
     assert reopened.status_code == 200
     assert reopened.json()["action"] == "updated"
+    assert reopened.json()["reopened"] is True
     db.refresh(finding)
     assert finding.status == "Open"
     assert db.query(Finding).filter_by(asset_id=asset.id, cve_id=payload["cve_id"]).count() == 1

@@ -4,7 +4,8 @@ import type { SecureAppViewProps } from "@/types/views";
 export function ImportView(props: SecureAppViewProps) {
   const {
     activeTab, tabAnimKey, surfaceCard, headingColor, mutedText, role,
-    subSurfaceCard, handleCsvPreview, setCsvFile, setImportPreview, importPreview,
+    subSurfaceCard, handleCsvPreview, setCsvFile, createMissingAssets, setCreateMissingAssets,
+    setImportPreview, importPreview,
     handleCsvCommit,
   } = props;
   return (activeTab === "import" && (role === "admin" || role === "analyst") && (
@@ -27,9 +28,21 @@ export function ImportView(props: SecureAppViewProps) {
                   className={`text-sm ${mutedText}`}
                 />
                 <p className={`text-xs mt-2 ${mutedText}`}>
-                  Required columns: asset_name, cve_id, date_found (YYYY-MM-DD)
+                  Supported scanner CSVs and generic CSVs with asset, CVE, and finding date columns.
                 </p>
               </div>
+              <label className={`flex items-center gap-2 text-xs ${mutedText}`}>
+                <input
+                  type="checkbox"
+                  checked={createMissingAssets}
+                  onChange={(event) => {
+                    setCreateMissingAssets(event.target.checked);
+                    setImportPreview(null);
+                  }}
+                  className="accent-[#8121D7]"
+                />
+                Create missing assets (Internal, criticality 3; needs review)
+              </label>
               <button
                 type="submit"
                 className="px-6 py-3 rounded-full bg-gradient-to-r from-[#8121D7] to-[#1ABDD6] text-white font-bold text-xs shadow-md hover:scale-105 transition-all cursor-pointer"
@@ -39,6 +52,9 @@ export function ImportView(props: SecureAppViewProps) {
             </form>
             {importPreview && (
               <div className="mt-6 space-y-4">
+                <p className={`text-xs font-semibold ${mutedText}`}>
+                  Detected: {importPreview.detected_format}
+                </p>
                 <p className={`text-sm font-bold ${headingColor}`}>
                   {importPreview.summary.total} rows: {importPreview.summary.ok} valid, {importPreview.summary.error} errors, {importPreview.summary.duplicate} duplicates
                 </p>
@@ -55,8 +71,8 @@ export function ImportView(props: SecureAppViewProps) {
                       </tr>
                     </thead>
                     <tbody>
-                      {importPreview.rows.map((row) => (
-                        <tr key={row.line} className="border-t border-slate-200/30">
+                      {importPreview.rows.map((row, index) => (
+                        <tr key={`${row.line}-${row.cve_id}-${index}`} className="border-t border-slate-200/30">
                           <td className="p-2">{row.line}</td>
                           <td className="p-2">{row.asset_name}</td>
                           <td className="p-2">{row.cve_id}</td>
@@ -71,7 +87,8 @@ export function ImportView(props: SecureAppViewProps) {
                 <button
                   type="button"
                   onClick={handleCsvCommit}
-                  className="px-6 py-3 rounded-full bg-gradient-to-r from-[#8121D7] to-[#00B89E] text-white font-bold text-xs shadow-md hover:scale-105 transition-all cursor-pointer"
+                  disabled={importPreview.summary.ok === 0}
+                  className="px-6 py-3 rounded-full bg-gradient-to-r from-[#8121D7] to-[#00B89E] text-white font-bold text-xs shadow-md hover:scale-105 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
                   Commit Import
                 </button>

@@ -1,10 +1,12 @@
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Query
+from fastapi import FastAPI, Depends, HTTPException, status, File, Form, UploadFile, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func
+from sqlalchemy import func, inspect
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import hashlib
+import csv
+import io
 import os
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -13,7 +15,7 @@ from backend import models, auth
 from backend.database import engine, get_db
 from backend.scoring_engine import TIER_SCORES, calculate_priority
 from backend.threat_intel import fetch_cve_data
-from backend.csv_import import MAX_BYTES, ImportFileError, parse_and_validate, problems_to_csv
+from backend.csv_import import MAX_BYTES, ImportFileError, detect_format, parse_and_validate, problems_to_csv
 from backend.reports import router as reports_router
 from backend.users import router as users_router
 from backend.schemas import (
@@ -31,6 +33,11 @@ from backend.schemas import (
 )
 
 models.Base.metadata.create_all(bind=engine)
+if "needs_review" not in {column["name"] for column in inspect(engine).get_columns("assets")}:
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "ALTER TABLE assets ADD COLUMN needs_review BOOLEAN NOT NULL DEFAULT FALSE"
+        )
 
 app = FastAPI(title="SecureVision Backend API")
 cors_origins = [
@@ -208,6 +215,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
         .first()
     )
     action = "created" if finding is None else "updated"
+    reopened = action == "updated" and (finding.status or "").casefold() == "resolved"
     try:
         if finding is None:
             finding = models.Finding(
@@ -252,6 +260,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
     return {
         "finding_id": finding.id,
         "action": action,
+        "reopened": reopened,
         "priority_tier": tier,
         "score": scoring["score"],
         "explanation": scoring["explanation"],
@@ -569,29 +578,51 @@ def get_audit_logs(db: Session = Depends(get_db), current_user: models.User = De
     ]
 
 @app.post("/imports/preview", response_model=ImportPreviewResponse)
-async def preview_csv(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+async def preview_csv(
+    file: UploadFile = File(...),
+    create_missing_assets: bool = Form(False),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
     if current_user.role == "viewer":
         raise HTTPException(403, "Viewers cannot import findings.")
     data = await file.read(MAX_BYTES + 1)
-    if not file.filename.lower().endswith(".csv"):
+    if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(400, "Upload a .csv file.")
     assets = {a.name: a.id for a in db.query(models.Asset).all()}
     pairs = {(a, c) for a, c in db.query(models.Finding.asset_id, models.Finding.cve_id).all()}
     try:
-        rows, summary = parse_and_validate(data, assets, pairs)
+        rows, summary = parse_and_validate(
+            data, assets, pairs, allow_missing_assets=create_missing_assets
+        )
     except ImportFileError as exc:
         raise HTTPException(400, str(exc))
-    return {"summary": summary, "rows": [r.as_dict() for r in rows]}
+    reader = csv.reader(io.StringIO(data.decode("utf-8-sig"), newline=""))
+    return {
+        "detected_format": detect_format(next(reader, [])),
+        "summary": summary,
+        "rows": [r.as_dict() for r in rows],
+    }
 
 @app.post("/imports/commit", response_model=ImportCommitResponse)
-async def commit_csv(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+async def commit_csv(
+    file: UploadFile = File(...),
+    create_missing_assets: bool = Form(False),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
     if current_user.role == "viewer":
         raise HTTPException(403, "Viewers cannot import findings.")
     data = await file.read(MAX_BYTES + 1)
-    assets = {a.name: a.id for a in db.query(models.Asset).all()}
+    if not (file.filename or "").lower().endswith(".csv"):
+        raise HTTPException(400, "Upload a .csv file.")
+    all_assets = db.query(models.Asset).all()
+    assets = {a.name: a.id for a in all_assets}
     pairs = {(a, c) for a, c in db.query(models.Finding.asset_id, models.Finding.cve_id).all()}
     try:
-        rows, _ = parse_and_validate(data, assets, pairs)
+        rows, _ = parse_and_validate(
+            data, assets, pairs, allow_missing_assets=create_missing_assets
+        )
     except ImportFileError as exc:
         raise HTTPException(400, str(exc))
 
@@ -602,22 +633,43 @@ async def commit_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
     for cve in cves:
         intel[cve] = await fetch_cve_data(cve)
 
-    asset_by_id = {a.id: a for a in db.query(models.Asset).all()}
+    asset_by_id = {a.id: a for a in all_assets}
+    new_assets: dict[str, models.Asset] = {}
     imported = 0
     imported_finding_ids = []
 
     try:
         for r in ok:
             info = intel.get(r.cve_id)
-            if not info or not info["available"] or info["epss"] is None or info["cvss"] is None:
+            if not info or not info["available"] or info["epss"] is None:
                 errors = "; ".join(info["errors"]) if info else "Threat intelligence lookup failed."
                 r.status, r.reason = "error", errors
                 continue
 
-            asset = asset_by_id[r.asset_id]
+            cvss_val = r.cvss_score if r.cvss_score is not None else info["cvss"]
+            if cvss_val is None:
+                errors = "; ".join(info["errors"]) or "CVSS score is unavailable."
+                r.status, r.reason = "error", errors
+                continue
+
+            asset = asset_by_id.get(r.asset_id) if r.asset_id is not None else None
+            if asset is None:
+                asset_key = r.asset_name.casefold()
+                asset = new_assets.get(asset_key)
+                if asset is None:
+                    asset = models.Asset(
+                        name=r.asset_name,
+                        exposure="Internal",
+                        criticality=3,
+                        needs_review=True,
+                    )
+                    db.add(asset)
+                    db.flush()
+                    asset_by_id[asset.id] = asset
+                    new_assets[asset_key] = asset
+            r.asset_id = asset.id
             internet_facing = (asset.exposure.lower() == "internet")
             in_kev = bool(info.get("in_kev", False))
-            cvss_val = info["cvss"]
             epss_val = info["epss"]
             scoring = calculate_priority(in_kev, internet_facing, asset.criticality, epss_val, cvss_val)
             tier = scoring["tier"]
@@ -657,10 +709,14 @@ async def commit_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
             user_id=current_user.id,
             action="IMPORT",
             details=(
-                f"file={file.filename} sha256={digest} imported={imported} skipped={skipped} "
+                f"file={file.filename} sha256={digest} "
+                f"created_assets={','.join(asset.name for asset in new_assets.values())} "
+                f"imported={imported} skipped={skipped} "
                 f"finding_ids={','.join(str(finding_id) for finding_id in imported_finding_ids)}"
                 if imported_finding_ids else
-                f"file={file.filename} sha256={digest} imported={imported} skipped={skipped}"
+                f"file={file.filename} sha256={digest} "
+                f"created_assets={','.join(asset.name for asset in new_assets.values())} "
+                f"imported={imported} skipped={skipped}"
             ),
         ))
         db.commit()

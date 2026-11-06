@@ -82,7 +82,9 @@ export function useScan(
         in_kev: scanKev,
         epss_percentile: epssPercentile,
       });
-      setActionMessage(`Finding ${result.action}: ${result.priority_tier} (score ${result.score}/4): ${result.explanation.summary}`);
+      const findingLabel = result.action === "updated" ? "Finding updated" : "Finding created";
+      const reopenedLabel = result.reopened ? " (reopened)" : "";
+      setActionMessage(`${findingLabel}: ${result.priority_tier} (score ${result.score}/4): ${result.explanation.summary}${reopenedLabel}`);
       await refreshAllData(token);
       switchTab("dashboard");
     } catch (scanError) {

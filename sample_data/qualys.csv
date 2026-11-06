@@ -1,0 +1,2 @@
+QID,IP,DNS,CVE ID,First Detected,CVSS Base Score
+12345,192.0.2.10,payment-db,CVE-2021-44228,01/10/2026,9.8

@@ -67,6 +67,8 @@ export interface SecureAppViewProps {
   setScanKev: Dispatch<SetStateAction<boolean>>;
   handleCsvPreview: FormEventHandler<HTMLFormElement>;
   setCsvFile: Dispatch<SetStateAction<File | null>>;
+  createMissingAssets: boolean;
+  setCreateMissingAssets: Dispatch<SetStateAction<boolean>>;
   setImportPreview: Dispatch<SetStateAction<ImportPreview | null>>;
   importPreview: ImportPreview | null;
   handleCsvCommit: () => Promise<void>;

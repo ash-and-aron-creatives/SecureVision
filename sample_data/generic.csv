@@ -1,0 +1,2 @@
+asset_name,cve_id,date_found,cvss_score
+Payment-DB,CVE-2021-44228,2026-10-01,9.8
