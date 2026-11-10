@@ -21,6 +21,48 @@ ASSET_IP_OR_DOMAIN_MAX_LENGTH = 253
 ASSET_OWNER_MAX_LENGTH = 120
 CVE_DATASET_PATH = Path(__file__).resolve().parents[1] / "data" / "processed" / "master_cves_2026-10-08.csv"
 CVE_SEARCH_MAX_RESULTS = 100
+SYNTHETIC_DEMO_DATABASE_URL = "sqlite:////data/securevision_demo.db"
+SYNTHETIC_DEMO_SEED_ACTION = "SYNTHETIC_DEMO_SEEDED"
+SYNTHETIC_DEMO_ASSETS = (
+    {
+        "name": "Payment-DB",
+        "type": "Server",
+        "ip_or_domain": "payment-db.demo.invalid",
+        "owner": "Synthetic Demo Team",
+        "environment": "Production",
+        "exposure": "Internet",
+        "criticality": 5,
+    },
+    {
+        "name": "Internal-API",
+        "type": "Application",
+        "ip_or_domain": "internal-api.demo.invalid",
+        "owner": "Synthetic Demo Team",
+        "environment": "Development",
+        "exposure": "Internal",
+        "criticality": 3,
+    },
+)
+SYNTHETIC_DEMO_FINDINGS = (
+    {
+        "asset_name": "Payment-DB",
+        "cve_id": "CVE-2099-10001",
+        "cvss_score": 9.8,
+        "epss_percentile": 0.97,
+        "in_kev": False,
+        "status": "Open",
+        "date_found": "2026-10-01",
+    },
+    {
+        "asset_name": "Internal-API",
+        "cve_id": "CVE-2099-10002",
+        "cvss_score": 6.1,
+        "epss_percentile": 0.05,
+        "in_kev": False,
+        "status": "Open",
+        "date_found": "2026-10-01",
+    },
+)
 CVSS_VECTOR_PATTERNS = {
     "AV": r"AV:([NALP])",
     "AC": r"AC:([LH])",

@@ -1,15 +1,20 @@
 # Project State: SecureVision
-* **Current Phase:** P6 (Backend Architecture & Rules Layer)
-* **Status:** P5 Complete (Negative Result Confirmed). ML-assisted likelihood and risk are integrated as nullable, experimental advisory fields; the deterministic 320-rule tier remains primary and unchanged. Blueprint sections 10-11 and 13 gap closure is implemented.
+* **Current Phase:** P12-P13 delivery (containerized demo and documentation)
+* **Status:** P5 evaluation remains a negative result. ML-assisted likelihood and risk are nullable experimental advisory fields; the deterministic 320-rule tier remains primary and unchanged.
 * **Data Split:** Train: 2022-2024, Val: 2025, Test: 2026-01 to 2026-09-08 (Held-Out). Prospective Holdout running daily.
 * **Label Definition:** in_cisa_kev_catalog AND (kev_date_added <= published_date + 30 days).
 * **Likelihood Provider:** Deterministic scoring remains unchanged. Frozen calibrated XGBoost is an additional advisory signal using publication-time CVSS/vector/CWE/description features only; KEV and EPSS are excluded from model features.
 * **ML Risk Formula:** `likelihood × exposure_factor × criticality_factor`; constants, validation-derived risk thresholds, and recommended-action templates are in `backend/rules_config.py`.
 * **Model Results:** Authenticated `/model/results` and frontend Model Results screen expose only recorded evaluation data, with unavailable metrics left null/not available.
-* **Migration:** Startup idempotently adds nullable ML fields to existing `finding_scores` tables and metadata fields to existing `assets` tables; existing rows are preserved. The fallback `cves` table is only created when the prepared CVE dataset is unavailable.
+* **Migration:** Startup idempotently adds nullable ML fields to existing `finding_scores` tables and metadata fields to existing `assets` tables; existing rows are preserved. The fallback `cves` table is only created when the prepared CVE dataset is unavailable. The Docker image omits the 201,498,667-byte prepared CSV and uses the fallback cache.
 * **Authentication:** `/me` is available; login throttling allows five failed attempts per username/IP in 15 minutes and is process-local. Refresh tokens were deferred; PBKDF2-HMAC-SHA256 remains at 600,000 iterations.
 * **Assets:** Admin/analyst create, edit, and delete are audited transactionally; assets with findings cannot be deleted. CSV host/IP lookup checks both asset name and `ip_or_domain`.
-* **CVE lookup:** Authenticated endpoints use the prepared `data/processed/master_cves_2026-10-08.csv` read-only and lazily when available; KEV/EPSS remain excluded from model features.
+* **CVE lookup:** Authenticated local endpoints use the prepared `data/processed/master_cves_2026-10-08.csv` read-only and lazily when available. Docker omits that file for image-size reasons; uncached live NVD/FIRST calls remain external-provider dependent. Three `DEMO_CACHE` values are illustrative fixtures, not authoritative live scores.
+* **Deployment deviation:** Compose uses SQLite in a dedicated named volume and binds ports to loopback; no PostgreSQL deployment path is verified. Container secrets are supplied via `.env`; database files and env files are excluded from images.
+* **Synthetic demo:** `backend/demo_seed.py` seeds two synthetic assets and two synthetic findings only in `sqlite:////data/securevision_demo.db`; it never clears existing rows. The UI shows a synthetic-data badge in demo mode. Seeded ML predictions are intentionally unavailable without NVD enrichment.
+* **Status vocabulary:** The operational status is `Resolved`, not `fixed`; dashboard “fixed this month” is derived from resolution audit events. This naming is preserved in the API and interface.
+* **Auth deviation:** PBKDF2-HMAC-SHA256 at 600,000 iterations is retained for password-hash compatibility rather than migrating to Argon2/bcrypt; refresh tokens remain deferred and login throttling is process-local.
+* **Blueprint limitation:** `SecureVision_Master_Blueprint` is absent from this checkout. Section 18 prompts and exact P8-P12 criteria cannot be verified verbatim; `BLUEPRINT_TRACEABILITY.md` and `docs/VIVA_NOTES.md` say so explicitly.
 * **Dashboard:** Real total-assets, open-vulnerabilities, critical, and fixed-this-month values are exposed from persisted assets/findings/audit history.
-* **Validation:** `pytest -q` passed 465 tests. Frontend type-check, lint, and production build passed; `npm audit` reported zero vulnerabilities.
-* **Next Step:** Continue prospective evaluation; do not promote ML to the deterministic tier without new evidence.
+* **Validation:** For this delivery, `pytest -q` passed 466 tests (98 dependency deprecation/pending-deprecation warnings); `backend/tests/test_demo_seed.py` passed independently. `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npm audit` (zero vulnerabilities), `git diff --check`, and `docker compose config` passed. Docker CLI is installed but the Docker Desktop Linux engine is unavailable; image build/run is unverified.
+* **Next Step:** Run the requested validation set and continue prospective evaluation; do not promote ML to the deterministic tier without new evidence.

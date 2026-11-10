@@ -374,6 +374,12 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
         />
       )}
 
+      {process.env.NEXT_PUBLIC_DEMO_MODE === "true" && (
+        <div className="fixed top-0 right-0 z-[60] rounded-bl-xl border-b border-l border-amber-300/30 bg-amber-950/90 px-3 py-2 text-[10px] font-extrabold tracking-wide text-amber-100 shadow-lg">
+          SYNTHETIC DEMO DATA — not real assets or findings
+        </div>
+      )}
+
       {/* LEFT SIDEBAR (Slide-Over Drawer on Phone/Tablet, Static Card on Desktop) */}
       <aside
         className={`fixed lg:static inset-y-0 left-0 z-50 w-72 lg:w-64 shrink-0 rounded-none lg:rounded-3xl p-6 flex flex-col justify-between border-r lg:border transition-transform duration-300 overflow-y-auto ${surfaceCard} ${

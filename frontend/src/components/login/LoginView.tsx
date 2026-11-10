@@ -129,6 +129,11 @@ export function LoginView(props: LoginViewProps) {
               </button>
             </form>
 
+            {process.env.NEXT_PUBLIC_DEMO_MODE === "true" && (
+              <p className="mt-5 text-center text-[11px] font-semibold text-amber-200/90">
+                SYNTHETIC DEMO DATA — not real assets or findings
+              </p>
+            )}
           </div>
         </div>
       </div>

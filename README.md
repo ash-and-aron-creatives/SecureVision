@@ -6,6 +6,41 @@ SecureVision is a vulnerability-prioritization application with a FastAPI backen
 
 - Python and pip
 - Node.js and npm
+- Docker Desktop with Compose (for the one-command demo)
+
+## One-command Docker demo
+
+The Docker Compose setup starts the frontend and backend together. It uses a
+separate Docker named volume (`securevision_demo_data`) for its SQLite demo
+database and never mounts `securevision.db` or `securevision_dev.db`.
+
+1. Copy `.env.example` to `.env`.
+2. Set `SECRET_KEY` to a private random value of at least 32 characters and
+   `ADMIN_INITIAL_PASSWORD` to a private password of at least 8 characters.
+   The example intentionally contains no usable default secrets.
+3. From the repository root, run:
+
+   ```powershell
+   docker compose up --build
+   ```
+
+4. Open `http://localhost:3000` and sign in as `admin` using the password from
+   `.env`. The API docs are at `http://localhost:8000/docs`.
+
+The demo UI is visibly labeled **SYNTHETIC DEMO DATA**. Seeded assets, findings,
+dates, and CVSS/EPSS inputs are synthetic scenarios, not real inventory or
+observations. The seeded rows have no NVD enrichment, so their ML advisory is
+shown as unavailable instead of inventing a prediction. `sample_data/generic.csv`
+is illustrative input, not scanner output. `backend/threat_intel.py` also
+contains three hard-coded demonstration lookup fixtures; they are not
+authoritative current NVD/FIRST scores. Other live lookups require provider
+network access.
+
+The container build excludes the 201,498,667-byte prepared CVE CSV. As a result,
+the `/cves` API uses its database-cache fallback in the Docker demo; uncached
+live intelligence lookup remains subject to NVD/FIRST availability. The demo
+seeder refuses database URLs other than its dedicated container database and
+does not delete or overwrite existing records.
 
 ## Setup
 
