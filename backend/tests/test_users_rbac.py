@@ -73,12 +73,33 @@ def test_admin_create_duplicate_and_validation(client, db_session):
 def test_self_demotion_and_self_deletion_blocked(client, db_session):
     h_admin = _headers(client, "admin")
     admin_user = db_session.query(User).filter(User.username == "admin").first()
+    db_session.add(User(
+        username="second_admin",
+        hashed_password=auth.get_password_hash("password123"),
+        role="admin",
+    ))
+    db_session.commit()
 
     demote = client.put(f"/users/{admin_user.id}/role", json={"role": "viewer"}, headers=h_admin)
     assert demote.status_code == 400
+    assert demote.json()["detail"] == "Administrators cannot demote themselves."
 
     delete_self = client.delete(f"/users/{admin_user.id}", headers=h_admin)
     assert delete_self.status_code == 400
+    assert delete_self.json()["detail"] == "Administrators cannot delete themselves."
+
+
+def test_last_administrator_cannot_be_demoted_or_deleted(client, db_session):
+    h_admin = _headers(client, "admin")
+    admin = db_session.query(User).filter_by(username="admin").one()
+
+    demote = client.put(f"/users/{admin.id}/role", json={"role": "analyst"}, headers=h_admin)
+    assert demote.status_code == 400
+    assert demote.json()["detail"] == "At least one administrator must remain."
+
+    delete = client.delete(f"/users/{admin.id}", headers=h_admin)
+    assert delete.status_code == 400
+    assert delete.json()["detail"] == "At least one administrator must remain."
 
 
 def test_update_role_and_delete_other_user_logs_audit(client, db_session):
@@ -89,6 +110,16 @@ def test_update_role_and_delete_other_user_logs_audit(client, db_session):
     assert upd.status_code == 200
     assert upd.json()["role"] == "analyst"
     assert db_session.query(AuditLog).filter(AuditLog.action == "USER_UPDATED").first() is not None
+
+    reset = client.patch(
+        f"/users/{viewer.id}",
+        json={"password": "new-password-123"},
+        headers=h_admin,
+    )
+    assert reset.status_code == 200
+    update_logs = db_session.query(AuditLog).filter_by(action="USER_UPDATED").order_by(AuditLog.id).all()
+    assert "password_reset" in update_logs[-1].details
+    assert "new-password-123" not in update_logs[-1].details
 
     rem = client.delete(f"/users/{viewer.id}", headers=h_admin)
     assert rem.status_code == 200

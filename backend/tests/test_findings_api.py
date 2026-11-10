@@ -11,7 +11,7 @@ from backend.models import Asset, Finding, FindingScore, User
 
 
 @pytest.fixture
-def client():
+def db_session():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -46,15 +46,19 @@ def client():
         explanation="Test scoring explanation",
     ))
     db.commit()
+    yield db
+    db.close()
 
+
+@pytest.fixture
+def client(db_session):
     def override_get_db():
-        yield db
+        yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
-    db.close()
 
 
 def get_auth_headers(client):
@@ -71,6 +75,39 @@ def test_findings_list_and_counts(client):
     assert "items" in data and "total" in data and "counts" in data
     assert len(data["items"]) <= 10
     assert set(data["counts"].keys()) == {"Critical", "High", "Medium", "Low"}
+
+
+def test_findings_over_twenty_are_reachable_across_pages(client, db_session):
+    asset = db_session.query(Asset).first()
+    for index in range(25):
+        finding = Finding(
+            asset_id=asset.id,
+            cve_id=f"CVE-2026-{index + 1000}",
+            cvss_score=5.0,
+            status="Open",
+            date_found="2026-10-01",
+        )
+        db_session.add(finding)
+        db_session.flush()
+        db_session.add(FindingScore(
+            finding_id=finding.id,
+            provider_id=1,
+            likelihood=0.2,
+            priority_tier="Medium",
+            provenance={},
+            explanation="Pagination test finding",
+        ))
+    db_session.commit()
+
+    headers = get_auth_headers(client)
+    pages = [
+        client.get(f"/findings?page={page}&page_size=20", headers=headers).json()
+        for page in (1, 2)
+    ]
+    finding_ids = {item["id"] for page in pages for item in page["items"]}
+    assert pages[0]["total"] == 26
+    assert pages[0]["pages"] == 2
+    assert len(finding_ids) == 26
 
 
 def test_findings_filters_and_search(client):

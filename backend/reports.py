@@ -53,7 +53,13 @@ def _filtered_query(db: Session, priority, status, asset_id, q, sort):
         qry = qry.filter(Finding.asset_id == asset_id)
     if q:
         like = f"%{q.strip()}%"
-        qry = qry.filter(or_(Finding.cve_id.ilike(like), Asset.name.ilike(like)))
+        qry = qry.filter(
+            or_(
+                Finding.cve_id.ilike(like),
+                Asset.name.ilike(like),
+                FindingScore.explanation.ilike(like),
+            )
+        )
     order = SORTS.get(sort or "priority", SORTS["priority"])
     return qry.order_by(*order, Finding.id.asc())
 

@@ -101,6 +101,12 @@ def update_user(
         if req.role is not None:
             if req.role not in VALID_ROLES:
                 raise HTTPException(status_code=400, detail="Role must be admin, analyst, or viewer.")
+            if (
+                target.role == "admin"
+                and req.role != "admin"
+                and db.query(func.count(User.id)).filter(User.role == "admin").scalar() <= 1
+            ):
+                raise HTTPException(status_code=400, detail="At least one administrator must remain.")
             if target.id == admin.id and req.role != "admin":
                 raise HTTPException(status_code=400, detail="Administrators cannot demote themselves.")
             if target.role != req.role:
@@ -136,11 +142,16 @@ def delete_user(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    if user_id == admin.id:
-        raise HTTPException(status_code=400, detail="Administrators cannot delete themselves.")
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found.")
+    if (
+        target.role == "admin"
+        and db.query(func.count(User.id)).filter(User.role == "admin").scalar() <= 1
+    ):
+        raise HTTPException(status_code=400, detail="At least one administrator must remain.")
+    if user_id == admin.id:
+        raise HTTPException(status_code=400, detail="Administrators cannot delete themselves.")
 
     uname = target.username
     role = target.role

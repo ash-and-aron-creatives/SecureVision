@@ -122,6 +122,18 @@ def test_csv_filters_applied(client, auth_headers, seeded):
     assert r.text.count("CVE-2099-") == 1 and "CVE-2099-0002" in r.text
 
 
+def test_csv_search_matches_explanation_summary(client, auth_headers, seeded, db_session):
+    score = db_session.query(FindingScore).filter(FindingScore.finding_id.isnot(None)).first()
+    score.explanation = "queue-search-token"
+    db_session.commit()
+
+    response = client.get("/reports/findings.csv?q=queue-search-token", headers=auth_headers)
+    assert response.status_code == 200
+    assert "CVE-2099-0001" in response.text
+    assert "CVE-2099-0002" not in response.text
+    assert response.headers["x-row-count"] == "1"
+
+
 def test_csv_formula_injection_guard(client, auth_headers, seeded):
     r = client.get("/reports/findings.csv", headers=auth_headers)
     assert "'=HYPERLINK" in r.text

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import hashlib
 import csv
 import io
+import json
 import os
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -67,6 +68,7 @@ STATUS_CHANGE_PATTERN = re.compile(
 )
 IMPORT_COUNT_PATTERN = re.compile(r"\bimported=(\d+)\s+skipped=\d+(?:\s+finding_ids=[\d,]+)?$")
 IMPORT_FINDING_IDS_PATTERN = re.compile(r"\bfinding_ids=([\d,]+)$")
+_DUMMY_PASSWORD_HASH = auth.get_password_hash("securevision-invalid-login-placeholder")
 
 
 def _stored_score(score: models.FindingScore | None, tier: str) -> int:
@@ -124,9 +126,32 @@ class StatusUpdateRequest(BaseModel):
 @app.post("/token", response_model=TokenResponse)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == form_data.username).first()
-    if not user or not auth.verify_password(form_data.password, user.hashed_password):
+    stored_hash = user.hashed_password if user else _DUMMY_PASSWORD_HASH
+    password_valid = auth.verify_password(form_data.password, stored_hash)
+    if not user or not password_valid:
+        db.add(models.AuditLog(
+            user_id=None,
+            action="LOGIN_FAILED",
+            details=json.dumps({"username_attempted": form_data.username}),
+        ))
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect credentials")
-    access_token = auth.create_access_token(data={"sub": user.username})
+
+    try:
+        access_token = auth.create_access_token(data={"sub": user.username})
+        db.add(models.AuditLog(
+            user_id=user.id,
+            action="LOGIN_SUCCESS",
+            details=json.dumps({"username": user.username}),
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return {"access_token": access_token, "token_type": "bearer", "role": user.role, "username": user.username}
 
 @app.post("/assets", response_model=AssetResponse)
@@ -346,7 +371,12 @@ def get_findings(
         filtered = [r for r in filtered if r["asset_id"] == asset_id]
     if q:
         needle = q.strip().lower()
-        filtered = [r for r in filtered if needle in r["cve_id"].lower() or needle in r["asset_name"].lower()]
+        filtered = [
+            r for r in filtered
+            if needle in r["cve_id"].lower()
+            or needle in r["asset_name"].lower()
+            or needle in str(r["explanation"].get("summary", "")).lower()
+        ]
 
     if sort == "cvss":
         filtered.sort(key=lambda r: (r["cvss_score"], r["id"]), reverse=True)
