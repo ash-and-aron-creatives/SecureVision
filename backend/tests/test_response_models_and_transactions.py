@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend import auth, main
-from backend.database import Base, get_db
+from backend.database import Base, get_db, migrate_asset_columns
 from backend.main import app
 from backend.models import Asset, AuditLog, Finding, FindingScore, User
 
@@ -103,6 +103,27 @@ def _assert_audit_failure_rolls_back(db, request, assertion):
     db.rollback()
 
 
+def test_asset_metadata_migration_preserves_existing_rows():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE assets (id INTEGER PRIMARY KEY, name VARCHAR, exposure VARCHAR, "
+            "criticality INTEGER, needs_review BOOLEAN NOT NULL DEFAULT FALSE)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO assets (id, name, exposure, criticality) "
+            "VALUES (1, 'OLD-ASSET', 'Internet', 4)"
+        )
+    migrate_asset_columns(engine)
+    with engine.connect() as connection:
+        row = connection.exec_driver_sql(
+            "SELECT name, type, ip_or_domain, owner, environment, exposure, criticality "
+            "FROM assets WHERE id=1"
+        ).one()
+    assert tuple(row) == ("OLD-ASSET", "Other", "", "", "Unknown", "Internet", 4)
+    engine.dispose()
+
+
 def test_response_models_have_consistent_shapes(api, monkeypatch):
     client, db = api
     headers = _headers(client)
@@ -149,9 +170,13 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
         headers=headers,
     )
     assert asset_response.status_code == 200
-    assert set(asset_response.json()) == {"id", "name", "exposure", "criticality", "needs_review"}
+    assert set(asset_response.json()) == {
+        "id", "name", "type", "ip_or_domain", "owner", "environment",
+        "exposure", "criticality", "needs_review",
+    }
     assert set(client.get("/assets", headers=headers).json()[0]) == {
-        "id", "name", "exposure", "criticality", "needs_review",
+        "id", "name", "type", "ip_or_domain", "owner", "environment",
+        "exposure", "criticality", "needs_review",
     }
 
     scan_response = client.post(
@@ -182,7 +207,10 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
     assert {"exposure", "criticality", "score", "explanation"} <= set(finding)
     assert "asset_exposure" not in finding and "asset_criticality" not in finding
     detail = client.get(f"/findings/{finding['id']}", headers=headers).json()
-    assert set(detail["asset"]) == {"id", "name", "exposure", "criticality"}
+    assert set(detail["asset"]) == {
+        "id", "name", "type", "ip_or_domain", "owner", "environment",
+        "exposure", "criticality",
+    }
     assert {"score", "explanation", "score_history", "audit_trail"} <= set(detail)
 
     user_response = client.post(
@@ -368,6 +396,37 @@ def test_asset_creation_rolls_back_when_audit_insert_fails(api):
             headers=headers,
         ),
         lambda: db.query(Asset).filter_by(name="ROLLBACK-ASSET").first() is None,
+    )
+
+
+def test_asset_update_and_delete_roll_back_when_audit_insert_fails(api):
+    client, db = api
+    headers = _headers(client)
+    asset = Asset(name="ROLLBACK-ASSET", exposure="Internal", criticality=3)
+    db.add(asset)
+    db.commit()
+    before_name = asset.name
+    body = {
+        "name": "UPDATED-ASSET",
+        "type": "Server",
+        "ip_or_domain": "asset.example.test",
+        "owner": "Operations",
+        "environment": "Production",
+        "exposure": "Internet",
+        "criticality": 4,
+    }
+    _assert_audit_failure_rolls_back(
+        db,
+        lambda: client.put(f"/assets/{asset.id}", json=body, headers=headers),
+        lambda: db.query(Asset).filter_by(id=asset.id).one().name == before_name,
+    )
+    deletable = Asset(name="ROLLBACK-DELETE-ASSET", exposure="Internal", criticality=3)
+    db.add(deletable)
+    db.commit()
+    _assert_audit_failure_rolls_back(
+        db,
+        lambda: client.delete(f"/assets/{deletable.id}", headers=headers),
+        lambda: db.query(Asset).filter_by(id=deletable.id).one().name == deletable.name,
     )
 
 

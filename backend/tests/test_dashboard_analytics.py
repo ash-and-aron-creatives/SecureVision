@@ -161,6 +161,9 @@ def test_dashboard_analytics_uses_findings_and_audit_history(analytics_client):
     assert response.status_code == 200
     data = response.json()
     assert data["total_findings"] == 5
+    assert data["total_assets"] == 1
+    assert data["open_vulnerabilities"] == 1
+    assert data["fixed_this_month"] == 4
     assert data["resolved_findings"] == 4
     assert data["mitigation_pct"] == 80.0
     assert data["critical_count"] == 1
@@ -182,6 +185,9 @@ def test_dashboard_analytics_returns_empty_metrics_without_history(analytics_cli
     assert response.status_code == 200
     data = response.json()
     assert data["total_findings"] == 0
+    assert data["total_assets"] == 0
+    assert data["open_vulnerabilities"] == 0
+    assert data["fixed_this_month"] == 0
     assert data["mitigation_pct"] is None
     assert data["mean_time_to_triage_hours"] is None
     assert data["sla_compliance_pct"] is None

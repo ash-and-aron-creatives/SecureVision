@@ -47,10 +47,113 @@ def _hdrs(client):
 def test_asset_creation_and_listing(env):
     client, db = env
     h = _hdrs(client)
-    r = client.post('/assets', json={'name': 'CORE-DB-01', 'exposure': 'Internet', 'criticality': 5}, headers=h)
+    r = client.post('/assets', json={
+        'name': 'CORE-DB-01',
+        'type': 'Server',
+        'ip_or_domain': '192.0.2.10',
+        'owner': 'Platform',
+        'environment': 'Production',
+        'exposure': 'Internet',
+        'criticality': 5,
+    }, headers=h)
     assert r.status_code == 200
     assets = client.get('/assets', headers=h).json()
     assert any(a['name'] == 'CORE-DB-01' for a in assets)
+    asset = next(a for a in assets if a['name'] == 'CORE-DB-01')
+    assert {
+        key: asset[key] for key in ("type", "ip_or_domain", "owner", "environment")
+    } == {
+        "type": "Server",
+        "ip_or_domain": "192.0.2.10",
+        "owner": "Platform",
+        "environment": "Production",
+    }
+
+
+def test_asset_update_delete_and_findings_guard(env):
+    client, db = env
+    headers = _hdrs(client)
+    created = client.post(
+        "/assets",
+        json={"name": "EDIT-ME", "exposure": "Internal", "criticality": 3},
+        headers=headers,
+    )
+    asset_id = created.json()["id"]
+    updated = client.put(
+        f"/assets/{asset_id}",
+        json={
+            "name": "EDITED",
+            "type": "Cloud",
+            "ip_or_domain": "asset.example.test",
+            "owner": "Security",
+            "environment": "Staging",
+            "exposure": "Internet",
+            "criticality": 4,
+        },
+        headers=headers,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "EDITED"
+    assert updated.json()["type"] == "Cloud"
+    assert db.query(AuditLog).filter_by(action="ASSET_UPDATED").count() == 1
+
+    finding = Finding(
+        asset_id=asset_id,
+        cve_id="CVE-2025-9090",
+        cvss_score=6.0,
+        in_kev=False,
+        status="Open",
+    )
+    db.add(finding)
+    db.commit()
+    blocked = client.delete(f"/assets/{asset_id}", headers=headers)
+    assert blocked.status_code == 409
+    assert "has findings" in blocked.json()["detail"]
+    assert db.query(Asset).filter_by(id=asset_id).one().name == "EDITED"
+
+    db.delete(finding)
+    db.commit()
+    deleted = client.delete(f"/assets/{asset_id}", headers=headers)
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted": asset_id, "name": "EDITED"}
+    assert db.query(Asset).filter_by(id=asset_id).first() is None
+    assert db.query(AuditLog).filter_by(action="ASSET_DELETED").count() == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("ip_or_domain", "bad host; DROP TABLE assets"),
+        ("owner", "platform\u0000admin"),
+        ("environment", "Production<script>"),
+        ("type", "Database<script>"),
+    ],
+)
+def test_asset_text_input_validation_and_literal_name_storage(env, field, value):
+    client, db = env
+    headers = _hdrs(client)
+    body = {
+        "name": "literal-' OR 1=1 --",
+        "type": "Server",
+        "ip_or_domain": "",
+        "owner": "",
+        "environment": "Production",
+        "exposure": "Internal",
+        "criticality": 3,
+    }
+    body[field] = value
+    rejected = client.post("/assets", json=body, headers=headers)
+    assert rejected.status_code == 422
+
+    body[field] = {
+        "ip_or_domain": "192.0.2.44",
+        "owner": "Platform",
+        "environment": "Production",
+        "type": "Server",
+    }[field]
+    accepted = client.post("/assets", json=body, headers=headers)
+    assert accepted.status_code == 200
+    assert db.query(Asset).filter_by(name="literal-' OR 1=1 --").count() == 1
 
 def test_manual_scan_creates_scored_finding_and_audit(env):
     client, db = env

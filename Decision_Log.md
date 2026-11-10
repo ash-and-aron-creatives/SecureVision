@@ -52,3 +52,19 @@
 * **Explanations and dependencies:** SHAP is not installed; use XGBoost native `pred_contribs` for the top three factors. `requirements.txt` already pins XGBoost 2.0.3, scikit-learn 1.4.1.post1, and joblib 1.6.0; the current runtime matches these pins. The frozen config does not record artifact-producer versions, so exact train-time package parity cannot be independently established.
 * **Model Results:** Read only recorded files in `docs/results/`. Logistic Regression validation PR-AUC results exist; no Random Forest metric result is recorded. Missing precision/recall/F1/ROC-AUC values remain not available. EPSS is labeled hindsight. The test-set negative result remains explicit and does not change the deterministic tier.
 * **Conclusion:** Held-out XGBoost PR-AUC was 0.0114 versus CVSS 0.0117; top-K precision was also lower at P@100 and P@500. This offline evaluation did not demonstrate an improvement, so ML is an advisory signal only and does not drive the tier.
+
+### D-024: Asset Inventory Metadata and Lifecycle
+* **Decision:** Add `type`, `ip_or_domain`, `owner`, and `environment` as additive asset fields. Existing rows migrate with `type=Other`, blank address/owner, and `environment=Unknown`; type/environment choices and limits live in `backend/rules_config.py`. Admins and analysts may create, edit, and delete assets. Deletion is blocked while any finding references the asset. Asset changes and their audit records share one transaction.
+
+### D-025: Login Throttling and Password Hash Compatibility
+* **Decision:** Limit each normalized username + direct client IP to five login attempts in a rolling 15-minute window; the next request returns HTTP 429. State is bounded, process-local memory, so deployments with multiple workers need a shared rate-limit backend for cross-process enforcement.
+* **Password hashing:** Keep PBKDF2-HMAC-SHA256, 600k iterations instead of argon2/bcrypt. This preserves existing password hashes and avoids a migration/dependency change; changing the password-hashing scheme is outside this gap closure.
+
+### D-026: CVE Lookup Source
+* **Decision:** Use `data/processed/master_cves_2026-10-08.csv` when present. The file is read lazily and individual identifier/search results are cached in memory; searches return at most 100 results. If the file is absent, use the `cves` cache table and fill it from successful threat-intelligence lookups. With the prepared file present, startup skips creating the `cves` table and does not write to the dataset. KEV and EPSS remain excluded from ML model features.
+
+### D-027: Refresh-Token Deviation
+* **Decision:** Do not add refresh tokens in this change. A secure refresh lifecycle requires token rotation/revocation and frontend session-handling changes, which is not a small additive change; the existing 30-minute access-token behavior remains.
+
+### D-028: Dashboard Screen 2 Metrics
+* **Decision:** Dashboard asset/open totals come from current database records. “Fixed this month” counts currently resolved findings with a recorded resolution audit event in the current UTC month; findings without audit history are not inferred as recently fixed.

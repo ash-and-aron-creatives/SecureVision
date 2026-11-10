@@ -5,6 +5,7 @@ import datetime as dt
 import io
 import re
 from dataclasses import asdict, dataclass
+from backend.rules_config import ASSET_NAME_MAX_LENGTH
 
 MAX_BYTES = 5 * 1024 * 1024
 MAX_ROWS = 5000
@@ -183,6 +184,10 @@ def parse_and_validate(
             errors: list[str] = []
             if not asset_name:
                 errors.append("asset_name is empty.")
+            elif len(asset_name) > ASSET_NAME_MAX_LENGTH:
+                errors.append(f"asset_name must be at most {ASSET_NAME_MAX_LENGTH} characters.")
+            elif any(ord(char) < 32 or ord(char) == 127 for char in asset_name):
+                errors.append("asset_name cannot contain control characters.")
             elif asset_id is None and not allow_missing_assets:
                 errors.append("Unknown asset. Create it first.")
 

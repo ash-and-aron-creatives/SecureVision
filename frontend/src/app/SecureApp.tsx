@@ -214,8 +214,13 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     setCsvFile, createMissingAssets, setCreateMissingAssets, importPreview, setImportPreview,
     handleCsvPreview, handleCsvCommit,
   } = useImport(token, apiRequest, setActionMessage, refreshAllData);
-  const { assetHost, setAssetHost, assetExposure, setAssetExposure, assetCrit, setAssetCrit, handleCreateAsset } =
-    useAssets(token, apiRequest, refreshAllData, setActionMessage);
+  const {
+    assetHost, setAssetHost, assetType, setAssetType, assetAddress, setAssetAddress,
+    assetOwner, setAssetOwner, assetEnvironment, setAssetEnvironment,
+    assetExposure, setAssetExposure, assetCrit, setAssetCrit,
+    editingAssetId, handleSaveAsset, handleEditAsset,
+    handleCancelAssetEdit, handleDeleteAsset,
+  } = useAssets(token, apiRequest, refreshAllData, setActionMessage);
   const {
     newUsername, setNewUsername, newPassword, setNewPassword, newRole, setNewRole,
     handleCreateUser, handleUpdateUserRole, handleResetUserPassword, handleDeleteUser,
@@ -301,8 +306,11 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     scanCve, setScanCve, scanAssetId, setScanAssetId, assets,
     scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev, handleCsvPreview, setCsvFile,
     createMissingAssets, setCreateMissingAssets,
-    importPreview, setImportPreview, handleCsvCommit, handleCreateAsset, assetHost, setAssetHost, assetExposure, setAssetExposure,
-    assetCrit, setAssetCrit, role, currentUser, auditLogs, handleCreateUser, newUsername, setNewUsername, newPassword,
+    importPreview, setImportPreview, handleCsvCommit, handleSaveAsset, handleEditAsset,
+    handleCancelAssetEdit, handleDeleteAsset, assetHost, setAssetHost, assetType, setAssetType,
+    assetAddress, setAssetAddress, assetOwner, setAssetOwner, assetEnvironment, setAssetEnvironment,
+    assetExposure, setAssetExposure, assetCrit, setAssetCrit, editingAssetId,
+    role, currentUser, auditLogs, handleCreateUser, newUsername, setNewUsername, newPassword,
     setNewPassword, newRole, setNewRole, users, handleUpdateUserRole, handleResetUserPassword, handleDeleteUser,
     selectedFinding, setSelectedFinding,
   };

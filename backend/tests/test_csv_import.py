@@ -23,6 +23,36 @@ def test_valid_rows_and_normalisation():
     assert s == {"total": 1, "ok": 1, "error": 0, "duplicate": 0}
     assert rows[0].asset_id == 1 and rows[0].cve_id == "CVE-2021-44228"
 
+
+def test_host_or_ip_candidate_matches_the_asset_identifier_map():
+    rows, summary = parse_and_validate(
+        b"hostname,cve_id,date_found\n192.0.2.10,CVE-2021-44228,2026-10-01\n",
+        {"Payment-DB": 1, "192.0.2.10": 1},
+        set(),
+        TODAY,
+    )
+    assert summary["ok"] == 1
+    assert rows[0].asset_id == 1
+
+
+def test_csv_asset_name_text_validation():
+    long_name = "a" * 201
+    controls = "bad\u0000host"
+    rows, summary = parse_and_validate(
+        (
+            "hostname,cve_id,date_found\n"
+            f"{long_name},CVE-2021-44228,2026-10-01\n"
+            f"{controls},CVE-2021-44228,2026-10-01\n"
+        ).encode(),
+        {},
+        set(),
+        TODAY,
+        allow_missing_assets=True,
+    )
+    assert summary["error"] == 2
+    assert "at most 200 characters" in rows[0].reason
+    assert "control characters" in rows[1].reason
+
 def test_bom_extra_columns_and_header_case():
     rows, s = run("\ufeffAsset_Name,CVE_ID,Date_Found,notes\nPublic Website,CVE-2017-0144,2026-09-01,x\n")
     assert s["ok"] == 1

@@ -8,6 +8,7 @@ from backend.database import get_db
 from backend.auth import get_current_user, get_password_hash
 from backend.models import AuditLog, User
 from backend.schemas import DeletedUserResponse, UserResponse
+from backend.rules_config import LOGIN_USERNAME_MAX_LENGTH
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -53,6 +54,13 @@ def create_user(
     uname = req.username.strip()
     if not uname or len(uname) < 3:
         raise HTTPException(status_code=400, detail="Username must be at least 3 characters.")
+    if len(uname) > LOGIN_USERNAME_MAX_LENGTH or any(
+        ord(char) < 32 or ord(char) == 127 for char in uname
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Username must be at most {LOGIN_USERNAME_MAX_LENGTH} characters and contain no control characters.",
+        )
     if len(req.password) < MIN_PASSWORD_LEN:
         raise HTTPException(status_code=400, detail=f"Password must be at least {MIN_PASSWORD_LEN} characters.")
     if req.role not in VALID_ROLES:

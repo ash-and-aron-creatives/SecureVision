@@ -1,12 +1,21 @@
 import os
 import hashlib
 import hmac
+import threading
+import time
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from backend.database import get_db
 from backend import models
+from backend.rules_config import (
+    LOGIN_ATTEMPT_WINDOW_SECONDS,
+    LOGIN_MAX_FAILED_ATTEMPTS,
+    LOGIN_RATE_LIMIT_MAX_KEYS,
+    LOGIN_USERNAME_MAX_LENGTH,
+)
 from sqlalchemy.orm import Session
 
 ALGORITHM = "HS256"
@@ -17,6 +26,44 @@ MIN_PASSWORD_LENGTH = 8
 
 # OWASP RECOMMENDED: 600,000 iterations for PBKDF2 HMAC SHA-256
 ITERATIONS = 600000
+_login_failures: dict[tuple[str, str], deque[float]] = {}
+_login_failures_lock = threading.Lock()
+
+
+def _prune_login_failures(now: float) -> None:
+    expired_keys = []
+    for key, failures in _login_failures.items():
+        while failures and now - failures[0] >= LOGIN_ATTEMPT_WINDOW_SECONDS:
+            failures.popleft()
+        if not failures:
+            expired_keys.append(key)
+    for key in expired_keys:
+        del _login_failures[key]
+
+
+def login_attempt_allowed(username: str, client_ip: str) -> bool:
+    now = time.monotonic()
+    key = (username.strip()[:LOGIN_USERNAME_MAX_LENGTH].casefold(), client_ip)
+    with _login_failures_lock:
+        _prune_login_failures(now)
+        if len(_login_failures.get(key, ())) >= LOGIN_MAX_FAILED_ATTEMPTS:
+            return False
+        if key not in _login_failures and len(_login_failures) >= LOGIN_RATE_LIMIT_MAX_KEYS:
+            oldest = min(_login_failures, key=lambda item: _login_failures[item][0])
+            del _login_failures[oldest]
+        _login_failures.setdefault(key, deque()).append(now)
+        return True
+
+
+def clear_login_failures(username: str, client_ip: str) -> None:
+    key = (username.strip()[:LOGIN_USERNAME_MAX_LENGTH].casefold(), client_ip)
+    with _login_failures_lock:
+        _login_failures.pop(key, None)
+
+
+def reset_login_failures() -> None:
+    with _login_failures_lock:
+        _login_failures.clear()
 
 
 def _get_secret_key() -> str:

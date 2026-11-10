@@ -83,3 +83,24 @@ def migrate_finding_score_ml_columns(target_engine=engine) -> None:
                     f"ALTER TABLE finding_scores ADD COLUMN {name} {column_type}"
                 )
                 columns.add(name)
+
+
+def migrate_asset_columns(target_engine=engine) -> None:
+    if "assets" not in inspect(target_engine).get_table_names():
+        return
+    columns = {
+        column["name"]
+        for column in inspect(target_engine).get_columns("assets")
+    }
+    additions = {
+        "type": "VARCHAR NOT NULL DEFAULT 'Other'",
+        "ip_or_domain": "VARCHAR NOT NULL DEFAULT ''",
+        "owner": "VARCHAR NOT NULL DEFAULT ''",
+        "environment": "VARCHAR NOT NULL DEFAULT 'Unknown'",
+    }
+    with target_engine.begin() as connection:
+        for name, column_type in additions.items():
+            if name not in columns:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE assets ADD COLUMN {name} {column_type}"
+                )

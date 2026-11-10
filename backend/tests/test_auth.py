@@ -82,6 +82,46 @@ def test_login_success_and_failure(client, db_session):
     assert all(row.user_id is None and row.timestamp is not None for row in failures)
     assert all("wrongpassword" not in row.details for row in failures)
 
+
+def test_login_rate_limit_is_per_username_and_ip_and_audited(client, db_session):
+    for attempt in range(5):
+        response = client.post(
+            "/token",
+            data={"username": "admin", "password": f"bad-password-{attempt}"},
+        )
+        assert response.status_code == 401
+
+    limited = client.post(
+        "/token",
+        data={"username": "admin", "password": "password123"},
+    )
+    assert limited.status_code == 429
+    assert db_session.query(AuditLog).filter_by(action="LOGIN_FAILED").count() == 6
+
+    other_username = client.post(
+        "/token",
+        data={"username": "another-user", "password": "wrong-password"},
+    )
+    assert other_username.status_code == 401
+
+    auth.reset_login_failures()
+    success = client.post(
+        "/token",
+        data={"username": "admin", "password": "password123"},
+    )
+    assert success.status_code == 200
+
+
+def test_me_returns_the_authenticated_user(client):
+    token = client.post(
+        "/token",
+        data={"username": "admin", "password": "password123"},
+    ).json()["access_token"]
+    response = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.json() == {"id": 1, "username": "admin", "role": "admin"}
+
+
 def test_protected_routes_reject_missing_or_invalid_jwt(client):
     no_tok = client.get('/findings')
     assert no_tok.status_code == 401

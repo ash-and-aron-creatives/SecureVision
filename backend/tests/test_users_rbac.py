@@ -83,6 +83,27 @@ def test_admin_create_duplicate_and_validation(client, db_session):
     assert short_pw.status_code == 400
 
 
+def test_username_validation_and_parameterized_injection_text(client, db_session):
+    headers = _headers(client, "admin")
+    invalid_values = ("a" * 121, "secops\nadmin")
+    for username in invalid_values:
+        response = client.post(
+            "/users",
+            json={"username": username, "password": "password123", "role": "analyst"},
+            headers=headers,
+        )
+        assert response.status_code == 400
+
+    injected_text = "' OR 1=1 --"
+    response = client.post(
+        "/users",
+        json={"username": injected_text, "password": "password123", "role": "analyst"},
+        headers=headers,
+    )
+    assert response.status_code == 201
+    assert db_session.query(User).filter_by(username=injected_text).one().username == injected_text
+
+
 def test_self_demotion_and_self_deletion_blocked(client, db_session):
     h_admin = _headers(client, "admin")
     admin_user = db_session.query(User).filter(User.username == "admin").first()

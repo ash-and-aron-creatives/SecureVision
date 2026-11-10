@@ -39,6 +39,10 @@ export interface ScoringExplanation {
 export interface Asset {
   id: number;
   name: string;
+  type: string;
+  ip_or_domain: string;
+  owner: string;
+  environment: string;
   exposure: string;
   criticality: number;
   needs_review: boolean;
@@ -74,6 +78,9 @@ export interface DashboardActivityDay {
 }
 
 export interface DashboardAnalytics {
+  total_assets: number;
+  open_vulnerabilities: number;
+  fixed_this_month: number;
   total_findings: number;
   resolved_findings: number;
   mitigation_pct: number | null;

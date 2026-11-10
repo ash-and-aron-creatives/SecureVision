@@ -1,6 +1,7 @@
 import io
 
 import pytest
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -8,6 +9,35 @@ from sqlalchemy.orm import sessionmaker
 from backend import auth, main
 from backend.database import Base, get_db
 from backend.models import Asset, AuditLog, Finding, User
+
+
+def _has_auth_dependency(dependency):
+    return dependency.call is auth.get_current_user or any(
+        _has_auth_dependency(child) for child in dependency.dependencies
+    )
+
+
+def _protected_route_cases():
+    cases = []
+    for route in main.app.routes:
+        if not isinstance(route, APIRoute) or not _has_auth_dependency(route.dependant):
+            continue
+        path = route.path
+        for parameter, value in (
+            ("{asset_id}", "1"),
+            ("{finding_id}", "1"),
+            ("{user_id}", "1"),
+            ("{cve_id}", "CVE-2025-1234"),
+        ):
+            path = path.replace(parameter, value)
+        if path == "/cves":
+            path += "?search=CVE-2025-1234"
+        for method in route.methods - {"HEAD", "OPTIONS"}:
+            cases.append((method, path))
+    return cases
+
+
+PROTECTED_ROUTES = _protected_route_cases()
 
 
 @pytest.fixture
@@ -102,6 +132,65 @@ def _assert_audited_mutation(role_api, role, method, path, **kwargs):
     return response
 
 
+def _request_protected_route(client, method, path):
+    if path.startswith("/imports/"):
+        return client.request(
+            method,
+            path,
+            files=_csv_file("CVE-2025-1234"),
+        )
+    body = None
+    if path == "/assets" and method == "POST":
+        body = {"name": "ROUTE-ASSET", "exposure": "Internal", "criticality": 3}
+    elif path.startswith("/assets/") and method == "PUT":
+        body = {"name": "ROUTE-ASSET", "exposure": "Internal", "criticality": 3}
+    elif path == "/scan":
+        body = {"asset_id": 1, "cve_id": "CVE-2025-1234", "cvss_score": 8, "epss_percentile": 0.3}
+    elif path.endswith("/status"):
+        body = {"status": "Resolved"}
+    elif path == "/users" and method == "POST":
+        body = {"username": "route-user", "password": "password123", "role": "analyst"}
+    elif path.endswith("/role") or path.startswith("/users/") and method == "PATCH":
+        body = {"role": "viewer"}
+    elif path.startswith("/users/") and method == "PUT":
+        body = {"role": "viewer"}
+    return client.request(method, path, json=body)
+
+
+@pytest.mark.parametrize(("method", "path"), PROTECTED_ROUTES)
+def test_all_authenticated_api_routes_reject_missing_tokens(role_api, method, path):
+    response = _request_protected_route(role_api["client"], method, path)
+    assert response.status_code == 401, f"{method} {path}: {response.status_code} {response.text}"
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "role", "body"),
+    [
+        ("POST", "/assets", "viewer", {"name": "ROLE-ASSET", "exposure": "Internal", "criticality": 3}),
+        ("PUT", "/assets/1", "viewer", {"name": "ROLE-ASSET", "exposure": "Internal", "criticality": 3}),
+        ("DELETE", "/assets/1", "viewer", None),
+        ("POST", "/scan", "viewer", {"asset_id": 1, "cve_id": "CVE-2025-1234"}),
+        ("PUT", "/findings/1/status", "viewer", {"status": "Resolved"}),
+        ("POST", "/imports/preview", "viewer", None),
+        ("POST", "/imports/commit", "viewer", None),
+        ("GET", "/audit", "analyst", None),
+        ("GET", "/users", "analyst", None),
+        ("POST", "/users", "analyst", {"username": "role-user", "password": "password123"}),
+        ("PATCH", "/users/2", "analyst", {"role": "viewer"}),
+        ("PUT", "/users/2/role", "analyst", {"role": "viewer"}),
+        ("DELETE", "/users/2", "analyst", None),
+    ],
+)
+def test_role_restricted_routes_reject_the_wrong_role(role_api, method, path, role, body):
+    client = role_api["client"]
+    headers = role_api["headers_for"](role)
+    if path.startswith("/imports/"):
+        response = client.request(method, path, files=_csv_file("CVE-2025-1234"), headers=headers)
+    else:
+        response = client.request(method, path, json=body, headers=headers)
+    assert response.status_code == 403, f"{method} {path}: {response.status_code} {response.text}"
+
+
 def test_viewer_is_forbidden_from_all_mutations_and_admin_views(role_api):
     client = role_api["client"]
     headers = role_api["headers_for"]("viewer")
@@ -166,13 +255,22 @@ def test_analyst_can_mutate_operational_resources_but_not_admin_views(role_api):
     asset_id = role_api["asset_id"]
     finding_id = role_api["finding_id"]
 
-    _assert_audited_mutation(
+    created = _assert_audited_mutation(
         role_api,
         "analyst",
         "post",
         "/assets",
         json={"name": "ANALYST-ASSET", "exposure": "Internal", "criticality": 3},
     )
+    created_asset_id = created.json()["id"]
+    _assert_audited_mutation(
+        role_api,
+        "analyst",
+        "put",
+        f"/assets/{created_asset_id}",
+        json={"name": "ANALYST-ASSET-EDITED", "exposure": "Internal", "criticality": 3},
+    )
+    _assert_audited_mutation(role_api, "analyst", "delete", f"/assets/{created_asset_id}")
     _assert_audited_mutation(
         role_api,
         "analyst",

@@ -1,7 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException, status, File, Form, UploadFile, Query
+from fastapi import FastAPI, Depends, HTTPException, status, File, Form, UploadFile, Query, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, inspect
+from sqlalchemy import String, cast, func, inspect
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import hashlib
@@ -13,8 +13,10 @@ import re
 from datetime import date, datetime, timedelta, timezone
 
 from backend import models, auth
-from backend.database import engine, get_db, migrate_finding_score_ml_columns
+from backend.database import engine, get_db, migrate_asset_columns, migrate_finding_score_ml_columns
 from backend.ml_inference import predict_exploit_likelihood
+from backend.cve_dataset import dataset_available, lookup_cve, search_cves
+from backend.rules_config import CVE_DATASET_PATH, CVE_SEARCH_MAX_RESULTS, LOGIN_USERNAME_MAX_LENGTH
 from backend.scoring_engine import TIER_SCORES, calculate_priority
 from backend.threat_intel import fetch_cve_data
 from backend.csv_import import MAX_BYTES, ImportFileError, detect_format, parse_and_validate, problems_to_csv
@@ -23,7 +25,10 @@ from backend.reports import router as reports_router
 from backend.users import router as users_router
 from backend.schemas import (
     AssetResponse,
+    AssetRequest,
     AuditEntryResponse,
+    CVEResponse,
+    DeletedAssetResponse,
     DashboardAnalyticsResponse,
     FindingDetailResponse,
     FindingsPageResponse,
@@ -34,10 +39,18 @@ from backend.schemas import (
     ScanResultResponse,
     StatusUpdateResponse,
     TokenResponse,
+    UserResponse,
 )
 
-models.Base.metadata.create_all(bind=engine)
+models.Base.metadata.create_all(
+    bind=engine,
+    tables=[
+        table for table in models.Base.metadata.sorted_tables
+        if not (table.name == "cves" and dataset_available())
+    ],
+)
 migrate_finding_score_ml_columns()
+migrate_asset_columns()
 if "needs_review" not in {column["name"] for column in inspect(engine).get_columns("assets")}:
     with engine.begin() as connection:
         connection.exec_driver_sql(
@@ -124,10 +137,15 @@ def _as_utc(value: datetime | None) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
-class AssetCreateRequest(BaseModel):
-    name: str
-    exposure: str
-    criticality: int
+def _asset_identifier_map(assets: list[models.Asset]) -> dict[str, int]:
+    identifiers = {}
+    for asset in assets:
+        for value in (asset.name, asset.ip_or_domain):
+            normalized = (value or "").strip().casefold()
+            if normalized:
+                identifiers.setdefault(normalized, asset.id)
+    return identifiers
+
 
 class ScanRequest(BaseModel):
     asset_id: int
@@ -140,21 +158,38 @@ class StatusUpdateRequest(BaseModel):
     status: str
 
 @app.post("/token", response_model=TokenResponse)
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == form_data.username).first()
+def login_for_access_token(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    client_ip = request.client.host if request.client else "unknown"
+    user = (
+        db.query(models.User)
+        .filter(models.User.username == form_data.username)
+        .first()
+        if len(form_data.username) <= LOGIN_USERNAME_MAX_LENGTH
+        else None
+    )
     stored_hash = user.hashed_password if user else _DUMMY_PASSWORD_HASH
-    password_valid = auth.verify_password(form_data.password, stored_hash)
-    if not user or not password_valid:
+    rate_limited = not auth.login_attempt_allowed(form_data.username, client_ip)
+    password_valid = not rate_limited and auth.verify_password(form_data.password, stored_hash)
+    if rate_limited or not user or not password_valid:
         db.add(models.AuditLog(
             user_id=None,
             action="LOGIN_FAILED",
-            details=json.dumps({"username_attempted": form_data.username}),
+            details=json.dumps({"username_attempted": form_data.username[:120]}),
         ))
         try:
             db.commit()
         except Exception:
             db.rollback()
             raise
+        if rate_limited:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed login attempts. Try again in 15 minutes.",
+            )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect credentials")
 
     try:
@@ -168,35 +203,37 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     except Exception:
         db.rollback()
         raise
+    auth.clear_login_failures(form_data.username, client_ip)
     return {"access_token": access_token, "token_type": "bearer", "role": user.role, "username": user.username}
+
+@app.get("/me", response_model=UserResponse)
+def get_me(current_user: models.User = Depends(auth.get_current_user)):
+    return current_user
 
 @app.post("/assets", response_model=AssetResponse)
 def create_asset(
-    name: str | None = None,
-    exposure: str | None = None,
-    criticality: int | None = None,
-    body: AssetCreateRequest | None = None,
+    body: AssetRequest,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
     if current_user.role not in ("admin", "analyst"):
         raise HTTPException(status_code=403, detail="Only administrators or analysts can manage assets.")
-    final_name = (body.name if body else name or "").strip()
-    final_exposure = (body.exposure if body else exposure or "Internal").strip()
-    final_crit = int(body.criticality if body else (criticality or 3))
-    if not final_name:
-        raise HTTPException(status_code=400, detail="Asset name is required.")
-    if final_crit < 1 or final_crit > 5:
-        raise HTTPException(status_code=400, detail="Criticality must be between 1 and 5.")
-
-    asset = models.Asset(name=final_name, exposure=final_exposure, criticality=final_crit)
+    asset = models.Asset(
+        name=body.name,
+        type=body.type,
+        ip_or_domain=body.ip_or_domain,
+        owner=body.owner,
+        environment=body.environment,
+        exposure=body.exposure,
+        criticality=body.criticality,
+    )
     try:
         db.add(asset)
         db.flush()
         db.add(models.AuditLog(
             user_id=current_user.id,
             action="ASSET_CREATED",
-            details=f"Added asset: {final_name} ({final_exposure}, criticality={final_crit})",
+            details=json.dumps({"asset_id": asset.id, "name": asset.name}),
         ))
         db.commit()
     except Exception:
@@ -204,9 +241,146 @@ def create_asset(
         raise
     return asset
 
+@app.put("/assets/{asset_id}", response_model=AssetResponse)
+def update_asset(
+    asset_id: int,
+    body: AssetRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    if current_user.role not in ("admin", "analyst"):
+        raise HTTPException(status_code=403, detail="Only administrators or analysts can manage assets.")
+    asset = db.query(models.Asset).filter(models.Asset.id == asset_id).first()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found.")
+    previous = {
+        "name": asset.name,
+        "type": asset.type,
+        "ip_or_domain": asset.ip_or_domain,
+        "owner": asset.owner,
+        "environment": asset.environment,
+        "exposure": asset.exposure,
+        "criticality": asset.criticality,
+    }
+    try:
+        for field in previous:
+            setattr(asset, field, getattr(body, field))
+        db.add(models.AuditLog(
+            user_id=current_user.id,
+            action="ASSET_UPDATED",
+            details=json.dumps({"asset_id": asset.id, "before": previous, "after": body.model_dump()}),
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return asset
+
+@app.delete("/assets/{asset_id}", response_model=DeletedAssetResponse)
+def delete_asset(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    if current_user.role not in ("admin", "analyst"):
+        raise HTTPException(status_code=403, detail="Only administrators or analysts can manage assets.")
+    asset = db.query(models.Asset).filter(models.Asset.id == asset_id).first()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found.")
+    if db.query(models.Finding.id).filter(models.Finding.asset_id == asset.id).first():
+        raise HTTPException(
+            status_code=409,
+            detail="This asset has findings and cannot be deleted. Resolve or move its findings first.",
+        )
+    name = asset.name
+    try:
+        db.delete(asset)
+        db.add(models.AuditLog(
+            user_id=current_user.id,
+            action="ASSET_DELETED",
+            details=json.dumps({"asset_id": asset_id, "name": name}),
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"deleted": asset_id, "name": name}
+
 @app.get("/assets", response_model=list[AssetResponse])
 def get_assets(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return db.query(models.Asset).order_by(models.Asset.id.asc()).all()
+
+def _cve_from_intel(info: dict) -> dict:
+    return {
+        "cve_id": info.get("cve_id"),
+        "published_date": info.get("published_date"),
+        "description": info.get("description"),
+        "cvss_score": info.get("cvss"),
+        "cvss_vector": info.get("cvss_vector"),
+        "cwe": info.get("cwe"),
+        "kev_date_added": info.get("kev_date_added"),
+        "epss": info.get("epss"),
+        "percentile": info.get("percentile"),
+        "in_kev": info.get("in_kev"),
+    }
+
+
+@app.get("/cves/{cve_id}", response_model=CVEResponse)
+async def get_cve(
+    cve_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    cve_clean = cve_id.strip().upper()
+    if not CVE_ID_PATTERN.fullmatch(cve_clean):
+        raise HTTPException(status_code=422, detail="cve_id must look like CVE-2021-44228.")
+    if dataset_available():
+        record = lookup_cve(cve_clean, str(CVE_DATASET_PATH))
+        if record is None:
+            raise HTTPException(status_code=404, detail="CVE not found in the prepared dataset.")
+        return record
+
+    cached = db.query(models.CVECache).filter_by(cve_id=cve_clean).first()
+    if cached:
+        return cached.data
+    intel = await fetch_cve_data(cve_clean)
+    if not intel.get("available"):
+        raise HTTPException(status_code=503, detail={"message": "CVE lookup unavailable.", "errors": intel.get("errors", [])})
+    record = _cve_from_intel(intel)
+    try:
+        db.add(models.CVECache(cve_id=cve_clean, data=record))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return record
+
+
+@app.get("/cves", response_model=list[CVEResponse])
+def search_cve_records(
+    search: str = Query(..., min_length=1, max_length=200),
+    limit: int = Query(default=CVE_SEARCH_MAX_RESULTS, ge=1, le=CVE_SEARCH_MAX_RESULTS),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    query = search.strip()
+    if not query:
+        raise HTTPException(status_code=422, detail="search cannot be empty.")
+    if dataset_available():
+        results = search_cves(query, str(CVE_DATASET_PATH))[:limit]
+    else:
+        results = (
+            db.query(models.CVECache)
+            .filter(
+                models.CVECache.cve_id.ilike(f"%{query}%")
+                | cast(models.CVECache.data, String).ilike(f"%{query}%")
+            )
+            .order_by(models.CVECache.cve_id.asc())
+            .limit(limit)
+            .all()
+        )
+        results = tuple(record.data for record in results)
+    return results
 
 @app.get("/intel/{cve_id}", response_model=IntelResponse)
 async def get_intel(cve_id: str, current_user: models.User = Depends(auth.get_current_user)):
@@ -453,6 +627,7 @@ def get_dashboard_analytics(
 
     now = datetime.now(timezone.utc)
     today = now.date()
+    month_start = today.replace(day=1)
     first_day = today - timedelta(days=6)
     weekly_counts = {
         first_day + timedelta(days=offset): {"ingested_count": 0, "resolved_count": 0}
@@ -531,6 +706,15 @@ def get_dashboard_analytics(
 
     total_findings = len(findings)
     return {
+        "total_assets": db.query(func.count(models.Asset.id)).scalar() or 0,
+        "open_vulnerabilities": sum(1 for finding in findings if finding.status == "Open"),
+        "fixed_this_month": sum(
+            1
+            for finding in findings
+            if finding.status == "Resolved"
+            and (resolution := resolved_at.get(finding.id)) is not None
+            and month_start <= resolution.date() <= today
+        ),
         "total_findings": total_findings,
         "resolved_findings": resolved_findings,
         "mitigation_pct": round(resolved_findings * 100 / total_findings, 1) if total_findings else None,
@@ -598,6 +782,10 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_u
         "asset": {
             "id": f.asset.id if f.asset else None,
             "name": f.asset.name if f.asset else "Unknown",
+            "type": f.asset.type if f.asset else "Other",
+            "ip_or_domain": f.asset.ip_or_domain if f.asset else "",
+            "owner": f.asset.owner if f.asset else "",
+            "environment": f.asset.environment if f.asset else "Unknown",
             "exposure": f.asset.exposure if f.asset else "Internal",
             "criticality": f.asset.criticality if f.asset else 1,
         },
@@ -660,7 +848,7 @@ async def preview_csv(
     data = await file.read(MAX_BYTES + 1)
     if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(400, "Upload a .csv file.")
-    assets = {a.name: a.id for a in db.query(models.Asset).all()}
+    assets = _asset_identifier_map(db.query(models.Asset).order_by(models.Asset.id.asc()).all())
     pairs = {(a, c) for a, c in db.query(models.Finding.asset_id, models.Finding.cve_id).all()}
     try:
         rows, summary = parse_and_validate(
@@ -688,7 +876,7 @@ async def commit_csv(
     if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(400, "Upload a .csv file.")
     all_assets = db.query(models.Asset).all()
-    assets = {a.name: a.id for a in all_assets}
+    assets = _asset_identifier_map(all_assets)
     pairs = {(a, c) for a, c in db.query(models.Finding.asset_id, models.Finding.cve_id).all()}
     try:
         rows, _ = parse_and_validate(

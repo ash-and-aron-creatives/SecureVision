@@ -167,6 +167,25 @@ export function DashboardView(props: SecureAppViewProps) {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {[
+                { label: "Total Assets", value: analytics?.total_assets },
+                { label: "Open Vulnerabilities", value: analytics?.open_vulnerabilities },
+                { label: "Fixed This Month", value: analytics?.fixed_this_month },
+              ].map((metric, index) => (
+                <div
+                  key={metric.label}
+                  style={{ animationDelay: `${0.24 + index * 0.06}s` }}
+                  className={`sv-card-pop rounded-2xl p-4 border ${subSurfaceCard}`}
+                >
+                  <p className={`text-xs font-bold uppercase tracking-wide ${mutedText}`}>{metric.label}</p>
+                  <p className={`mt-2 text-3xl font-extrabold tabular-nums ${headingColor}`}>
+                    {metric.value ?? "—"}
+                  </p>
+                </div>
+              ))}
+            </div>
+
             {/* ROW 2: AUDIT ACTIVITY GRAPH (7 COLS) + TOP PRIORITY QUEUE (5 COLS) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
               {/* Col 1 (7 cols): Finding Activity Graph */}

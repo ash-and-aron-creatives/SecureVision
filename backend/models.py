@@ -14,10 +14,19 @@ class Asset(Base):
     __tablename__ = 'assets'
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
+    type = Column(String, nullable=False, default='Other')
+    ip_or_domain = Column(String, nullable=False, default='')
+    owner = Column(String, nullable=False, default='')
+    environment = Column(String, nullable=False, default='Unknown')
     exposure = Column(String)
     criticality = Column(Integer)
     needs_review = Column(Boolean, default=False, nullable=False)
     findings = relationship('Finding', back_populates='asset')
+
+class CVECache(Base):
+    __tablename__ = 'cves'
+    cve_id = Column(String, primary_key=True)
+    data = Column(JSON, nullable=False)
 
 class Finding(Base):
     __tablename__ = 'findings'

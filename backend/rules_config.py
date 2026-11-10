@@ -6,6 +6,21 @@ CRITICALITY_FACTORS = {1: 0.6, 2: 0.8, 3: 1.0, 4: 1.2, 5: 1.4}
 CVSS_MISSING_IMPUTATION = 6.7
 ML_REASON_COUNT = 3
 ML_THRESHOLD_PERCENTILES = {"Critical": 99, "High": 90, "Medium": 50}
+ASSET_TYPES = ("Server", "Workstation", "Network", "Cloud", "Application", "Other")
+ASSET_ENVIRONMENTS = ("Production", "Staging", "Development", "Testing", "Other", "Unknown")
+ASSET_EXPOSURES = {"internet": "Internet", "internal": "Internal"}
+ASSET_DEFAULT_TYPE = "Other"
+ASSET_DEFAULT_ENVIRONMENT = "Unknown"
+ASSET_DEFAULT_EXPOSURE = "Internal"
+LOGIN_MAX_FAILED_ATTEMPTS = 5
+LOGIN_ATTEMPT_WINDOW_SECONDS = 15 * 60
+LOGIN_RATE_LIMIT_MAX_KEYS = 10_000
+LOGIN_USERNAME_MAX_LENGTH = 120
+ASSET_NAME_MAX_LENGTH = 200
+ASSET_IP_OR_DOMAIN_MAX_LENGTH = 253
+ASSET_OWNER_MAX_LENGTH = 120
+CVE_DATASET_PATH = Path(__file__).resolve().parents[1] / "data" / "processed" / "master_cves_2026-10-08.csv"
+CVE_SEARCH_MAX_RESULTS = 100
 CVSS_VECTOR_PATTERNS = {
     "AV": r"AV:([NALP])",
     "AC": r"AC:([LH])",
