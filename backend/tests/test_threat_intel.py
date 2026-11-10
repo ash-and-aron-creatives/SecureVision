@@ -32,6 +32,10 @@ async def test_lookup_failures_are_explicit_and_never_zero_scores(monkeypatch):
         "cvss": None,
         "available": False,
         "errors": ["EPSS lookup failed.", "NVD lookup failed."],
+        "description": None,
+        "cvss_vector": None,
+        "cwe": None,
+        "published_date": None,
     }
 
 
@@ -52,9 +56,17 @@ async def test_one_provider_failure_preserves_available_score_as_partial(monkeyp
                             "cve": {
                                 "metrics": {
                                     "cvssMetricV31": [{
-                                        "cvssData": {"baseScore": 8.2},
+                                        "cvssData": {
+                                            "baseScore": 8.2,
+                                            "vectorString": "CVSS:3.1/AV:N",
+                                        },
                                     }],
                                 },
+                                "descriptions": [{"lang": "en", "value": "Test description"}],
+                                "weaknesses": [{
+                                    "description": [{"lang": "en", "value": "CWE-79"}],
+                                }],
+                                "published": "2025-01-01T00:00Z",
                             },
                         }],
                     }
@@ -69,3 +81,7 @@ async def test_one_provider_failure_preserves_available_score_as_partial(monkeyp
     assert result["cvss"] == 8.2
     assert result["available"] is False
     assert result["errors"] == ["EPSS lookup failed."]
+    assert result["description"] == "Test description"
+    assert result["cvss_vector"] == "CVSS:3.1/AV:N"
+    assert result["cwe"] == "CWE-79"
+    assert result["published_date"] == "2025-01-01T00:00Z"

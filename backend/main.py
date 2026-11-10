@@ -13,10 +13,12 @@ import re
 from datetime import date, datetime, timedelta, timezone
 
 from backend import models, auth
-from backend.database import engine, get_db
+from backend.database import engine, get_db, migrate_finding_score_ml_columns
+from backend.ml_inference import predict_exploit_likelihood
 from backend.scoring_engine import TIER_SCORES, calculate_priority
 from backend.threat_intel import fetch_cve_data
 from backend.csv_import import MAX_BYTES, ImportFileError, detect_format, parse_and_validate, problems_to_csv
+from backend.model_results import read_model_results
 from backend.reports import router as reports_router
 from backend.users import router as users_router
 from backend.schemas import (
@@ -28,12 +30,14 @@ from backend.schemas import (
     IntelResponse,
     ImportCommitResponse,
     ImportPreviewResponse,
+    ModelResultsResponse,
     ScanResultResponse,
     StatusUpdateResponse,
     TokenResponse,
 )
 
 models.Base.metadata.create_all(bind=engine)
+migrate_finding_score_ml_columns()
 if "needs_review" not in {column["name"] for column in inspect(engine).get_columns("assets")}:
     with engine.begin() as connection:
         connection.exec_driver_sql(
@@ -97,6 +101,18 @@ def _stored_explanation(
             "cvss_score": float(finding.cvss_score) if finding.cvss_score is not None else None,
         },
         "rationale": [],
+    }
+
+
+def _ml_score_fields(score: models.FindingScore | None) -> dict:
+    return {
+        "ml_likelihood": score.ml_likelihood if score else None,
+        "ml_risk": score.ml_risk if score else None,
+        "ml_priority": score.ml_priority if score else None,
+        "ml_top_reasons": score.ml_top_reasons if score else None,
+        "ml_model_version": score.ml_model_version if score else None,
+        "ml_recommended_action": score.ml_recommended_action if score else None,
+        "ml_unavailable_reason": score.ml_unavailable_reason if score else None,
     }
 
 
@@ -199,6 +215,12 @@ async def get_intel(cve_id: str, current_user: models.User = Depends(auth.get_cu
         raise HTTPException(status_code=422, detail="cve_id must look like CVE-2021-44228.")
     return await fetch_cve_data(cve_clean)
 
+
+@app.get("/model/results", response_model=ModelResultsResponse)
+def get_model_results(current_user: models.User = Depends(auth.get_current_user)):
+    return read_model_results()
+
+
 @app.post("/scan", response_model=ScanResultResponse)
 async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role == "viewer":
@@ -210,10 +232,10 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
     cve_clean = req.cve_id.strip().upper()
     if not CVE_ID_PATTERN.fullmatch(cve_clean):
         raise HTTPException(status_code=422, detail="cve_id must look like CVE-2021-44228.")
+    intel = await fetch_cve_data(cve_clean)
     cvss_score = req.cvss_score
     epss_percentile = req.epss_percentile
     if cvss_score is None or epss_percentile is None:
-        intel = await fetch_cve_data(cve_clean)
         if cvss_score is None:
             cvss_score = intel["cvss"]
         if epss_percentile is None:
@@ -228,6 +250,14 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
             )
     internet_facing = (asset.exposure.lower() == "internet")
     scoring = calculate_priority(req.in_kev, internet_facing, asset.criticality, epss_percentile, cvss_score)
+    ml_assessment = predict_exploit_likelihood(
+        cvss_score=cvss_score,
+        cvss_vector=intel.get("cvss_vector"),
+        cwe=intel.get("cwe"),
+        description=intel.get("description"),
+        exposure=asset.exposure,
+        criticality=asset.criticality,
+    )
     tier = scoring["tier"]
 
     finding = (
@@ -271,6 +301,13 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
                 "scoring_explanation": scoring["explanation"],
             },
             explanation=scoring["explanation"]["summary"],
+            ml_likelihood=ml_assessment["likelihood"],
+            ml_risk=ml_assessment["risk"],
+            ml_priority=ml_assessment["priority"],
+            ml_top_reasons=ml_assessment["top_reasons"],
+            ml_model_version=ml_assessment["model_version"],
+            ml_recommended_action=ml_assessment["recommended_action"],
+            ml_unavailable_reason=ml_assessment["unavailable_reason"],
         )
         db.add(score)
         db.add(models.AuditLog(
@@ -289,6 +326,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
         "priority_tier": tier,
         "score": scoring["score"],
         "explanation": scoring["explanation"],
+        **_ml_score_fields(score),
     }
 
 @app.put("/findings/{finding_id}/status", response_model=StatusUpdateResponse)
@@ -360,6 +398,7 @@ def get_findings(
             "status": str(f.status or "Open"),
             "date_found": str(f.date_found) if f.date_found else None,
             "explanation": explanation,
+            **_ml_score_fields(latest),
         })
 
     filtered = all_rows
@@ -566,6 +605,7 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_u
         "score": _stored_score(latest, latest.priority_tier if latest else "Unknown"),
         "likelihood": float(latest.likelihood or 0.0) if latest else 0.0,
         "explanation": _stored_explanation(latest, f, f.asset),
+        **_ml_score_fields(latest),
         "provenance": latest.provenance if latest else {},
         "score_history": [
             {
@@ -575,6 +615,7 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_u
                 "score": _stored_score(s, s.priority_tier),
                 "likelihood": float(s.likelihood or 0.0),
                 "explanation": _stored_explanation(s, f, f.asset),
+                **_ml_score_fields(s),
                 "provenance": s.provenance,
             }
             for s in scores
@@ -702,6 +743,14 @@ async def commit_csv(
             in_kev = bool(info.get("in_kev", False))
             epss_val = info["epss"]
             scoring = calculate_priority(in_kev, internet_facing, asset.criticality, epss_val, cvss_val)
+            ml_assessment = predict_exploit_likelihood(
+                cvss_score=cvss_val,
+                cvss_vector=info.get("cvss_vector"),
+                cwe=info.get("cwe"),
+                description=info.get("description"),
+                exposure=asset.exposure,
+                criticality=asset.criticality,
+            )
             tier = scoring["tier"]
 
             finding = models.Finding(
@@ -728,6 +777,13 @@ async def commit_csv(
                     "scoring_explanation": scoring["explanation"],
                 },
                 explanation=scoring["explanation"]["summary"],
+                ml_likelihood=ml_assessment["likelihood"],
+                ml_risk=ml_assessment["risk"],
+                ml_priority=ml_assessment["priority"],
+                ml_top_reasons=ml_assessment["top_reasons"],
+                ml_model_version=ml_assessment["model_version"],
+                ml_recommended_action=ml_assessment["recommended_action"],
+                ml_unavailable_reason=ml_assessment["unavailable_reason"],
             )
             db.add(score)
             imported_finding_ids.append(finding.id)

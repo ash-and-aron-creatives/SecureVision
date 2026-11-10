@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.main import app
 from backend.database import Base, get_db
-from backend import auth
+from backend import auth, main
 from backend.models import Asset, AuditLog, Finding, User
 
 
@@ -36,10 +36,23 @@ def db_session():
 
 
 @pytest.fixture
-def client(db_session):
+def client(db_session, monkeypatch):
     def _override_get_db():
         yield db_session
 
+    async def nvd_and_epss(cve_id):
+        return {
+            "cve_id": cve_id,
+            "epss": 0.4,
+            "cvss": 8.0,
+            "available": True,
+            "errors": [],
+            "description": "Mock vulnerability description.",
+            "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "cwe": "CWE-79",
+            "published_date": "2025-01-01T00:00Z",
+        }
+    monkeypatch.setattr(main, "fetch_cve_data", nvd_and_epss)
     app.dependency_overrides[get_db] = _override_get_db
     with TestClient(app) as c:
         yield c

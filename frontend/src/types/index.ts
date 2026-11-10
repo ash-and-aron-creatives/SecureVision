@@ -15,6 +15,13 @@ export interface Finding {
   status: string;
   date_found: string | null;
   explanation: ScoringExplanation;
+  ml_likelihood: number | null;
+  ml_risk: number | null;
+  ml_priority: string | null;
+  ml_top_reasons: string[] | null;
+  ml_model_version: string | null;
+  ml_recommended_action: string | null;
+  ml_unavailable_reason: string | null;
 }
 
 export interface ScoringExplanation {
@@ -91,6 +98,33 @@ export interface ScanResult {
   priority_tier: string;
   score: number;
   explanation: ScoringExplanation;
+  ml_likelihood: number | null;
+  ml_risk: number | null;
+  ml_priority: string | null;
+  ml_top_reasons: string[] | null;
+  ml_model_version: string | null;
+  ml_recommended_action: string | null;
+  ml_unavailable_reason: string | null;
+}
+
+export interface ModelResultRow {
+  name: string;
+  dataset: string;
+  pr_auc: number | null;
+  pr_auc_stddev: number | null;
+  precision: number | null;
+  recall: number | null;
+  f1: number | null;
+  roc_auc: number | null;
+  precision_at_k: Record<string, number>;
+  recall_at_k: Record<string, number>;
+  note: string | null;
+}
+
+export interface ModelResults {
+  models: ModelResultRow[];
+  conclusion: string;
+  source_files: string[];
 }
 
 export interface ImportPreview {
@@ -132,6 +166,10 @@ export interface IntelResponse {
   cvss: number | null;
   available: boolean;
   errors: string[];
+  description: string | null;
+  cvss_vector: string | null;
+  cwe: string | null;
+  published_date: string | null;
 }
 
 export interface StatusUpdate {

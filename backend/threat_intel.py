@@ -9,13 +9,26 @@ DEMO_CACHE = {
 }
 
 
-def _result(cve_id: str, epss: float | None, cvss: float | None, errors: list[str]) -> dict:
+def _result(
+    cve_id: str,
+    epss: float | None,
+    cvss: float | None,
+    errors: list[str],
+    description: str | None = None,
+    cvss_vector: str | None = None,
+    cwe: str | None = None,
+    published_date: str | None = None,
+) -> dict:
     return {
         "cve_id": cve_id,
         "epss": epss,
         "cvss": cvss,
         "available": epss is not None and cvss is not None,
         "errors": errors,
+        "description": description,
+        "cvss_vector": cvss_vector,
+        "cwe": cwe,
+        "published_date": published_date,
     }
 
 
@@ -28,6 +41,10 @@ async def fetch_cve_data(cve_id: str) -> dict:
     epss_score = None
     cvss_score = None
     errors = []
+    description = None
+    cvss_vector = None
+    cwe = None
+    published_date = None
 
     async with httpx.AsyncClient() as client:
         try:
@@ -63,13 +80,49 @@ async def fetch_cve_data(cve_id: str) -> dict:
             errors.append("NVD lookup failed.")
         else:
             vulnerabilities = nvd_data.get("vulnerabilities") if isinstance(nvd_data, dict) else None
-            metrics = (
-                vulnerabilities[0].get("cve", {}).get("metrics", {})
+            cve_record = (
+                vulnerabilities[0].get("cve")
                 if isinstance(vulnerabilities, list)
                 and vulnerabilities
                 and isinstance(vulnerabilities[0], dict)
                 and isinstance(vulnerabilities[0].get("cve"), dict)
                 else {}
+            )
+            published = cve_record.get("published")
+            published_date = published if isinstance(published, str) else None
+            descriptions = cve_record.get("descriptions")
+            if isinstance(descriptions, list):
+                description = next(
+                    (
+                        item["value"]
+                        for item in descriptions
+                        if isinstance(item, dict)
+                        and item.get("lang") == "en"
+                        and isinstance(item.get("value"), str)
+                        and item["value"].strip()
+                    ),
+                    None,
+                )
+            weaknesses = cve_record.get("weaknesses")
+            if isinstance(weaknesses, list):
+                for weakness in weaknesses:
+                    weakness_descriptions = weakness.get("description") if isinstance(weakness, dict) else None
+                    if not isinstance(weakness_descriptions, list):
+                        continue
+                    cwe = next(
+                        (
+                            item["value"]
+                            for item in weakness_descriptions
+                            if isinstance(item, dict)
+                            and isinstance(item.get("value"), str)
+                            and item["value"].startswith(("CWE-", "NVD-CWE-"))
+                        ),
+                        None,
+                    )
+                    if cwe:
+                        break
+            metrics = (
+                cve_record.get("metrics", {})
             )
             for metric_name in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
                 metric_list = metrics.get(metric_name) if isinstance(metrics, dict) else None
@@ -77,15 +130,26 @@ async def fetch_cve_data(cve_id: str) -> dict:
                     continue
                 cvss_data = metric_list[0].get("cvssData")
                 raw_cvss = cvss_data.get("baseScore") if isinstance(cvss_data, dict) else None
+                raw_vector = cvss_data.get("vectorString") if isinstance(cvss_data, dict) else None
                 try:
                     parsed_cvss = float(raw_cvss)
                     if not math.isfinite(parsed_cvss) or not 0 <= parsed_cvss <= 10:
                         continue
                     cvss_score = parsed_cvss
+                    cvss_vector = raw_vector if isinstance(raw_vector, str) else None
                 except (TypeError, ValueError):
                     continue
                 break
             if cvss_score is None:
                 errors.append("NVD CVSS score is unavailable.")
 
-    return _result(cve_upper, epss_score, cvss_score, errors)
+    return _result(
+        cve_upper,
+        epss_score,
+        cvss_score,
+        errors,
+        description,
+        cvss_vector,
+        cwe,
+        published_date,
+    )

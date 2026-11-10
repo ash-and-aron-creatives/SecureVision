@@ -23,7 +23,7 @@ function getStoredTheme(): string | null {
 export function useDashboard(setSelectedFinding: Dispatch<SetStateAction<Finding | null>>) {
   const [activeTab, setActiveTab] = useState<string>(() => {
     const savedTab = getStoredSessionValue("sv_view");
-    return savedTab && ["dashboard", "queue", "scan", "import", "assets", "audit", "users"].includes(savedTab)
+    return savedTab && ["dashboard", "queue", "scan", "import", "assets", "audit", "users", "model-results"].includes(savedTab)
       ? savedTab
       : "dashboard";
   });

@@ -1,6 +1,6 @@
 # SecureVision
 
-SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. It provides deterministic, explainable scoring across a 320-rule matrix, role-based access control (RBAC), an immutable audit log, scanner CSV import, and CVSS/EPSS lookup. The live priority tier comes from the deterministic backend scorer; experimental machine-learning work is offline and does not drive scoring.
+SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. It provides deterministic, explainable scoring across a 320-rule matrix, role-based access control (RBAC), an immutable audit log, scanner CSV import, CVSS/EPSS lookup, and a separate experimental ML advisory. The deterministic matrix remains the primary and sole source of the live priority tier; the ML signal never changes it.
 
 ## Requirements
 
@@ -83,11 +83,15 @@ The API is available at `http://localhost:8000` and its interactive documentatio
 
 ## CVE intelligence and scoring
 
-`POST /token` returns a typed bearer-token response. Authenticated `GET /intel/{cve_id}` validates identifiers using the same `CVE-YYYY-NNNN...` format as scans and returns EPSS and CVSS as nullable values, with an `available` flag and provider errors. A provider failure or missing score is not represented as a numeric zero.
+`POST /token` returns a typed bearer-token response. Authenticated `GET /intel/{cve_id}` validates identifiers using the same `CVE-YYYY-NNNN...` format as scans and returns EPSS/CVSS plus the NVD description, CVSS vector, CWE, and publication date as nullable values. A provider failure or missing score is not represented as a numeric zero.
 
 The scan form can look up scores before submission. Blank score fields are resolved by the backend; if a score required for scoring cannot be obtained, `POST /scan` returns `503` and does not create a finding. CSV imports likewise skip rows whose intelligence is unavailable and report the provider error in the row result. Explicitly entered scan scores remain manual inputs.
 
-The scorer evaluates CVSS, EPSS, recorded KEV status, internet exposure, and asset criticality against the documented 320-row rule matrix. KEV status is a scoring input; there is no live CISA KEV feed integration. Scoring returns the tier, ordinal score, and rationale. The queue and dashboard use backend findings and analytics; the queue loads findings pages up to a 10,000-item safety cap and shows a notice if the cap is reached.
+The scorer evaluates CVSS, EPSS, recorded KEV status, internet exposure, and asset criticality against the documented 320-row rule matrix. KEV status is a scoring input; there is no live CISA KEV feed integration. Scoring returns the deterministic tier, ordinal score, and rationale.
+
+The additional calibrated XGBoost likelihood uses only CVSS score/vector, CWE, and the publication-time NVD description; KEV and EPSS are explicitly excluded from its feature list. ML risk is `likelihood × exposure_factor × criticality_factor`: Internet exposure is 1.5, Internal is 1.0, and criticality 1-5 maps linearly from 0.6 to 1.4. The P99/P90/P50 risk thresholds are derived from the 2025 validation-set risk distribution, not the test set. Factors, thresholds, and recommended-action templates are centralized in [`backend/rules_config.py`](./backend/rules_config.py). If required model inputs or artifacts are missing, the ML fields remain null with a reason; the deterministic tier still works.
+
+The authenticated `GET /model/results` endpoint and **Model Results** screen are available to all roles. They read evaluation outputs from `docs/results/` without modifying them. The frozen test result is negative: XGBoost PR-AUC 0.0114 versus CVSS 0.0117; XGBoost also trails CVSS at P@100 and P@500. EPSS is shown as a hindsight baseline, not a prospective comparison. Metrics not present in the recorded results are shown as not available.
 
 ## CSV scanner imports
 
@@ -130,19 +134,24 @@ administrator. Successful and failed login attempts are audited with the
 attempted username and timestamp; passwords are never written to audit details.
 Failed attempts for existing and unknown usernames return the same response.
 
-## Research: offline ML evaluation (negative result, not used in live scoring)
+## Research: offline ML evaluation (negative result; ML is advisory only)
 
-SecureVision's ML experiments are an offline, experimental advisory signal; no
-ML model is connected to the live scoring path or determines a finding's tier.
-The frozen single-pass evaluation on 61,611 held-out rows (122 positives)
-reported test PR-AUC 0.0114 for the calibrated XGBoost model versus
-0.0117 +/- 0.0018 for the CVSS ranking baseline. The paired-bootstrap mean
-PR-AUC difference was -0.0004 (95% CI: -0.0081 to 0.0045), which does not
-establish an improvement. The model also had lower P@100 (0.0000 vs. 0.0428)
-and P@500 (0.0060 vs. 0.0243). The hindsight EPSS snapshot is not a
-like-for-like prospective baseline. See [`docs/results/p5/p5_console.log`](./docs/results/p5/p5_console.log)
-and [`docs/P5_protocol.md`](./docs/P5_protocol.md) for the recorded metrics and
-protocol.
+The calibrated XGBoost model is wired into the finding flow only as an
+experimental likelihood/risk advisory; it does not drive or reorder the
+deterministic tier. The frozen single-pass evaluation on 61,611 held-out rows
+(122 positives) reported test PR-AUC 0.0114 versus 0.0117 +/- 0.0018 for CVSS.
+The paired-bootstrap mean PR-AUC difference was -0.0004 (95% CI: -0.0081 to
+0.0045), which does not establish an improvement. The model also had lower
+P@100 (0.0000 vs. 0.0428) and P@500 (0.0060 vs. 0.0243). EPSS is a hindsight
+snapshot and is not a like-for-like prospective baseline. This negative result
+is also recorded in `Decision_Log.md`; see
+[`docs/results/p5/p5_console.log`](./docs/results/p5/p5_console.log) and
+[`docs/P5_protocol.md`](./docs/P5_protocol.md).
+
+The configured headline artifact is XGBoost 2.0.3 with scikit-learn 1.4.1.post1
+and joblib 1.6.0 as pinned in `requirements.txt`. SHAP is not installed; factor
+explanations use XGBoost native contribution values. The test set is not used
+to configure the ML risk thresholds.
 
 ## Roadmap (not implemented)
 

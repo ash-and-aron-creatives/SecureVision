@@ -11,11 +11,24 @@ from backend import main
 from backend.models import Asset, AuditLog, User, Finding
 
 @pytest.fixture
-def env():
+def env(monkeypatch):
     engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
     Base.metadata.create_all(bind=engine)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()
+    async def nvd_and_epss(cve_id):
+        return {
+            "cve_id": cve_id,
+            "epss": 0.4,
+            "cvss": 8.0,
+            "available": True,
+            "errors": [],
+            "description": "Mock vulnerability description.",
+            "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "cwe": "CWE-79",
+            "published_date": "2025-01-01T00:00Z",
+        }
+    monkeypatch.setattr(main, "fetch_cve_data", nvd_and_epss)
     db.add(User(username='admin', hashed_password=auth.get_password_hash('password123'), role='admin'))
     db.commit()
     def _override():

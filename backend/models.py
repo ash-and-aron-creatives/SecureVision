@@ -40,6 +40,13 @@ class FindingScore(Base):
     priority_tier = Column(String)
     provenance = Column(JSON)
     explanation = Column(String)
+    ml_likelihood = Column(Float, nullable=True)
+    ml_risk = Column(Float, nullable=True)
+    ml_priority = Column(String, nullable=True)
+    ml_top_reasons = Column(JSON, nullable=True)
+    ml_model_version = Column(String, nullable=True)
+    ml_recommended_action = Column(String, nullable=True)
+    ml_unavailable_reason = Column(String, nullable=True)
     finding = relationship('Finding', back_populates='scores')
 
 class AuditLog(Base):

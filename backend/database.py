@@ -1,6 +1,6 @@
 import os
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./securevision.db")
@@ -60,3 +60,26 @@ def _install_new_database_audit_triggers(metadata, connection, **kwargs):
             SELECT RAISE(ABORT, 'Database Trigger: AuditLog records are strictly immutable.');
         END;
     ''')
+
+
+def migrate_finding_score_ml_columns(target_engine=engine) -> None:
+    columns = {
+        column["name"]
+        for column in inspect(target_engine).get_columns("finding_scores")
+    }
+    additions = {
+        "ml_likelihood": "FLOAT",
+        "ml_risk": "FLOAT",
+        "ml_priority": "VARCHAR",
+        "ml_top_reasons": "JSON",
+        "ml_model_version": "VARCHAR",
+        "ml_recommended_action": "VARCHAR",
+        "ml_unavailable_reason": "VARCHAR",
+    }
+    with target_engine.begin() as connection:
+        for name, column_type in additions.items():
+            if name not in columns:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE finding_scores ADD COLUMN {name} {column_type}"
+                )
+                columns.add(name)

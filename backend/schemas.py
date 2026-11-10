@@ -27,6 +27,20 @@ class IntelResponse(ResponseSchema):
     cvss: float | None
     available: bool
     errors: list[str]
+    description: str | None = None
+    cvss_vector: str | None = None
+    cwe: str | None = None
+    published_date: str | None = None
+
+
+class MLFieldsResponse(ResponseSchema):
+    ml_likelihood: float | None = None
+    ml_risk: float | None = None
+    ml_priority: str | None = None
+    ml_top_reasons: list[str] | None = None
+    ml_model_version: str | None = None
+    ml_recommended_action: str | None = None
+    ml_unavailable_reason: str | None = None
 
 
 class DeletedUserResponse(ResponseSchema):
@@ -56,7 +70,7 @@ class ScoringExplanationResponse(ResponseSchema):
     rationale: list[str]
 
 
-class FindingResponse(ResponseSchema):
+class FindingResponse(MLFieldsResponse):
     id: int
     cve_id: str
     asset_id: int
@@ -106,6 +120,26 @@ class DashboardAnalyticsResponse(ResponseSchema):
     ingestion_has_history: bool
 
 
+class ModelResultRowResponse(ResponseSchema):
+    name: str
+    dataset: str
+    pr_auc: float | None
+    pr_auc_stddev: float | None
+    precision: float | None
+    recall: float | None
+    f1: float | None
+    roc_auc: float | None
+    precision_at_k: dict[str, float]
+    recall_at_k: dict[str, float]
+    note: str | None
+
+
+class ModelResultsResponse(ResponseSchema):
+    models: list[ModelResultRowResponse]
+    conclusion: str
+    source_files: list[str]
+
+
 class AssetSummaryResponse(ResponseSchema):
     id: int | None
     name: str
@@ -113,7 +147,7 @@ class AssetSummaryResponse(ResponseSchema):
     criticality: int
 
 
-class ScoreHistoryResponse(ResponseSchema):
+class ScoreHistoryResponse(MLFieldsResponse):
     id: int
     provider_id: int
     priority_tier: str
@@ -131,7 +165,7 @@ class AuditEntryResponse(ResponseSchema):
     timestamp: datetime | None
 
 
-class FindingDetailResponse(ResponseSchema):
+class FindingDetailResponse(MLFieldsResponse):
     id: int
     cve_id: str
     status: str
@@ -148,7 +182,7 @@ class FindingDetailResponse(ResponseSchema):
     audit_trail: list[AuditEntryResponse]
 
 
-class ScanResultResponse(ResponseSchema):
+class ScanResultResponse(MLFieldsResponse):
     finding_id: int
     action: Literal["created", "updated"]
     reopened: bool

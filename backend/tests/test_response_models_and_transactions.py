@@ -13,7 +13,7 @@ from backend.models import Asset, AuditLog, Finding, FindingScore, User
 
 
 @pytest.fixture
-def api():
+def api(monkeypatch):
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -53,6 +53,21 @@ def api():
         explanation="Test explanation",
     ))
     db.commit()
+
+    async def nvd_and_epss(cve_id):
+        return {
+            "cve_id": cve_id,
+            "epss": 0.4,
+            "cvss": 8.0,
+            "available": True,
+            "errors": [],
+            "description": "Mock vulnerability description.",
+            "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "cwe": "CWE-79",
+            "published_date": "2025-01-01T00:00Z",
+        }
+
+    monkeypatch.setattr(main, "fetch_cve_data", nvd_and_epss)
 
     def override_get_db():
         yield db
@@ -105,6 +120,10 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
             "cvss": None,
             "available": False,
             "errors": ["EPSS lookup failed.", "NVD lookup failed."],
+            "description": None,
+            "cvss_vector": None,
+            "cwe": None,
+            "published_date": None,
         }
 
     monkeypatch.setattr(main, "fetch_cve_data", unavailable_intel)
@@ -118,6 +137,10 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
         "cvss": None,
         "available": False,
         "errors": ["EPSS lookup failed.", "NVD lookup failed."],
+        "description": None,
+        "cvss_vector": None,
+        "cwe": None,
+        "published_date": None,
     }
 
     asset_response = client.post(
@@ -145,6 +168,8 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
     scan_body = scan_response.json()
     assert set(scan_body) == {
         "finding_id", "action", "reopened", "priority_tier", "score", "explanation",
+        "ml_likelihood", "ml_risk", "ml_priority", "ml_top_reasons", "ml_model_version",
+        "ml_recommended_action", "ml_unavailable_reason",
     }
     assert scan_body["action"] == "created"
     assert scan_body["score"] == 2
@@ -195,6 +220,10 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
             "epss": 0.4,
             "available": True,
             "errors": [],
+            "description": "Mock vulnerability description.",
+            "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "cwe": "CWE-79",
+            "published_date": "2025-01-01T00:00Z",
         }
 
     monkeypatch.setattr(main, "fetch_cve_data", fetch_cve_data)

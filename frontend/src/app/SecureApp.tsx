@@ -7,6 +7,7 @@ import type {
   DashboardAnalytics,
   Finding,
   LoginResponse,
+  ModelResults,
   UserItem,
   UserRole,
 } from "../types";
@@ -27,6 +28,7 @@ import { ImportView } from "../components/import/ImportView";
 import { AssetsView } from "../components/assets/AssetsView";
 import { AuditView } from "../components/audit/AuditView";
 import { UsersView } from "../components/users/UsersView";
+import { ModelResultsView } from "../components/dashboard/ModelResultsView";
 import type { SecureAppViewProps } from "../types/views";
 const subscribeToNoChanges = () => () => {};
 const getClientHydrationSnapshot = () => true;
@@ -61,6 +63,8 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [modelResults, setModelResults] = useState<ModelResults | null>(null);
+  const [modelResultsError, setModelResultsError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string>("");
 
   const {
@@ -140,6 +144,29 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
       throw requestError;
     }
   }, [handleLogout]);
+  useEffect(() => {
+    if (!token || activeTab !== "model-results") return;
+    let active = true;
+    void requestApi<ModelResults>("/model/results", token)
+      .then((results) => {
+        if (active) {
+          setModelResults(results);
+          setModelResultsError(null);
+        }
+      })
+      .catch((resultsError: unknown) => {
+        if (!active) return;
+        if (resultsError instanceof ApiRequestError && resultsError.status === 401) {
+          handleLogout();
+        }
+        setModelResultsError(
+          resultsError instanceof Error ? resultsError.message : "Unable to load model results.",
+        );
+      })
+    return () => {
+      active = false;
+    };
+  }, [activeTab, handleLogout, token]);
   const handleAuthenticated = useCallback((data: LoginResponse) => {
     setToken(data.access_token);
     setRole(data.role);
@@ -236,6 +263,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
       { id: "import", label: "Import CSV", badge: null, icon: "upload" },
     ] : []),
     { id: "assets", label: "Assets", badge: null, icon: "server" },
+    { id: "model-results", label: "Model Results", badge: null, icon: "chart" },
     ...(role === "admin" ? [
       { id: "audit", label: "Audit Log", badge: null, icon: "shield" },
       { id: "users", label: "Users (RBAC)", badge: null, icon: "users" },
@@ -426,6 +454,9 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
                         )}
                         {item.icon === "users" && (
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                        )}
+                        {item.icon === "chart" && (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 19V5m0 14h16M8 15l3-4 3 2 5-7"/></svg>
                         )}
                       </span>
                       <span>{item.label}</span>
@@ -643,6 +674,18 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
         {/* TAB 7: USERS (RBAC)                                                 */}
         {/* =================================================================== */}
         <UsersView {...viewProps} />
+
+        {activeTab === "model-results" && (
+          <ModelResultsView
+            data={modelResults}
+            loading={modelResults === null && modelResultsError === null}
+            error={modelResultsError}
+            surfaceCard={surfaceCard}
+            headingColor={headingColor}
+            mutedText={mutedText}
+            darkMode={darkMode}
+          />
+        )}
       </div>
 
       {/* MOBILE & TABLET BOTTOM NAVIGATION BAR (< lg) */}
@@ -658,6 +701,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
           { id: "queue", label: "Queue" },
           ...(role === "admin" || role === "analyst" ? [{ id: "scan", label: "Scan" }] : []),
           { id: "assets", label: "Assets" },
+          { id: "model-results", label: "Model Results" },
           ...(role === "admin" ? [{ id: "audit", label: "Audit" }] : []),
         ].map((tab) => {
           const isAct = activeTab === tab.id;
