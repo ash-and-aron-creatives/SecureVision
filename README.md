@@ -1,6 +1,6 @@
 # SecureVision
 
-SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. The backend scores findings using KEV, internet exposure, asset criticality, EPSS, and CVSS; the frontend provides dashboards, triage, CVE intelligence lookup, CSV import, asset management, and administrator views.
+SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. It provides deterministic, explainable scoring across a 320-rule matrix, role-based access control (RBAC), an immutable audit log, scanner CSV import, and CVSS/EPSS lookup. The live priority tier comes from the deterministic backend scorer; experimental machine-learning work is offline and does not drive scoring.
 
 ## Requirements
 
@@ -87,6 +87,8 @@ The API is available at `http://localhost:8000` and its interactive documentatio
 
 The scan form can look up scores before submission. Blank score fields are resolved by the backend; if a score required for scoring cannot be obtained, `POST /scan` returns `503` and does not create a finding. CSV imports likewise skip rows whose intelligence is unavailable and report the provider error in the row result. Explicitly entered scan scores remain manual inputs.
 
+The scorer evaluates CVSS, EPSS, recorded KEV status, internet exposure, and asset criticality against the documented 320-row rule matrix. KEV status is a scoring input; there is no live CISA KEV feed integration. Scoring returns the tier, ordinal score, and rationale. The queue and dashboard use backend findings and analytics; the queue loads findings pages up to a 10,000-item safety cap and shows a notice if the cap is reached.
+
 ## CSV scanner imports
 
 The Import tab previews generic CSVs and Nessus, Qualys, and OpenVAS/Greenbone
@@ -103,6 +105,50 @@ missing assets are created as Internal with criticality 3 and marked **Needs
 review** in the asset inventory. Their creation and the import audit record are
 committed atomically with the findings. CSV limits remain 5 MiB and 5,000 data
 rows. Example files for each supported format are in [`sample_data/`](./sample_data/).
+
+For generic CSVs, the required fields are:
+
+- `asset_name` (also recognizes host, hostname, DNS, FQDN, and IP aliases)
+- `cve_id` (also recognizes CVE and vulnerability-ID aliases)
+- `date_found` (also recognizes common first/last-seen, detected, and discovered date aliases)
+
+`cvss_score` is optional (common CVSS header variants are accepted). Exposure,
+exploit status, and data-sensitivity columns are not accepted as import fields.
+Scanner-specific formats are detected from their headers and mapped through the
+same required fields.
+
+## Reports, RBAC, and audit log
+
+Authenticated `GET /reports/findings.csv` and `GET /reports/executive.pdf`
+produce server-side downloads. The CSV endpoint accepts priority, status,
+asset, search, and sort filters. Each export records its format, filters, row
+count, and SHA-256 digest in the audit log.
+
+Administrators can create users, change roles, reset passwords, and delete
+other users. Administrators cannot remove themselves or demote/delete the last
+administrator. Successful and failed login attempts are audited with the
+attempted username and timestamp; passwords are never written to audit details.
+Failed attempts for existing and unknown usernames return the same response.
+
+## Research: offline ML evaluation (negative result, not used in live scoring)
+
+SecureVision's ML experiments are an offline, experimental advisory signal; no
+ML model is connected to the live scoring path or determines a finding's tier.
+The frozen single-pass evaluation on 61,611 held-out rows (122 positives)
+reported test PR-AUC 0.0114 for the calibrated XGBoost model versus
+0.0117 +/- 0.0018 for the CVSS ranking baseline. The paired-bootstrap mean
+PR-AUC difference was -0.0004 (95% CI: -0.0081 to 0.0045), which does not
+establish an improvement. The model also had lower P@100 (0.0000 vs. 0.0428)
+and P@500 (0.0060 vs. 0.0243). The hindsight EPSS snapshot is not a
+like-for-like prospective baseline. See [`docs/results/p5/p5_console.log`](./docs/results/p5/p5_console.log)
+and [`docs/P5_protocol.md`](./docs/P5_protocol.md) for the recorded metrics and
+protocol.
+
+## Roadmap (not implemented)
+
+- Jira ticket creation and webhook automation
+- Live CISA KEV feed integration
+- Data-sensitivity weighting in scoring
 
 ## Tests
 
