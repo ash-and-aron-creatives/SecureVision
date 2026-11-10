@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { createUser } from "../api/users";
+import { createUser, deleteUser, updateUser } from "../api/users";
 import type { ApiRequester } from "../api/types";
+import type { UserItem, UserRole } from "../types";
 
 export function useUsers(
   token: string | null,
@@ -31,5 +32,49 @@ export function useUsers(
     }
   };
 
-  return { newUsername, setNewUsername, newPassword, setNewPassword, newRole, setNewRole, handleCreateUser };
+  const handleUpdateUserRole = async (userId: number, role: UserRole) => {
+    if (!token) return;
+    try {
+      await updateUser(apiRequest, token, userId, { role });
+      setActionMessage("User role updated.");
+      await refreshAllData(token);
+    } catch (userError) {
+      setActionMessage(userError instanceof Error ? userError.message : "Unable to update user role.");
+    }
+  };
+
+  const handleResetUserPassword = async (userId: number, password: string) => {
+    if (!token) return;
+    try {
+      await updateUser(apiRequest, token, userId, { password });
+      setActionMessage("User password reset.");
+      await refreshAllData(token);
+    } catch (userError) {
+      setActionMessage(userError instanceof Error ? userError.message : "Unable to reset user password.");
+    }
+  };
+
+  const handleDeleteUser = async (user: UserItem) => {
+    if (!token || !window.confirm(`Delete user "${user.username}"? This cannot be undone.`)) return;
+    try {
+      await deleteUser(apiRequest, token, user.id);
+      setActionMessage(`User ${user.username} deleted.`);
+      await refreshAllData(token);
+    } catch (userError) {
+      setActionMessage(userError instanceof Error ? userError.message : "Unable to delete user.");
+    }
+  };
+
+  return {
+    newUsername,
+    setNewUsername,
+    newPassword,
+    setNewPassword,
+    newRole,
+    setNewRole,
+    handleCreateUser,
+    handleUpdateUserRole,
+    handleResetUserPassword,
+    handleDeleteUser,
+  };
 }

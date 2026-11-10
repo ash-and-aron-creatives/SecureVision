@@ -189,14 +189,17 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   } = useImport(token, apiRequest, setActionMessage, refreshAllData);
   const { assetHost, setAssetHost, assetExposure, setAssetExposure, assetCrit, setAssetCrit, handleCreateAsset } =
     useAssets(token, apiRequest, refreshAllData, setActionMessage);
-  const { newUsername, setNewUsername, newPassword, setNewPassword, newRole, setNewRole, handleCreateUser } =
+  const {
+    newUsername, setNewUsername, newPassword, setNewPassword, newRole, setNewRole,
+    handleCreateUser, handleUpdateUserRole, handleResetUserPassword, handleDeleteUser,
+  } =
     useUsers(token, apiRequest, refreshAllData, setActionMessage);
   const {
     displayFindings, getTier, toggleFindingStatus, criticalCount, highCount, mediumCount, lowCount,
     totalCount, resolvedCount, completionPct, filteredFindings, exportPriorityCsv, exportExecutiveReport,
   } = useFindings({
-    token, apiRequest, findings, setFindings, setSelectedFinding, currentUser, role, searchQuery, tierFilter, setActionMessage,
-    analytics, refreshAllData,
+    token, apiRequest, findings, setFindings, setSelectedFinding, searchQuery, tierFilter, setActionMessage,
+    analytics, refreshAllData, handleLogout,
   });
 
   // ============================================================================
@@ -271,8 +274,9 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev, handleCsvPreview, setCsvFile,
     createMissingAssets, setCreateMissingAssets,
     importPreview, setImportPreview, handleCsvCommit, handleCreateAsset, assetHost, setAssetHost, assetExposure, setAssetExposure,
-    assetCrit, setAssetCrit, role, auditLogs, handleCreateUser, newUsername, setNewUsername, newPassword,
-    setNewPassword, newRole, setNewRole, users, selectedFinding, setSelectedFinding,
+    assetCrit, setAssetCrit, role, currentUser, auditLogs, handleCreateUser, newUsername, setNewUsername, newPassword,
+    setNewPassword, newRole, setNewRole, users, handleUpdateUserRole, handleResetUserPassword, handleDeleteUser,
+    selectedFinding, setSelectedFinding,
   };
 
   return (
@@ -599,7 +603,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
         </header>
 
         {actionMessage && (
-          <div className="bg-gradient-to-r from-[#8121D7] to-[#1ABDD6] text-white px-5 py-3 rounded-2xl text-xs font-semibold flex items-center justify-between shadow-sm sv-tab-transition">
+          <div role="alert" className="bg-gradient-to-r from-[#8121D7] to-[#1ABDD6] text-white px-5 py-3 rounded-2xl text-xs font-semibold flex items-center justify-between shadow-sm sv-tab-transition">
             <span>{actionMessage}</span>
             <button onClick={() => setActionMessage("")} className="text-white/80 hover:text-white font-bold">✕</button>
           </div>

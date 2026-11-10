@@ -16,3 +16,26 @@ export function createUser(
 export function fetchUsers(apiRequest: ApiRequester, authToken: string): Promise<UserItem[]> {
   return apiRequest<UserItem[]>("/users", authToken);
 }
+
+export function updateUser(
+  apiRequest: ApiRequester,
+  authToken: string,
+  userId: number,
+  payload: { role?: string; password?: string },
+): Promise<UserItem> {
+  return apiRequest<UserItem>(`/users/${userId}`, authToken, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteUser(
+  apiRequest: ApiRequester,
+  authToken: string,
+  userId: number,
+): Promise<{ deleted: number; username: string }> {
+  return apiRequest<{ deleted: number; username: string }>(`/users/${userId}`, authToken, {
+    method: "DELETE",
+  });
+}

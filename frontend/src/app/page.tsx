@@ -56,14 +56,14 @@ export default function LandingFlow() {
       items: [
         { title: "Backend Scoring Engine", desc: "One auditable scorer returns the priority tier, score, and rationale.", badge: "CORE" },
         { title: "CSV Finding Import", desc: "Validate vulnerability CSVs and map findings to assets.", badge: "INGEST" },
-        { title: "Asset Context Correlation", desc: "Weight CVEs by internet exposure, data sensitivity, and criticality.", badge: "CONTEXT" },
+        { title: "Asset Context Correlation", desc: "Use internet exposure and asset criticality in deterministic finding scores.", badge: "CONTEXT" },
       ],
     },
     Solutions: {
       id: "solutions",
       items: [
-        { title: "Exploit-Led Remediation", desc: "Prioritize findings using exploit status, threat likelihood, and asset context.", badge: "SECOPS" },
-        { title: "Executive & Audit Compliance", desc: "Generate cryptographically verifiable PDF/CSV triage trails.", badge: "GRC" },
+        { title: "Explainable Finding Triage", desc: "Prioritize findings using CVSS, EPSS, recorded KEV status, and asset context.", badge: "SECOPS" },
+        { title: "Executive Reports & Audit", desc: "Download backend-generated PDF/CSV reports recorded in the audit log.", badge: "GRC" },
         { title: "Role-Based Team Workflows", desc: "Granular JWT RBAC for Admins, Analysts, and Read-Only Auditors.", badge: "RBAC" },
       ],
     },
@@ -71,15 +71,15 @@ export default function LandingFlow() {
       id: "resources",
       items: [
         { title: "Scoring Formula Whitepaper", desc: "Deep dive into CVSS + EPSS + KEV + Asset Criticality math.", badge: "DOCS" },
-        { title: "REST API & Webhook Specs", desc: "Automate scan uploads and Jira ticket creation via FastAPI.", badge: "API" },
-        { title: "Sample Vulnerability Datasets", desc: "Use scanner exports to evaluate findings with backend asset and threat context.", badge: "DATA" },
+        { title: "REST API", desc: "Use the authenticated FastAPI endpoints for scans, findings, and reports.", badge: "API" },
+        { title: "Scanner CSV Examples", desc: "Try the Generic, Nessus, Qualys, and OpenVAS/Greenbone import formats.", badge: "DATA" },
       ],
     },
     Company: {
       id: "company",
       items: [
         { title: "Our Mission", desc: "Eliminating alert fatigue for modern security operations centers.", badge: "ABOUT" },
-        { title: "Security & Architecture", desc: "Built on zero-trust principles with full audit log immutability.", badge: "TRUST" },
+        { title: "Security & Architecture", desc: "Role-based API access and an immutable audit log.", badge: "TRUST" },
         { title: "Book a Walkthrough", desc: "See how SecureVision prioritizes findings using threat and asset context.", badge: "DEMO" },
       ],
     },
@@ -384,7 +384,7 @@ export default function LandingFlow() {
             Backend-Driven Vulnerability Prioritization
           </div>
           <h1 className="text-5xl md:text-7xl font-bold leading-tight mb-6 tracking-tight text-white">
-            Fix the vulnerabilities<br/>attackers will<br/>actually use.
+            Prioritize vulnerabilities<br/>with explainable,<br/>deterministic scoring.
           </h1>
           <p className="text-lg md:text-xl text-white/75 mb-10 max-w-xl leading-relaxed">
             SecureVision joins your scanner, asset and threat data into one ranked queue, so your team spends this week on the findings that put the business at risk.
@@ -424,7 +424,7 @@ export default function LandingFlow() {
                   <h4 className="text-white font-medium">CVE-2024-3400</h4>
                   <p className="text-white/60 text-xs mb-2">vpn-gw-01 / Palo Alto PAN-OS</p>
                   <div className="flex gap-2">
-                    <span className="text-[10px] text-white/70 px-2 py-0.5 bg-[#FF4A4A]/20 border border-[#FF4A4A]/40 rounded">Exploited in the wild</span>
+                    <span className="text-[10px] text-white/70 px-2 py-0.5 bg-[#FF4A4A]/20 border border-[#FF4A4A]/40 rounded">Recorded KEV status</span>
                     <span className="text-[10px] text-white/60 px-2 py-0.5 border border-white/20 rounded">Internet-facing</span>
                   </div>
                 </div>
@@ -439,8 +439,8 @@ export default function LandingFlow() {
                   <h4 className="text-white font-medium">CVE-2023-4966</h4>
                   <p className="text-white/60 text-xs mb-2">citrix-edge-02 / NetScaler ADC</p>
                   <div className="flex gap-2">
-                    <span className="text-[10px] text-white/70 px-2 py-0.5 bg-[#FF4A4A]/20 border border-[#FF4A4A]/40 rounded">Exploited in the wild</span>
-                    <span className="text-[10px] text-white/60 px-2 py-0.5 border border-white/20 rounded">Holds customer data</span>
+                    <span className="text-[10px] text-white/70 px-2 py-0.5 bg-[#FF4A4A]/20 border border-[#FF4A4A]/40 rounded">Recorded KEV status</span>
+                    <span className="text-[10px] text-white/60 px-2 py-0.5 border border-white/20 rounded">Asset criticality: 5</span>
                   </div>
                 </div>
                 <div className="flex flex-col items-end">
@@ -453,7 +453,7 @@ export default function LandingFlow() {
                 <div>
                   <h4 className="text-white font-medium">CVE-2024-21762</h4>
                   <p className="text-white/60 text-xs mb-2">fw-hq-main / FortiOS SSL VPN</p>
-                  <span className="text-[10px] text-white/60 px-2 py-0.5 border border-white/20 rounded">Public exploit code</span>
+                  <span className="text-[10px] text-white/60 px-2 py-0.5 border border-white/20 rounded">CVSS / EPSS context</span>
                 </div>
                 <div className="flex flex-col items-end">
                   <span className="text-[#FFB340] font-bold text-sm">Medium</span>
@@ -493,10 +493,10 @@ export default function LandingFlow() {
       <div className="max-w-7xl mx-auto px-8 pb-20 relative z-10">
         <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl py-6 px-8 flex flex-col items-center">
           <p className="text-[11px] uppercase tracking-[0.25em] text-white/50 font-semibold mb-5">
-            SEAMLESS TELEMETRY & THREAT INTELLIGENCE INTEGRATION
+            CURRENT LOOKUPS & PRODUCT CAPABILITIES
           </p>
           <div className="grid grid-cols-2 md:grid-cols-6 gap-8 w-full text-center items-center opacity-80">
-            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">CISA KEV</div>
+            <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">RECORDED KEV STATUS</div>
             <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">FIRST EPSS</div>
             <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">NIST NVD</div>
             <div className="font-bold text-sm tracking-wider text-white hover:text-[#00E5C4] transition-colors">CSV FINDING IMPORTS</div>
@@ -515,7 +515,7 @@ export default function LandingFlow() {
               <h2 className="text-3xl md:text-5xl font-bold mt-2">Inside the Backend Scoring Engine</h2>
             </div>
             <p className="text-white/65 max-w-md text-sm mt-4 md:mt-0">
-              The backend evaluates KEV status, EPSS, CVSS, Internet exposure, and asset criticality, then returns the priority tier, score, and structured rationale.
+              A deterministic 320-rule matrix evaluates CVSS, EPSS, recorded KEV status, internet exposure, and asset criticality, then returns an explainable priority tier and score.
             </p>
           </div>
 
@@ -607,11 +607,11 @@ export default function LandingFlow() {
                 </span>
                 <h3 className="text-2xl font-bold mt-4 mb-3">Tamper-Evident Audit Trails & RBAC</h3>
                 <p className="text-white/70 text-sm leading-relaxed mb-6">
-                  Every scan upload, status change, asset modification, and user login is recorded in an immutable audit log. Enforce strict Role-Based Access Control (Admin, Analyst, Viewer) secured by JWT authentication.
+                  Scan, import, status, user-administration, report-export, and login events are recorded in the immutable audit log. JWT authentication enforces Admin, Analyst, and Viewer roles.
                 </p>
               </div>
               <div className="flex items-center justify-between pt-6 border-t border-white/10">
-                <span className="text-xs text-white/60">ISO 27001 / SOC 2 / NIST CSF Aligned</span>
+                <span className="text-xs text-white/60">RBAC and auditable actions</span>
                 <button
                   onClick={() => setStage("app")}
                   className="text-xs font-bold text-[#00E5C4] hover:underline"
@@ -646,7 +646,7 @@ export default function LandingFlow() {
                 <span className="text-[10px] font-mono uppercase px-2 py-1 bg-white/10 rounded text-[#00E5C4]">SPECIFICATION</span>
                 <h4 className="text-lg font-bold mt-4 mb-2">Deterministic Prioritization Formula</h4>
                 <p className="text-white/60 text-xs leading-relaxed">
-                  Complete mathematical breakdown showing how base CVSS v3.1 combines with CISA Known Exploited Vulnerabilities (KEV) and asset business criticality tiers.
+                  The deterministic 320-rule scoring matrix uses CVSS, EPSS, recorded KEV status, internet exposure, and asset criticality. KEV status is not a live CISA feed.
                 </p>
               </div>
               <button onClick={() => setStage("app")} className="mt-6 text-left text-xs font-bold text-[#00E5C4] hover:underline">
@@ -659,7 +659,7 @@ export default function LandingFlow() {
                 <span className="text-[10px] font-mono uppercase px-2 py-1 bg-white/10 rounded text-[#FF61D2]">CSV SCHEMA</span>
                 <h4 className="text-lg font-bold mt-4 mb-2">Bulk Scan Ingestion Guide</h4>
                 <p className="text-white/60 text-xs leading-relaxed">
-                  Standardized column headers (`cve_id`, `cvss_score`, `exploit_status`, `asset_name`, `exposure`) for one-click bulk CSV uploads into the SecureVision dashboard.
+                  Required: `asset_name` (or host/hostname/IP aliases), `cve_id` (or CVE aliases), and `date_found` (or supported date aliases). Optional: `cvss_score` (or CVSS aliases). Generic, Nessus, Qualys, and OpenVAS/Greenbone headers are detected.
                 </p>
               </div>
               <button onClick={() => setStage("app")} className="mt-6 text-left text-xs font-bold text-[#00E5C4] hover:underline">
@@ -669,15 +669,13 @@ export default function LandingFlow() {
 
             <div className="bg-white/5 border border-white/10 rounded-xl p-6 flex flex-col justify-between hover:bg-white/10 transition-all">
               <div>
-                <span className="text-[10px] font-mono uppercase px-2 py-1 bg-white/10 rounded text-[#FFB340]">SECURITY VERIFICATION</span>
-                <h4 className="text-lg font-bold mt-4 mb-2">29/29 Automated Test Suite</h4>
+                <span className="text-[10px] font-mono uppercase px-2 py-1 bg-white/10 rounded text-[#FFB340]">RESEARCH / OFFLINE ONLY</span>
+                <h4 className="text-lg font-bold mt-4 mb-2">Experimental ML Advisory Signal</h4>
                 <p className="text-white/60 text-xs leading-relaxed">
-                  Verified unit and integration test coverage across authentication, RBAC permission boundaries, deterministic rule evaluation, and audit logging.
+                  ML is not used in live scoring. On a frozen test set, it did not significantly improve PR-AUC over CVSS and performed worse at the top 100 and 500.
                 </p>
               </div>
-              <button onClick={() => setStage("app")} className="mt-6 text-left text-xs font-bold text-[#00E5C4] hover:underline">
-                Open Dashboard /
-              </button>
+              <p className="mt-6 text-xs text-white/50">See README: Research: offline ML evaluation.</p>
             </div>
           </div>
         </div>

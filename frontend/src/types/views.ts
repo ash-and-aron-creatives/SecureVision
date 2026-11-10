@@ -80,6 +80,7 @@ export interface SecureAppViewProps {
   assetCrit: string;
   setAssetCrit: Dispatch<SetStateAction<string>>;
   role: UserRole | "";
+  currentUser: string;
   auditLogs: AuditEntry[];
   handleCreateUser: FormEventHandler<HTMLFormElement>;
   newUsername: string;
@@ -89,6 +90,9 @@ export interface SecureAppViewProps {
   newRole: string;
   setNewRole: Dispatch<SetStateAction<string>>;
   users: UserItem[];
+  handleUpdateUserRole: (userId: number, role: UserRole) => Promise<void>;
+  handleResetUserPassword: (userId: number, password: string) => Promise<void>;
+  handleDeleteUser: (user: UserItem) => Promise<void>;
   selectedFinding: Finding | null;
   setSelectedFinding: Dispatch<SetStateAction<Finding | null>>;
 }

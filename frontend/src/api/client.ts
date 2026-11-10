@@ -58,3 +58,46 @@ export async function requestApi<T>(
   }
   return payload as T;
 }
+
+function getDownloadFilename(disposition: string | null): string {
+  const encoded = disposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const plain = disposition?.match(/filename="?([^";]+)"?/i)?.[1];
+  let filename = plain || "securevision-report";
+  if (encoded) {
+    try {
+      filename = decodeURIComponent(encoded);
+    } catch {
+      filename = plain || filename;
+    }
+  }
+  return filename.replace(/[\\/]/g, "_");
+}
+
+export async function downloadApiFile(path: string, authToken: string): Promise<void> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  if (!response.ok) {
+    const responseText = await response.text();
+    let payload: unknown;
+    try {
+      payload = responseText ? JSON.parse(responseText) as unknown : undefined;
+    } catch {
+      payload = responseText;
+    }
+    throw new ApiRequestError(
+      getErrorMessage(payload, `Request failed (${response.status}).`),
+      response.status,
+    );
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = getDownloadFilename(response.headers.get("Content-Disposition"));
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}

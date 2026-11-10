@@ -41,6 +41,8 @@ export function useDashboardData({
     try {
       const {
         findings: nextFindings,
+        findingsTotal,
+        findingsTruncated,
         assets: nextAssets,
         analytics,
         auditLogs: nextAuditLogs,
@@ -52,6 +54,11 @@ export function useDashboardData({
       setAnalytics(analytics);
       setAuditLogs(nextAuditLogs);
       setUsers(nextUsers);
+      if (findingsTruncated) {
+        setActionMessage(
+          `Showing the first ${nextFindings.length.toLocaleString()} of ${findingsTotal.toLocaleString()} findings; narrow your filters to search the full set.`,
+        );
+      }
       return true;
     } catch (fetchError) {
       if (!isCurrent()) return false;
