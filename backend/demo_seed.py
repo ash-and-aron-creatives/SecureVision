@@ -2,10 +2,10 @@ import os
 
 from backend import models
 from backend.auth import get_initial_admin_password, get_password_hash
-from backend.database import Base, SessionLocal, engine
+from backend.database import SessionLocal
 from backend.rules_config import (
+    SYNTHETIC_DEMO_MODE_ENV,
     SYNTHETIC_DEMO_ASSETS,
-    SYNTHETIC_DEMO_DATABASE_URL,
     SYNTHETIC_DEMO_FINDINGS,
     SYNTHETIC_DEMO_SEED_ACTION,
 )
@@ -13,12 +13,11 @@ from backend.scoring_engine import calculate_priority
 
 
 def seed_synthetic_demo() -> None:
-    if os.getenv("DATABASE_URL") != SYNTHETIC_DEMO_DATABASE_URL:
+    if os.getenv(SYNTHETIC_DEMO_MODE_ENV, "").casefold() != "true":
         raise RuntimeError(
-            "Synthetic demo seeding is restricted to /data/securevision_demo.db."
+            f"Synthetic demo seeding requires {SYNTHETIC_DEMO_MODE_ENV}=true."
         )
 
-    Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         admin = db.query(models.User).filter_by(username="admin").first()
         if admin is None:

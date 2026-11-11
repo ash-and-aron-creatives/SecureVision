@@ -2,23 +2,19 @@ import io
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from backend import auth, main
-from backend.database import Base, get_db, migrate_asset_columns
+from backend.database import Base, get_db
 from backend.main import app
 from backend.models import Asset, AuditLog, Finding, FindingScore, User
+from backend.tests.db_helpers import create_test_engine
 
 
 @pytest.fixture
 def api(monkeypatch):
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = create_test_engine()
     Base.metadata.create_all(bind=engine)
     db = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
     admin = User(
@@ -101,27 +97,6 @@ def _assert_audit_failure_rolls_back(db, request, assertion):
         event.remove(AuditLog, "before_insert", _reject_audit_insert)
     assert assertion()
     db.rollback()
-
-
-def test_asset_metadata_migration_preserves_existing_rows():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    with engine.begin() as connection:
-        connection.exec_driver_sql(
-            "CREATE TABLE assets (id INTEGER PRIMARY KEY, name VARCHAR, exposure VARCHAR, "
-            "criticality INTEGER, needs_review BOOLEAN NOT NULL DEFAULT FALSE)"
-        )
-        connection.exec_driver_sql(
-            "INSERT INTO assets (id, name, exposure, criticality) "
-            "VALUES (1, 'OLD-ASSET', 'Internet', 4)"
-        )
-    migrate_asset_columns(engine)
-    with engine.connect() as connection:
-        row = connection.exec_driver_sql(
-            "SELECT name, type, ip_or_domain, owner, environment, exposure, criticality "
-            "FROM assets WHERE id=1"
-        ).one()
-    assert tuple(row) == ("OLD-ASSET", "Other", "", "", "Unknown", "Internet", 4)
-    engine.dispose()
 
 
 def test_response_models_have_consistent_shapes(api, monkeypatch):

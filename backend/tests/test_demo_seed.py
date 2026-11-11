@@ -4,7 +4,7 @@ from backend.demo_seed import seed_synthetic_demo
 
 
 def test_synthetic_seed_refuses_non_demo_database(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite:///./securevision_dev.db")
+    monkeypatch.setenv("SECUREVISION_DEMO_MODE", "false")
 
-    with pytest.raises(RuntimeError, match="restricted to /data/securevision_demo.db"):
+    with pytest.raises(RuntimeError, match="SECUREVISION_DEMO_MODE=true"):
         seed_synthetic_demo()

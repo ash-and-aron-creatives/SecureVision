@@ -66,7 +66,15 @@ def create_user(
     if req.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Role must be admin, analyst, or viewer.")
 
-    exists = db.query(User).filter(func.lower(User.username) == uname.lower()).first()
+    normalized_username = uname.casefold()
+    exists = next(
+        (
+            user
+            for user in db.query(User).all()
+            if (user.username or "").casefold() == normalized_username
+        ),
+        None,
+    )
     if exists:
         raise HTTPException(status_code=409, detail="Username already exists.")
 

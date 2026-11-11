@@ -3,12 +3,12 @@ import io
 import pytest
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend import auth, main
 from backend.database import Base, get_db
 from backend.models import Asset, AuditLog, Finding, User
+from backend.tests.db_helpers import create_test_engine
 
 
 def _has_auth_dependency(dependency):
@@ -42,11 +42,7 @@ PROTECTED_ROUTES = _protected_route_cases()
 
 @pytest.fixture
 def role_api(tmp_path, monkeypatch):
-    database_path = tmp_path / "role-api.db"
-    engine = create_engine(
-        f"sqlite:///{database_path.as_posix()}",
-        connect_args={"check_same_thread": False},
-    )
+    engine = create_test_engine()
     Base.metadata.create_all(bind=engine)
     session_factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = session_factory()

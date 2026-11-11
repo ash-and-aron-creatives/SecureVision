@@ -2,6 +2,13 @@ from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.database import Base
+from backend.rules_config import (
+    ASSET_DEFAULT_ENVIRONMENT,
+    ASSET_DEFAULT_IP_OR_DOMAIN,
+    ASSET_DEFAULT_NEEDS_REVIEW,
+    ASSET_DEFAULT_OWNER,
+    ASSET_DEFAULT_TYPE,
+)
 
 class User(Base):
     __tablename__ = 'users'
@@ -14,13 +21,13 @@ class Asset(Base):
     __tablename__ = 'assets'
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    type = Column(String, nullable=False, default='Other')
-    ip_or_domain = Column(String, nullable=False, default='')
-    owner = Column(String, nullable=False, default='')
-    environment = Column(String, nullable=False, default='Unknown')
+    type = Column(String, nullable=False, default=ASSET_DEFAULT_TYPE)
+    ip_or_domain = Column(String, nullable=False, default=ASSET_DEFAULT_IP_OR_DOMAIN)
+    owner = Column(String, nullable=False, default=ASSET_DEFAULT_OWNER)
+    environment = Column(String, nullable=False, default=ASSET_DEFAULT_ENVIRONMENT)
     exposure = Column(String)
     criticality = Column(Integer)
-    needs_review = Column(Boolean, default=False, nullable=False)
+    needs_review = Column(Boolean, default=ASSET_DEFAULT_NEEDS_REVIEW, nullable=False)
     findings = relationship('Finding', back_populates='asset')
 
 class CVECache(Base):
@@ -31,7 +38,7 @@ class CVECache(Base):
 class Finding(Base):
     __tablename__ = 'findings'
     id = Column(Integer, primary_key=True, index=True)
-    asset_id = Column(Integer, ForeignKey('assets.id'))
+    asset_id = Column(Integer, ForeignKey('assets.id'), index=True)
     cve_id = Column(String, index=True)
     cvss_score = Column(Float)
     in_kev = Column(Boolean, default=False)

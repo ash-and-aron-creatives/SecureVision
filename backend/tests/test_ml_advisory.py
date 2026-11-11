@@ -5,12 +5,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from backend import auth, main, ml_inference
-from backend.database import Base, get_db, migrate_finding_score_ml_columns
+from backend.database import Base, get_db
 from backend.models import Asset, User
 from backend.rules_config import (
     CRITICALITY_FACTORS,
@@ -19,15 +17,12 @@ from backend.rules_config import (
     exposure_factor,
     ml_priority,
 )
+from backend.tests.db_helpers import create_test_engine
 
 
 @pytest.fixture
 def api(monkeypatch):
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = create_test_engine()
     Base.metadata.create_all(bind=engine)
     db = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
     users = [
@@ -163,42 +158,6 @@ def test_frozen_feature_list_has_no_kev_or_epss_leakage():
         feature for feature in config["features"]
         if "kev" in feature.casefold() or "epss" in feature.casefold()
     ]
-
-
-def test_existing_database_migration_is_idempotent_and_preserves_rows(tmp_path):
-    engine = create_engine(f"sqlite:///{(tmp_path / 'old.db').as_posix()}")
-    with engine.begin() as connection:
-        connection.exec_driver_sql(
-            "CREATE TABLE finding_scores (id INTEGER PRIMARY KEY, finding_id INTEGER, "
-            "provider_id INTEGER, likelihood FLOAT, priority_tier VARCHAR, "
-            "provenance JSON, explanation VARCHAR)"
-        )
-        connection.exec_driver_sql(
-            "INSERT INTO finding_scores (id, finding_id, provider_id, likelihood, "
-            "priority_tier, explanation) VALUES (10, 4, 1, 0.2, 'High', 'existing')"
-        )
-
-    migrate_finding_score_ml_columns(engine)
-    migrate_finding_score_ml_columns(engine)
-
-    with engine.connect() as connection:
-        columns = {
-            row[1] for row in connection.execute(text("PRAGMA table_info(finding_scores)"))
-        }
-        existing = connection.execute(
-            text("SELECT id, explanation FROM finding_scores WHERE id = 10")
-        ).one()
-    assert {
-        "ml_likelihood",
-        "ml_risk",
-        "ml_priority",
-        "ml_top_reasons",
-        "ml_model_version",
-        "ml_recommended_action",
-        "ml_unavailable_reason",
-    } <= columns
-    assert existing == (10, "existing")
-    engine.dispose()
 
 
 def test_model_results_requires_auth_and_is_available_to_every_role(api):

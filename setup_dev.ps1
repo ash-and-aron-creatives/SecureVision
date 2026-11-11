@@ -23,29 +23,66 @@ function Import-EnvFile([string]$path) {
         if ($line -match '^\s*([^#=]+?)\s*=\s*(.*?)\s*$') {
             $name = $matches[1].Trim()
             $values[$name] = $matches[2]
-            [Environment]::SetEnvironmentVariable($name, $matches[2], "Process")
         }
     }
     return $values
 }
 
+function Write-BackendEnv($settings) {
+    $lines = @(
+        "SECRET_KEY=$($settings["SECRET_KEY"])",
+        "ADMIN_INITIAL_PASSWORD=$($settings["ADMIN_INITIAL_PASSWORD"])",
+        "POSTGRES_DB=$($settings["POSTGRES_DB"])",
+        "POSTGRES_USER=$($settings["POSTGRES_USER"])",
+        "POSTGRES_PASSWORD=$($settings["POSTGRES_PASSWORD"])",
+        "DATABASE_URL=$($settings["DATABASE_URL"])",
+        "CORS_ORIGINS=$($settings["CORS_ORIGINS"])"
+    )
+    [System.IO.File]::WriteAllText(
+        $backendEnvPath,
+        ($lines -join [Environment]::NewLine) + [Environment]::NewLine,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+}
+
 Push-Location $PSScriptRoot
 try {
     if (-not (Test-Path -LiteralPath $backendEnvPath)) {
-        $secretKey = New-RandomUrlSafeValue 48
         $generatedAdminPassword = New-RandomUrlSafeValue 32
-        $backendConfig = @"
-SECRET_KEY=$secretKey
-ADMIN_INITIAL_PASSWORD=$generatedAdminPassword
-DATABASE_URL=sqlite:///./securevision_dev.db
-CORS_ORIGINS=http://localhost:3000
-"@
-        [System.IO.File]::WriteAllText(
-            $backendEnvPath,
-            $backendConfig + [Environment]::NewLine,
-            [System.Text.UTF8Encoding]::new($false)
-        )
+        $settings = @{
+            SECRET_KEY = New-RandomUrlSafeValue 48
+            ADMIN_INITIAL_PASSWORD = $generatedAdminPassword
+            POSTGRES_DB = "securevision_dev"
+            POSTGRES_USER = "securevision"
+            POSTGRES_PASSWORD = New-RandomUrlSafeValue 32
+            CORS_ORIGINS = "http://localhost:3000"
+        }
     }
+    else {
+        $settings = Import-EnvFile $backendEnvPath
+        if (-not $settings["SECRET_KEY"]) {
+            $settings["SECRET_KEY"] = New-RandomUrlSafeValue 48
+        }
+        if (-not $settings["ADMIN_INITIAL_PASSWORD"]) {
+            $generatedAdminPassword = New-RandomUrlSafeValue 32
+            $settings["ADMIN_INITIAL_PASSWORD"] = $generatedAdminPassword
+        }
+        if (-not $settings["POSTGRES_DB"]) {
+            $settings["POSTGRES_DB"] = "securevision_dev"
+        }
+        if (-not $settings["POSTGRES_USER"]) {
+            $settings["POSTGRES_USER"] = "securevision"
+        }
+        if (-not $settings["POSTGRES_PASSWORD"]) {
+            $settings["POSTGRES_PASSWORD"] = New-RandomUrlSafeValue 32
+        }
+        if (-not $settings["CORS_ORIGINS"]) {
+            $settings["CORS_ORIGINS"] = "http://localhost:3000"
+        }
+    }
+
+    $settings["DATABASE_URL"] = "postgresql+psycopg2://$($settings["POSTGRES_USER"]):$($settings["POSTGRES_PASSWORD"])@localhost:5432/$($settings["POSTGRES_DB"])"
+    Write-BackendEnv $settings
 
     if (-not (Test-Path -LiteralPath $frontendEnvPath)) {
         [System.IO.File]::WriteAllText(
@@ -56,11 +93,8 @@ CORS_ORIGINS=http://localhost:3000
     }
 
     $backendSettings = Import-EnvFile $backendEnvPath
-    if ($backendSettings["DATABASE_URL"] -ne "sqlite:///./securevision_dev.db") {
-        throw "backend\.env must set DATABASE_URL=sqlite:///./securevision_dev.db; it was not changed."
-    }
     if ($backendSettings["CORS_ORIGINS"] -ne "http://localhost:3000") {
-        throw "backend\.env must set CORS_ORIGINS=http://localhost:3000; it was not changed."
+        throw "backend\.env must set CORS_ORIGINS=http://localhost:3000."
     }
     if (-not $backendSettings["SECRET_KEY"] -or $backendSettings["SECRET_KEY"].Length -lt 48) {
         throw "backend\.env must contain a SECRET_KEY of at least 48 characters."
@@ -69,13 +103,22 @@ CORS_ORIGINS=http://localhost:3000
         throw "backend\.env must contain an ADMIN_INITIAL_PASSWORD of at least 32 characters."
     }
 
+    foreach ($name in $backendSettings.Keys) {
+        [Environment]::SetEnvironmentVariable($name, $backendSettings[$name], "Process")
+    }
+
     $frontendConfig = Get-Content -LiteralPath $frontendEnvPath
     if (-not ($frontendConfig -contains "NEXT_PUBLIC_API_BASE=http://localhost:8000")) {
-        throw "frontend\.env.local must set NEXT_PUBLIC_API_BASE=http://localhost:8000; it was not changed."
+        throw "frontend\.env.local must set NEXT_PUBLIC_API_BASE=http://localhost:8000."
     }
 
     if ($generatedAdminPassword) {
-        Write-Host "Initial administrator credentials: username=admin password=$generatedAdminPassword"
+        Write-Host "Initial administrator credentials: username=admin ******"
+    }
+
+    & docker compose --env-file $backendEnvPath -f docker-compose.yml -f docker-compose.local.yml up -d --wait postgres
+    if ($LASTEXITCODE -ne 0) {
+        throw "PostgreSQL container startup failed with exit code $LASTEXITCODE."
     }
 
     python .\init_db.py

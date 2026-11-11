@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, File, Form, UploadFile, Query, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import String, cast, func, inspect
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import hashlib
@@ -13,7 +13,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 
 from backend import models, auth
-from backend.database import engine, get_db, migrate_asset_columns, migrate_finding_score_ml_columns
+from backend.database import get_db
 from backend.ml_inference import predict_exploit_likelihood
 from backend.cve_dataset import dataset_available, lookup_cve, search_cves
 from backend.rules_config import CVE_DATASET_PATH, CVE_SEARCH_MAX_RESULTS, LOGIN_USERNAME_MAX_LENGTH
@@ -41,21 +41,6 @@ from backend.schemas import (
     TokenResponse,
     UserResponse,
 )
-
-models.Base.metadata.create_all(
-    bind=engine,
-    tables=[
-        table for table in models.Base.metadata.sorted_tables
-        if not (table.name == "cves" and dataset_available())
-    ],
-)
-migrate_finding_score_ml_columns()
-migrate_asset_columns()
-if "needs_review" not in {column["name"] for column in inspect(engine).get_columns("assets")}:
-    with engine.begin() as connection:
-        connection.exec_driver_sql(
-            "ALTER TABLE assets ADD COLUMN needs_review BOOLEAN NOT NULL DEFAULT FALSE"
-        )
 
 app = FastAPI(title="SecureVision Backend API")
 cors_origins = [
@@ -369,17 +354,18 @@ def search_cve_records(
     if dataset_available():
         results = search_cves(query, str(CVE_DATASET_PATH))[:limit]
     else:
-        results = (
+        needle = query.casefold()
+        cached_records = (
             db.query(models.CVECache)
-            .filter(
-                models.CVECache.cve_id.ilike(f"%{query}%")
-                | cast(models.CVECache.data, String).ilike(f"%{query}%")
-            )
             .order_by(models.CVECache.cve_id.asc())
-            .limit(limit)
             .all()
         )
-        results = tuple(record.data for record in results)
+        results = tuple(
+            record.data
+            for record in cached_records
+            if needle in record.cve_id.casefold()
+            or needle in json.dumps(record.data, ensure_ascii=False).casefold()
+        )[:limit]
     return results
 
 @app.get("/intel/{cve_id}", response_model=IntelResponse)
@@ -434,14 +420,19 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
     )
     tier = scoring["tier"]
 
-    finding = (
+    existing_findings = (
         db.query(models.Finding)
-        .filter(
-            models.Finding.asset_id == asset.id,
-            func.upper(models.Finding.cve_id) == cve_clean,
-        )
+        .filter(models.Finding.asset_id == asset.id)
         .order_by(models.Finding.id.asc())
-        .first()
+        .all()
+    )
+    finding = next(
+        (
+            candidate
+            for candidate in existing_findings
+            if (candidate.cve_id or "").strip().upper() == cve_clean
+        ),
+        None,
     )
     action = "created" if finding is None else "updated"
     reopened = action == "updated" and (finding.status or "").casefold() == "resolved"

@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response, StreamingResponse
 from fpdf import FPDF
-from sqlalchemy import case, func, or_
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -45,23 +45,27 @@ def _filtered_query(db: Session, priority, status, asset_id, q, sort):
         .join(Asset, Finding.asset_id == Asset.id)
         .outerjoin(FindingScore, FindingScore.finding_id == Finding.id)
     )
-    if priority:
-        qry = qry.filter(func.lower(FindingScore.priority_tier) == priority.strip().lower())
-    if status:
-        qry = qry.filter(func.lower(Finding.status) == status.strip().lower())
     if asset_id is not None:
         qry = qry.filter(Finding.asset_id == asset_id)
-    if q:
-        like = f"%{q.strip()}%"
-        qry = qry.filter(
-            or_(
-                Finding.cve_id.ilike(like),
-                Asset.name.ilike(like),
-                FindingScore.explanation.ilike(like),
-            )
-        )
     order = SORTS.get(sort or "priority", SORTS["priority"])
     return qry.order_by(*order, Finding.id.asc())
+
+
+def _matches_export_filters(finding, asset, score, priority, status, query) -> bool:
+    if priority and (not score or (score.priority_tier or "").lower() != priority.strip().lower()):
+        return False
+    if status and (finding.status or "").lower() != status.strip().lower():
+        return False
+    if query:
+        needle = query.strip().lower()
+        searchable = (
+            finding.cve_id or "",
+            asset.name or "",
+            score.explanation if score and score.explanation else "",
+        )
+        if not any(needle in value.lower() for value in searchable):
+            return False
+    return True
 
 
 def _log_export(db: Session, user: User, fmt: str, filters: dict, rows: int, data: bytes) -> str:
@@ -95,6 +99,8 @@ def export_findings_csv(
     ])
     count = 0
     for f, a, s in _filtered_query(db, priority, status, asset_id, q, sort).yield_per(500):
+        if not _matches_export_filters(f, a, s, priority, status, q):
+            continue
         date_str = f.date_found.isoformat() if hasattr(f.date_found, "isoformat") else (f.date_found or "")
         w.writerow([
             _safe_cell(v)
@@ -165,13 +171,13 @@ def export_executive_pdf(
         db.query(Finding, Asset)
         .join(Asset, Finding.asset_id == Asset.id)
         .join(FindingScore, FindingScore.finding_id == Finding.id)
-        .filter(func.lower(FindingScore.priority_tier) == "critical")
+        .filter(FindingScore.priority_tier == "Critical")
         .order_by(Finding.in_kev.desc(), Finding.cvss_score.desc(), Finding.id.asc())
         .limit(10)
         .all()
     )
 
-    crit_sum = func.sum(case((func.lower(FindingScore.priority_tier) == "critical", 1), else_=0))
+    crit_sum = func.sum(case((FindingScore.priority_tier == "Critical", 1), else_=0))
     assets = (
         db.query(
             Asset.name,

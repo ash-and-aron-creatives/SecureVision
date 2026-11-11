@@ -6,18 +6,19 @@ SecureVision is a vulnerability-prioritization application with a FastAPI backen
 
 - Python and pip
 - Node.js and npm
-- Docker Desktop with Compose (for the one-command demo)
+- PostgreSQL 16 for local backend development
+- Docker Desktop with Compose (for the demo and PostgreSQL test suite)
 
 ## One-command Docker demo
 
-The Docker Compose setup starts the frontend and backend together. It uses a
-separate Docker named volume (`securevision_demo_data`) for its SQLite demo
-database and never mounts `securevision.db` or `securevision_dev.db`.
+The Docker Compose setup starts PostgreSQL, the frontend, and the backend
+together. PostgreSQL data is stored in the `securevision_postgres_data` named
+volume. The database container does not publish a host port by default.
 
 1. Copy `.env.example` to `.env`.
-2. Set `SECRET_KEY` to a private random value of at least 32 characters and
-   `ADMIN_INITIAL_PASSWORD` to a private password of at least 8 characters.
-   The example intentionally contains no usable default secrets.
+2. Set `SECRET_KEY`, `ADMIN_INITIAL_PASSWORD`, and `POSTGRES_PASSWORD` to
+   private, URL-safe random values. Set `POSTGRES_DB` and `POSTGRES_USER` as
+   needed. The example intentionally contains no usable secrets.
 3. From the repository root, run:
 
    ```powershell
@@ -37,10 +38,10 @@ authoritative current NVD/FIRST scores. Other live lookups require provider
 network access.
 
 The container build excludes the 201,498,667-byte prepared CVE CSV. As a result,
-the `/cves` API uses its database-cache fallback in the Docker demo; uncached
-live intelligence lookup remains subject to NVD/FIRST availability. The demo
-seeder refuses database URLs other than its dedicated container database and
-does not delete or overwrite existing records.
+the `/cves` API uses its PostgreSQL cache when the prepared catalog is absent;
+uncached live intelligence lookup remains subject to NVD/FIRST availability.
+Alembic migrations run before the backend starts. Synthetic seeding is enabled
+only in the Compose demo and does not delete or overwrite existing records.
 
 ## Setup
 
@@ -52,23 +53,42 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-Run `.\setup_dev.ps1` from the repository root to create local configuration files if they do not already exist and initialize `securevision_dev.db`. The script generates a random signing key and initial administrator password, then prints the initial credentials once when it creates the backend configuration. The script never targets `securevision.db`.
+Run `.\setup_dev.ps1` from the repository root to create local configuration
+files, start PostgreSQL 16, and apply Alembic migrations. The local script
+publishes PostgreSQL only on `127.0.0.1:5432` using
+`docker-compose.local.yml`. It generates random URL-safe credentials when
+needed. The development `DATABASE_URL` is
+`postgresql+psycopg2://...@localhost:5432/securevision_dev`.
 
 | Variable | Purpose |
 |---|---|
 | `SECRET_KEY` | Private JWT signing key; required by the API and must be at least 32 characters. |
 | `ADMIN_INITIAL_PASSWORD` | Password used when bootstrapping or rotating the `admin` account; must be at least 8 characters. |
-| `DATABASE_URL` | SQLAlchemy database URL. The local setup script sets this to `sqlite:///./securevision_dev.db`, relative to the repository root. |
+| `DATABASE_URL` | Required SQLAlchemy PostgreSQL URL; all backend database access and Alembic migrations use this value. |
+| `POSTGRES_DB` | PostgreSQL database name supplied to the Compose database service. |
+| `POSTGRES_USER` | PostgreSQL login supplied to the Compose database service. |
+| `POSTGRES_PASSWORD` | PostgreSQL password supplied to the Compose database service and used in `DATABASE_URL`. Use URL-safe characters. |
 | `CORS_ORIGINS` | Comma-separated, exact browser origins allowed to call the API. The default is empty; `*` is rejected. |
 | `NEXT_PUBLIC_API_BASE` | Frontend API URL. Defaults to `http://localhost:8000`; set it in `frontend/.env.local` when needed. |
 
-`backend/.env` and `frontend/.env.local` are ignored by Git. Next.js reads `frontend/.env.local` automatically. Python does not load `backend/.env` automatically, so load it into the backend terminal before starting the API as shown below.
+`backend/.env` and `frontend/.env.local` are ignored by Git. Next.js reads
+`frontend/.env.local` automatically. Python does not load `backend/.env`
+automatically, so load it into the backend terminal before starting the API as
+shown below.
 
 ## Administrator bootstrap and password rotation
 
 There is no default administrator password. For a new database, set `ADMIN_INITIAL_PASSWORD` securely and initialize the database. The script creates the `admin` account only if it does not already exist:
 
+Load the generated backend settings into the current PowerShell session before
+running either maintenance script:
+
 ```powershell
+Get-Content backend\.env | ForEach-Object {
+    if ($_ -match '^\s*([^#=]+?)\s*=\s*(.*?)\s*$') {
+        [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
+    }
+}
 $securePassword = Read-Host "Initial administrator password" -AsSecureString
 $env:ADMIN_INITIAL_PASSWORD = [System.Net.NetworkCredential]::new("", $securePassword).Password
 python init_db.py
@@ -88,7 +108,8 @@ Both scripts must be run from the repository root so Python can import the `back
 
 ## Run locally
 
-Initialize the development database after completing the dependency setup above:
+Initialize the development PostgreSQL database after completing the dependency
+setup above:
 
 ```powershell
 .\setup_dev.ps1
@@ -114,7 +135,37 @@ npm install
 npm run dev
 ```
 
-The API is available at `http://localhost:8000` and its interactive documentation at `http://localhost:8000/docs`; open the frontend at `http://localhost:3000`.
+The API is available at `http://localhost:8000` and its interactive
+documentation at `http://localhost:8000/docs`; open the frontend at
+`http://localhost:3000`.
+
+To run the backend in Docker and keep PostgreSQL private to the Compose network,
+use `docker compose up --build` instead of starting Uvicorn locally. For local
+tools that need a host PostgreSQL connection, `setup_dev.ps1` uses the explicit
+loopback-only Compose override; the default Compose file still publishes no
+database port.
+
+## Database migrations and SQLite conversion
+
+Alembic owns the schema. `docker-entrypoint.sh` applies `alembic upgrade head`
+before the API starts, and `python init_db.py` applies the same migration before
+bootstrapping the administrator. The initial migration creates the current
+models, audit-log mutation triggers, and supported indexes. Application import
+does not create or alter tables.
+
+For a one-time migration from an existing SQLite installation, first create an
+empty PostgreSQL database and apply `alembic upgrade head` to its
+`DATABASE_URL`. Then run the manual-only script with explicit source and target
+URLs:
+
+```powershell
+python scripts\sqlite_to_postgres.py "sqlite:///file:path/to/source.db?mode=ro&uri=true" "postgresql+psycopg2://user:password@host:5432/database"
+```
+
+The script opens the source read-only, refuses a non-empty or unmigrated target,
+copies users, assets, findings, score history, and audit rows with their IDs and
+timestamps, resets PostgreSQL sequences, and verifies copied row counts. It is
+not called by setup, startup, Compose, or tests.
 
 ## CVE intelligence and scoring
 
@@ -202,4 +253,22 @@ Run all backend tests from the repository root with the Python environment activ
 pytest
 ```
 
-Pytest configures its own temporary SQLite database for the tests.
+The default run uses isolated, temporary SQLite fixtures for fast unit tests;
+it never reuses a development database. The complete suite can also run against
+the Compose PostgreSQL service, including PostgreSQL schema and audit-trigger
+tests:
+
+```powershell
+docker compose --env-file .env --profile postgres-tests run --build --rm backend-tests
+```
+
+For an already-running PostgreSQL test database, set the explicit opt-in and
+URL before invoking `pytest`; test cases use disposable PostgreSQL schemas:
+
+```powershell
+$env:SECUREVISION_POSTGRES_TESTS = "1"
+$env:DATABASE_URL = "postgresql+psycopg2://user:password@localhost:5432/securevision"
+pytest
+Remove-Item Env:SECUREVISION_POSTGRES_TESTS
+Remove-Item Env:DATABASE_URL
+```

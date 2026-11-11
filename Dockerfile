@@ -8,7 +8,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
 COPY backend ./backend
+COPY docs/scoring_matrix_v1.csv ./docs/scoring_matrix_v1.csv
 COPY ml/models/headline_model_calibrated.joblib ./ml/models/headline_model_calibrated.joblib
 COPY ml/models/headline_tfidf_transformer.joblib ./ml/models/headline_tfidf_transformer.joblib
 COPY frozen_config.json ./frozen_config.json
