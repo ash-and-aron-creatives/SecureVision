@@ -57,7 +57,9 @@ Run `.\setup_dev.ps1` from the repository root to create local configuration
 files, start PostgreSQL 16, and apply Alembic migrations. The local script
 publishes PostgreSQL only on `127.0.0.1:5432` using
 `docker-compose.local.yml`. It generates random URL-safe credentials when
-needed. The development `DATABASE_URL` is
+needed. If `backend\.env` already exists, the script refuses to overwrite it;
+review the file and pass `-UpdateExisting` explicitly to refresh its settings.
+The development `DATABASE_URL` is
 `postgresql+psycopg2://...@localhost:5432/securevision_dev`.
 
 | Variable | Purpose |
@@ -114,6 +116,10 @@ setup above:
 ```powershell
 .\setup_dev.ps1
 ```
+
+If `backend\.env` already exists, review it before explicitly opting into an
+update with `.\setup_dev.ps1 -UpdateExisting`. An old SQLite URL is rejected
+when the backend starts; use PostgreSQL as the `DATABASE_URL`.
 
 In a PowerShell terminal at the repository root, load the generated backend settings and start the API on port 8000:
 

@@ -1,7 +1,11 @@
+import os
 import pytest
+import subprocess
+import sys
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 import json
+from pathlib import Path
 
 from backend.main import app
 from backend.database import Base, get_db
@@ -39,6 +43,29 @@ def test_token_creation_requires_configured_secret(monkeypatch):
     monkeypatch.delenv("SECRET_KEY", raising=False)
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
         auth.create_access_token({"sub": "admin"})
+
+def test_sqlite_database_url_fails_without_traceback(tmp_path):
+    env = os.environ.copy()
+    env["DATABASE_URL"] = f"sqlite:///{(tmp_path / 'not-created.db').as_posix()}"
+    env.pop("SECUREVISION_TESTING", None)
+    env.pop("SECUREVISION_POSTGRES_TESTS", None)
+    output_path = tmp_path / "uvicorn-startup.log"
+    with output_path.open("w", encoding="utf-8") as output:
+        result = subprocess.run(
+            [sys.executable, "-m", "uvicorn", "backend.main:app", "--port", "0"],
+            cwd=Path(__file__).resolve().parents[2],
+            env=env,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+    output = output_path.read_text(encoding="utf-8")
+
+    assert result.returncode != 0
+    assert "Traceback" not in output
+    assert "SecureVision requires PostgreSQL" in output
+    assert "run .\\setup_dev.ps1" in output
+    assert not (tmp_path / "not-created.db").exists()
 
 def test_cors_allows_only_configured_origins(client):
     allowed = client.options(

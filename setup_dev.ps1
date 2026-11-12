@@ -1,8 +1,16 @@
+param(
+    [switch]$UpdateExisting
+)
+
 $ErrorActionPreference = "Stop"
 
 $backendEnvPath = Join-Path $PSScriptRoot "backend\.env"
 $frontendEnvPath = Join-Path $PSScriptRoot "frontend\.env.local"
 $generatedAdminPassword = $null
+
+if ((Test-Path -LiteralPath $backendEnvPath) -and -not $UpdateExisting) {
+    throw "backend\.env already exists and was not changed. Review it, then rerun with -UpdateExisting to refresh the local PostgreSQL settings."
+}
 
 function New-RandomUrlSafeValue([int]$byteCount) {
     $bytes = New-Object byte[] $byteCount
