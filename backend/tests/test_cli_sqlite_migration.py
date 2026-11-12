@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 
-def test_migration_script_reports_invalid_source_url_without_traceback():
+def test_cli_reports_invalid_source_url_without_traceback():
     repository_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         [
