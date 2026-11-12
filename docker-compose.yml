@@ -72,6 +72,7 @@ services:
     volumes:
       - ./data/processed/master_cves_2026-10-08.csv:/app/data/processed/master_cves_2026-10-08.csv:ro
       - ./sample_data:/app/sample_data:ro
+      - ./scripts:/app/scripts:ro
     depends_on:
       postgres:
         condition: service_healthy
