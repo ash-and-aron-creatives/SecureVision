@@ -268,6 +268,51 @@ def test_csv_import_skips_findings_when_intel_is_unavailable(api, monkeypatch):
     assert db.query(Finding).filter_by(cve_id="CVE-2025-9876").first() is None
 
 
+def test_csv_import_skips_repeated_asset_cve_rows_in_one_file(api, monkeypatch):
+    client, db = api
+    headers = _headers(client)
+
+    async def available_intel(cve_id):
+        return {
+            "cve_id": cve_id,
+            "in_kev": False,
+            "cvss": 7.0,
+            "epss": 0.4,
+            "available": True,
+            "errors": [],
+            "description": "Repeated-row test description.",
+            "cvss_vector": "CVSS:3.1/AV:N",
+            "cwe": "CWE-79",
+            "published_date": "2025-01-01T00:00Z",
+        }
+
+    monkeypatch.setattr(main, "fetch_cve_data", available_intel)
+    csv_data = (
+        b"asset_name,cve_id,date_found\n"
+        b"TEST-ASSET,CVE-2025-9876,2026-10-01\n"
+        b"TEST-ASSET,CVE-2025-9876,2026-10-02\n"
+    )
+    preview = client.post(
+        "/imports/preview",
+        files={"file": ("repeated.csv", io.BytesIO(csv_data), "text/csv")},
+        headers=headers,
+    )
+    assert preview.status_code == 200
+    assert preview.json()["summary"]["duplicate"] == 1
+
+    committed = client.post(
+        "/imports/commit",
+        files={"file": ("repeated.csv", io.BytesIO(csv_data), "text/csv")},
+        headers=headers,
+    )
+    assert committed.status_code == 200
+    assert committed.json()["imported"] == 1
+    assert committed.json()["skipped"] == 1
+    assert "Repeated in this file." in committed.json()["problems_csv"]
+    asset_id = db.query(Asset.id).filter_by(name="TEST-ASSET").scalar()
+    assert db.query(Finding).filter_by(asset_id=asset_id, cve_id="CVE-2025-9876").count() == 1
+
+
 def test_csv_import_creates_missing_asset_with_review_flag_and_file_cvss(api, monkeypatch):
     client, db = api
     headers = _headers(client)

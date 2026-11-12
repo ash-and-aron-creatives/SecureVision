@@ -69,6 +69,39 @@ def test_asset_creation_and_listing(env):
     }
 
 
+def test_asset_names_are_unique_ignoring_case_for_create_and_edit(env):
+    client, db = env
+    headers = _hdrs(client)
+    first = client.post(
+        "/assets",
+        json={"name": "Case-Sensitive-Name", "exposure": "Internal", "criticality": 3},
+        headers=headers,
+    )
+    assert first.status_code == 200
+
+    duplicate = client.post(
+        "/assets",
+        json={"name": "case-sensitive-name", "exposure": "Internal", "criticality": 3},
+        headers=headers,
+    )
+    assert duplicate.status_code == 409
+    assert "ignoring letter case" in duplicate.json()["detail"]
+
+    other = client.post(
+        "/assets",
+        json={"name": "Another-Asset", "exposure": "Internal", "criticality": 3},
+        headers=headers,
+    )
+    conflict = client.put(
+        f"/assets/{other.json()['id']}",
+        json={"name": "CASE-SENSITIVE-NAME", "exposure": "Internal", "criticality": 3},
+        headers=headers,
+    )
+    assert conflict.status_code == 409
+    assert "ignoring letter case" in conflict.json()["detail"]
+    assert db.query(Asset).filter(Asset.name.ilike("case-sensitive-name")).count() == 1
+
+
 def test_asset_update_delete_and_findings_guard(env):
     client, db = env
     headers = _hdrs(client)

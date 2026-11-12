@@ -1,5 +1,5 @@
 param(
-    [switch]$UpdateExisting
+    [string]$ComposeProjectName = "securevision-dev"
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,8 +8,8 @@ $backendEnvPath = Join-Path $PSScriptRoot "backend\.env"
 $frontendEnvPath = Join-Path $PSScriptRoot "frontend\.env.local"
 $generatedAdminPassword = $null
 
-if ((Test-Path -LiteralPath $backendEnvPath) -and -not $UpdateExisting) {
-    throw "backend\.env already exists and was not changed. Review it, then rerun with -UpdateExisting to refresh the local PostgreSQL settings."
+if (Test-Path -LiteralPath $backendEnvPath) {
+    throw "backend\.env already exists and was not changed. Move it aside manually before creating fresh local settings."
 }
 
 function New-RandomUrlSafeValue([int]$byteCount) {
@@ -43,7 +43,13 @@ function Write-BackendEnv($settings) {
         "POSTGRES_DB=$($settings["POSTGRES_DB"])",
         "POSTGRES_USER=$($settings["POSTGRES_USER"])",
         "POSTGRES_PASSWORD=$($settings["POSTGRES_PASSWORD"])",
+        "POSTGRES_APP_USER=$($settings["POSTGRES_APP_USER"])",
+        "POSTGRES_APP_PASSWORD=$($settings["POSTGRES_APP_PASSWORD"])",
         "DATABASE_URL=$($settings["DATABASE_URL"])",
+        "MIGRATION_DATABASE_URL=$($settings["MIGRATION_DATABASE_URL"])",
+        "CVE_DATASET_PATH=$($settings["CVE_DATASET_PATH"])",
+        "CVE_DATASET_FILENAME=$($settings["CVE_DATASET_FILENAME"])",
+        "CVE_DATASET_HOST_PATH=$($settings["CVE_DATASET_HOST_PATH"])",
         "CORS_ORIGINS=$($settings["CORS_ORIGINS"])"
     )
     [System.IO.File]::WriteAllText(
@@ -55,41 +61,23 @@ function Write-BackendEnv($settings) {
 
 Push-Location $PSScriptRoot
 try {
-    if (-not (Test-Path -LiteralPath $backendEnvPath)) {
-        $generatedAdminPassword = New-RandomUrlSafeValue 32
-        $settings = @{
-            SECRET_KEY = New-RandomUrlSafeValue 48
-            ADMIN_INITIAL_PASSWORD = $generatedAdminPassword
-            POSTGRES_DB = "securevision_dev"
-            POSTGRES_USER = "securevision"
-            POSTGRES_PASSWORD = New-RandomUrlSafeValue 32
-            CORS_ORIGINS = "http://localhost:3000"
-        }
-    }
-    else {
-        $settings = Import-EnvFile $backendEnvPath
-        if (-not $settings["SECRET_KEY"]) {
-            $settings["SECRET_KEY"] = New-RandomUrlSafeValue 48
-        }
-        if (-not $settings["ADMIN_INITIAL_PASSWORD"]) {
-            $generatedAdminPassword = New-RandomUrlSafeValue 32
-            $settings["ADMIN_INITIAL_PASSWORD"] = $generatedAdminPassword
-        }
-        if (-not $settings["POSTGRES_DB"]) {
-            $settings["POSTGRES_DB"] = "securevision_dev"
-        }
-        if (-not $settings["POSTGRES_USER"]) {
-            $settings["POSTGRES_USER"] = "securevision"
-        }
-        if (-not $settings["POSTGRES_PASSWORD"]) {
-            $settings["POSTGRES_PASSWORD"] = New-RandomUrlSafeValue 32
-        }
-        if (-not $settings["CORS_ORIGINS"]) {
-            $settings["CORS_ORIGINS"] = "http://localhost:3000"
-        }
+    $generatedAdminPassword = New-RandomUrlSafeValue 32
+    $settings = @{
+        SECRET_KEY = New-RandomUrlSafeValue 48
+        ADMIN_INITIAL_PASSWORD = $generatedAdminPassword
+        POSTGRES_DB = "securevision_dev"
+        POSTGRES_USER = "securevision_owner"
+        POSTGRES_PASSWORD = New-RandomUrlSafeValue 32
+        POSTGRES_APP_USER = "securevision_app"
+        POSTGRES_APP_PASSWORD = New-RandomUrlSafeValue 32
+        CVE_DATASET_FILENAME = "master_cves_2026-10-08.csv"
+        CVE_DATASET_HOST_PATH = ".\data\processed\master_cves_2026-10-08.csv"
+        CVE_DATASET_PATH = ".\data\processed\master_cves_2026-10-08.csv"
+        CORS_ORIGINS = "http://localhost:3000"
     }
 
-    $settings["DATABASE_URL"] = "postgresql+psycopg2://$($settings["POSTGRES_USER"]):$($settings["POSTGRES_PASSWORD"])@localhost:5432/$($settings["POSTGRES_DB"])"
+    $settings["DATABASE_URL"] = "postgresql+psycopg2://$($settings["POSTGRES_APP_USER"]):$($settings["POSTGRES_APP_PASSWORD"])@localhost:5432/$($settings["POSTGRES_DB"])"
+    $settings["MIGRATION_DATABASE_URL"] = "postgresql+psycopg2://$($settings["POSTGRES_USER"]):$($settings["POSTGRES_PASSWORD"])@localhost:5432/$($settings["POSTGRES_DB"])"
     Write-BackendEnv $settings
 
     if (-not (Test-Path -LiteralPath $frontendEnvPath)) {
@@ -101,9 +89,6 @@ try {
     }
 
     $backendSettings = Import-EnvFile $backendEnvPath
-    if ($backendSettings["CORS_ORIGINS"] -ne "http://localhost:3000") {
-        throw "backend\.env must set CORS_ORIGINS=http://localhost:3000."
-    }
     if (-not $backendSettings["SECRET_KEY"] -or $backendSettings["SECRET_KEY"].Length -lt 48) {
         throw "backend\.env must contain a SECRET_KEY of at least 48 characters."
     }
@@ -120,13 +105,41 @@ try {
         throw "frontend\.env.local must set NEXT_PUBLIC_API_BASE=http://localhost:8000."
     }
 
-    if ($generatedAdminPassword) {
-        Write-Host "Initial administrator credentials: username=admin ******"
-    }
+    Write-Host "Initial administrator password (copy now): $generatedAdminPassword"
 
-    & docker compose --env-file $backendEnvPath -f docker-compose.yml -f docker-compose.local.yml up -d --wait postgres
+    $composeArgs = @(
+        "-p", $ComposeProjectName,
+        "--env-file", $backendEnvPath,
+        "-f", "docker-compose.yml",
+        "-f", "docker-compose.local.yml",
+        "up", "-d", "--wait", "postgres"
+    )
+    & docker compose @composeArgs
     if ($LASTEXITCODE -ne 0) {
         throw "PostgreSQL container startup failed with exit code $LASTEXITCODE."
+    }
+
+    $provisionArgs = @(
+        "-p", $ComposeProjectName,
+        "--env-file", $backendEnvPath,
+        "-f", "docker-compose.yml",
+        "-f", "docker-compose.local.yml",
+        "exec", "-T", "postgres",
+        "sh", "/docker-entrypoint-initdb.d/10-create-app-role.sh"
+    )
+    $roleProvisioned = $false
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        & docker compose @provisionArgs
+        if ($LASTEXITCODE -eq 0) {
+            $roleProvisioned = $true
+            break
+        }
+        if ($attempt -lt 10) {
+            Start-Sleep -Seconds 2
+        }
+    }
+    if (-not $roleProvisioned) {
+        throw "Application database role provisioning failed with exit code $LASTEXITCODE."
     }
 
     python .\init_db.py

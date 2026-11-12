@@ -1,4 +1,16 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, JSON, DateTime
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.database import Base
@@ -19,6 +31,9 @@ class User(Base):
 
 class Asset(Base):
     __tablename__ = 'assets'
+    __table_args__ = (
+        Index('uq_assets_name_ci', text('lower(name)'), unique=True),
+    )
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     type = Column(String, nullable=False, default=ASSET_DEFAULT_TYPE)
@@ -37,6 +52,9 @@ class CVECache(Base):
 
 class Finding(Base):
     __tablename__ = 'findings'
+    __table_args__ = (
+        UniqueConstraint('asset_id', 'cve_id', name='uq_findings_asset_cve'),
+    )
     id = Column(Integer, primary_key=True, index=True)
     asset_id = Column(Integer, ForeignKey('assets.id'), index=True)
     cve_id = Column(String, index=True)

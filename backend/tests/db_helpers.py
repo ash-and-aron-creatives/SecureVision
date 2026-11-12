@@ -21,10 +21,16 @@ def create_test_engine():
         )
     elif url.get_backend_name() == "postgresql":
         schema = f"sv_test_{uuid.uuid4().hex}"
-        admin_engine = create_engine(database_url)
+        migration_url = os.environ.get("MIGRATION_DATABASE_URL", database_url)
+        admin_engine = create_engine(migration_url)
         try:
             with admin_engine.begin() as connection:
                 connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+                app_role = url.username
+                quoted_app_role = connection.dialect.identifier_preparer.quote(app_role)
+                connection.exec_driver_sql(
+                    f'GRANT USAGE, CREATE ON SCHEMA "{schema}" TO {quoted_app_role}'
+                )
         finally:
             admin_engine.dispose()
         engine = create_engine(
@@ -45,7 +51,7 @@ def dispose_test_engines(start_index):
         schema = getattr(engine, "_securevision_test_schema", None)
         engine.dispose()
         if schema:
-            admin_engine = create_engine(database_url)
+            admin_engine = create_engine(os.environ.get("MIGRATION_DATABASE_URL", database_url))
             try:
                 with admin_engine.begin() as connection:
                     connection.exec_driver_sql(f'DROP SCHEMA "{schema}" CASCADE')

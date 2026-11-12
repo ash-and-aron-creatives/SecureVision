@@ -5,8 +5,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:?Set POSTGRES_APP_USER in .env}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}
     volumes:
       - securevision_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/10-create-app-role.sh:/docker-entrypoint-initdb.d/10-create-app-role.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
@@ -22,7 +25,8 @@ services:
     environment:
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:?Set ADMIN_INITIAL_PASSWORD in .env}
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       SECUREVISION_DEMO_MODE: "true"
     ports:
@@ -64,13 +68,14 @@ services:
     entrypoint: ["sh", "-c"]
     command: ["alembic upgrade head && pytest -q"]
     environment:
-      SECRET_KEY: securevision-postgres-test-signing-secret-not-for-deployment
-      ADMIN_INITIAL_PASSWORD: securevision-postgres-test-password
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:?Set ADMIN_INITIAL_PASSWORD in .env}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:?Set POSTGRES_APP_USER in .env}
       SECUREVISION_POSTGRES_TESTS: "1"
       CORS_ORIGINS: http://testserver
     volumes:
-      - ./data/processed/master_cves_2026-10-08.csv:/app/data/processed/master_cves_2026-10-08.csv:ro
       - ./sample_data:/app/sample_data:ro
       - ./scripts:/app/scripts:ro
     depends_on:

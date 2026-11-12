@@ -9,11 +9,12 @@ from backend.database import Base
 
 config = context.config
 target_metadata = Base.metadata
+database_url = os.environ.get("MIGRATION_DATABASE_URL") or os.environ["DATABASE_URL"]
 
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=os.environ["DATABASE_URL"],
+        url=database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -24,7 +25,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = create_engine(os.environ["DATABASE_URL"], poolclass=pool.NullPool)
+    connectable = create_engine(database_url, poolclass=pool.NullPool)
     with connectable.connect() as connection:
         context.configure(
             connection=connection,

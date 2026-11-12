@@ -138,6 +138,7 @@ class AssetResponse(ResponseSchema):
 
 class CVEResponse(ResponseSchema):
     cve_id: str
+    source: str
     published_date: str | None = None
     description: str | None = None
     cvss_score: float | None = None

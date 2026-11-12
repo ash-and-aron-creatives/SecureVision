@@ -1,7 +1,20 @@
-from fastapi import FastAPI, Depends, HTTPException, status, File, Form, UploadFile, Query, Request
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import hashlib
@@ -221,6 +234,12 @@ def create_asset(
             details=json.dumps({"asset_id": asset.id, "name": asset.name}),
         ))
         db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="An asset with this name already exists, ignoring letter case.",
+        ) from exc
     except Exception:
         db.rollback()
         raise
@@ -256,6 +275,12 @@ def update_asset(
             details=json.dumps({"asset_id": asset.id, "before": previous, "after": body.model_dump()}),
         ))
         db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="An asset with this name already exists, ignoring letter case.",
+        ) from exc
     except Exception:
         db.rollback()
         raise
@@ -310,6 +335,38 @@ def _cve_from_intel(info: dict) -> dict:
     }
 
 
+def _enrich_from_prepared_dataset(info: dict, cve_id: str) -> dict:
+    if not dataset_available():
+        return info
+    fields = (
+        "description",
+        "cvss",
+        "cvss_vector",
+        "cwe",
+        "epss",
+    )
+    if not any(
+        info.get(field) is None
+        or (isinstance(info.get(field), str) and not info[field].strip())
+        for field in fields
+    ):
+        return info
+    dataset_record = lookup_cve(cve_id, str(CVE_DATASET_PATH))
+    if dataset_record is None:
+        return info
+    enriched = dict(info)
+    for target, source in (
+        ("description", "description"),
+        ("cvss", "cvss_score"),
+        ("cvss_vector", "cvss_vector"),
+        ("cwe", "cwe"),
+        ("epss", "percentile"),
+    ):
+        if enriched.get(target) is None:
+            enriched[target] = dataset_record.get(source)
+    return enriched
+
+
 @app.get("/cves/{cve_id}", response_model=CVEResponse)
 async def get_cve(
     cve_id: str,
@@ -323,14 +380,23 @@ async def get_cve(
         record = lookup_cve(cve_clean, str(CVE_DATASET_PATH))
         if record is None:
             raise HTTPException(status_code=404, detail="CVE not found in the prepared dataset.")
-        return record
+        return {**record, "source": "prepared_dataset"}
 
     cached = db.query(models.CVECache).filter_by(cve_id=cve_clean).first()
     if cached:
-        return cached.data
+        return {**cached.data, "source": "postgres_cache"}
     intel = await fetch_cve_data(cve_clean)
     if not intel.get("available"):
-        raise HTTPException(status_code=503, detail={"message": "CVE lookup unavailable.", "errors": intel.get("errors", [])})
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": (
+                    "The prepared CVE dataset is unavailable and both the PostgreSQL "
+                    "cache and live provider fallback missed."
+                ),
+                "errors": intel.get("errors", []),
+            },
+        )
     record = _cve_from_intel(intel)
     try:
         db.add(models.CVECache(cve_id=cve_clean, data=record))
@@ -338,11 +404,12 @@ async def get_cve(
     except Exception:
         db.rollback()
         raise
-    return record
+    return {**record, "source": "live_provider"}
 
 
 @app.get("/cves", response_model=list[CVEResponse])
 def search_cve_records(
+    response: Response,
     search: str = Query(..., min_length=1, max_length=200),
     limit: int = Query(default=CVE_SEARCH_MAX_RESULTS, ge=1, le=CVE_SEARCH_MAX_RESULTS),
     db: Session = Depends(get_db),
@@ -352,8 +419,13 @@ def search_cve_records(
     if not query:
         raise HTTPException(status_code=422, detail="search cannot be empty.")
     if dataset_available():
-        results = search_cves(query, str(CVE_DATASET_PATH))[:limit]
+        response.headers["X-CVE-Lookup-Source"] = "prepared_dataset"
+        results = tuple(
+            {**record, "source": "prepared_dataset"}
+            for record in search_cves(query, str(CVE_DATASET_PATH))[:limit]
+        )
     else:
+        response.headers["X-CVE-Lookup-Source"] = "postgres_cache"
         needle = query.casefold()
         cached_records = (
             db.query(models.CVECache)
@@ -361,7 +433,7 @@ def search_cve_records(
             .all()
         )
         results = tuple(
-            record.data
+            {**record.data, "source": "postgres_cache"}
             for record in cached_records
             if needle in record.cve_id.casefold()
             or needle in json.dumps(record.data, ensure_ascii=False).casefold()
@@ -392,7 +464,10 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
     cve_clean = req.cve_id.strip().upper()
     if not CVE_ID_PATTERN.fullmatch(cve_clean):
         raise HTTPException(status_code=422, detail="cve_id must look like CVE-2021-44228.")
-    intel = await fetch_cve_data(cve_clean)
+    intel = _enrich_from_prepared_dataset(
+        await fetch_cve_data(cve_clean),
+        cve_clean,
+    )
     cvss_score = req.cvss_score
     epss_percentile = req.epss_percentile
     if cvss_score is None or epss_percentile is None:
@@ -420,24 +495,50 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
     )
     tier = scoring["tier"]
 
-    existing_findings = (
+    finding = (
         db.query(models.Finding)
-        .filter(models.Finding.asset_id == asset.id)
-        .order_by(models.Finding.id.asc())
-        .all()
-    )
-    finding = next(
-        (
-            candidate
-            for candidate in existing_findings
-            if (candidate.cve_id or "").strip().upper() == cve_clean
-        ),
-        None,
+        .filter(
+            models.Finding.asset_id == asset.id,
+            models.Finding.cve_id == cve_clean,
+        )
+        .first()
     )
     action = "created" if finding is None else "updated"
-    reopened = action == "updated" and (finding.status or "").casefold() == "resolved"
+    reopened = False
     try:
-        if finding is None:
+        if finding is None and db.bind.dialect.name == "postgresql":
+            inserted_id = db.execute(
+                postgresql_insert(models.Finding)
+                .values(
+                    asset_id=asset.id,
+                    cve_id=cve_clean,
+                    cvss_score=cvss_score,
+                    in_kev=req.in_kev,
+                    status="Open",
+                )
+                .on_conflict_do_nothing(index_elements=["asset_id", "cve_id"])
+                .returning(models.Finding.id)
+            ).scalar_one_or_none()
+            if inserted_id is not None:
+                finding = db.get(models.Finding, inserted_id)
+            else:
+                finding = (
+                    db.query(models.Finding)
+                    .filter(
+                        models.Finding.asset_id == asset.id,
+                        models.Finding.cve_id == cve_clean,
+                    )
+                    .first()
+                )
+                if finding is None:
+                    raise RuntimeError("Concurrent finding insert completed without a visible row.")
+                action = "updated"
+                reopened = (finding.status or "").casefold() == "resolved"
+                finding.cvss_score = cvss_score
+                finding.in_kev = req.in_kev
+                if reopened:
+                    finding.status = "Open"
+        elif finding is None:
             finding = models.Finding(
                 asset_id=asset.id,
                 cve_id=cve_clean,
@@ -446,10 +547,13 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
                 status="Open",
             )
             db.add(finding)
+            db.flush()
         else:
+            action = "updated"
+            reopened = (finding.status or "").casefold() == "resolved"
             finding.cvss_score = cvss_score
             finding.in_kev = req.in_kev
-            if (finding.status or "").casefold() == "resolved":
+            if reopened:
                 finding.status = "Open"
         db.flush()
         score = models.FindingScore(
@@ -481,6 +585,12 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
             details=f"finding_id={finding.id} Finding {action}: scanned {cve_clean} on {asset.name} -> {tier}",
         ))
         db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This finding was created concurrently. Retry the scan.",
+        ) from exc
     except Exception:
         db.rollback()
         raise
@@ -985,6 +1095,12 @@ async def commit_csv(
             ),
         ))
         db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="The import conflicted with records created concurrently. Refresh the preview and retry.",
+        ) from exc
     except Exception:
         db.rollback()
         raise
