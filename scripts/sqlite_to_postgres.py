@@ -2,9 +2,13 @@
 
 import argparse
 from datetime import datetime, timezone
+from pathlib import Path
+import sys
 
 from sqlalchemy import DateTime, MetaData, Table, create_engine, inspect, text
 from sqlalchemy.engine import URL, make_url
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.rules_config import (
     ASSET_DEFAULT_ENVIRONMENT,
@@ -164,7 +168,11 @@ def main() -> None:
     parser.add_argument("target_url", help="PostgreSQL SQLAlchemy URL")
     args = parser.parse_args()
 
-    counts = copy_data(args.source_url, args.target_url)
+    try:
+        counts = copy_data(args.source_url, args.target_url)
+    except (ValueError, RuntimeError) as exc:
+        parser.error(str(exc))
+
     for table_name, count in counts.items():
         print(f"{table_name}: copied and verified {count} row(s)")
 
