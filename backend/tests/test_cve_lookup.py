@@ -32,18 +32,25 @@ def cve_client(monkeypatch):
     engine.dispose()
 
 
+@pytest.mark.skipif(
+    not main.dataset_available(),
+    reason="prepared CVE dataset is not present in this checkout",
+)
 def test_prepared_cve_dataset_lookup_and_search(cve_client):
     client, _, headers, _ = cve_client
     lookup = client.get("/cves/CVE-1999-0095", headers=headers)
     assert lookup.status_code == 200
     assert lookup.json()["cve_id"] == "CVE-1999-0095"
+    assert lookup.json()["source"] == "prepared_dataset"
     assert lookup.json()["description"]
     assert lookup.json()["in_kev"] is False
 
     search = client.get("/cves?search=CVE-1999-0095", headers=headers)
     assert search.status_code == 200
+    assert search.headers["x-cve-lookup-source"] == "prepared_dataset"
     assert len(search.json()) == 1
     assert search.json()[0]["cve_id"] == "CVE-1999-0095"
+    assert search.json()[0]["source"] == "prepared_dataset"
     assert client.get("/cves/not-a-cve", headers=headers).status_code == 422
     assert client.get("/cves?search=%20%20", headers=headers).status_code == 422
     assert client.get("/cves/CVE-1999-0095").status_code == 401
@@ -73,6 +80,8 @@ def test_cve_lookup_uses_and_populates_cache_when_dataset_is_missing(cve_client)
     first = client.get("/cves/CVE-2025-7878", headers=headers)
     second = client.get("/cves/CVE-2025-7878", headers=headers)
     assert first.status_code == second.status_code == 200
+    assert first.json()["source"] == "live_provider"
+    assert second.json()["source"] == "postgres_cache"
     assert first.json()["cvss_score"] == 7.5
     assert second.json()["description"] == "Cached test description"
     assert calls == ["CVE-2025-7878"]
@@ -80,6 +89,7 @@ def test_cve_lookup_uses_and_populates_cache_when_dataset_is_missing(cve_client)
 
     search = client.get("/cves?search=Cached%20test%20description", headers=headers)
     assert search.status_code == 200
+    assert search.headers["x-cve-lookup-source"] == "postgres_cache"
     assert search.json()[0]["cve_id"] == "CVE-2025-7878"
 
 
@@ -93,4 +103,5 @@ def test_cve_cache_does_not_hide_provider_failure(cve_client, monkeypatch):
     monkeypatch.setattr(main, "fetch_cve_data", unavailable)
     response = client.get("/cves/CVE-2025-7879", headers=headers)
     assert response.status_code == 503
+    assert "prepared CVE dataset is unavailable" in response.json()["detail"]["message"]
     assert db.query(main.models.CVECache).count() == 0

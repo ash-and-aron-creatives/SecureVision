@@ -235,3 +235,63 @@ def test_ml_advisory_never_changes_deterministic_tier_or_score(api, monkeypatch)
     ).json()
     assert detail["score_history"][0]["ml_likelihood"] is None
     assert detail["score_history"][1]["ml_likelihood"] == 0.9
+
+
+def test_scan_uses_prepared_dataset_description_when_live_lookup_is_offline(api, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(main, "dataset_available", lambda: True)
+    monkeypatch.setattr(
+        main,
+        "lookup_cve",
+        lambda cve_id, dataset_path: {
+            "cve_id": cve_id,
+            "description": "Description from the prepared dataset.",
+            "cvss_score": 8.0,
+            "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "cwe": "CWE-79",
+            "published_date": "2025-01-01",
+            "percentile": 0.4,
+            "in_kev": False,
+        },
+    )
+
+    async def offline_lookup(cve_id):
+        return {
+            "cve_id": cve_id,
+            "cvss": None,
+            "epss": None,
+            "available": False,
+            "errors": ["network unavailable"],
+            "description": None,
+            "cvss_vector": None,
+            "cwe": None,
+        }
+
+    def advisory(**kwargs):
+        seen.update(kwargs)
+        return {
+            "likelihood": 0.25,
+            "risk": 0.25,
+            "priority": "High",
+            "top_reasons": [],
+            "model_version": "test-model",
+            "recommended_action": "test",
+            "unavailable_reason": None,
+        }
+
+    monkeypatch.setattr(main, "fetch_cve_data", offline_lookup)
+    monkeypatch.setattr(main, "predict_exploit_likelihood", advisory)
+    response = api["client"].post(
+        "/scan",
+        json={
+            "asset_id": api["asset_id"],
+            "cve_id": "CVE-2025-7033",
+            "cvss_score": 8.0,
+            "epss_percentile": 0.4,
+        },
+        headers=api["headers_for"]("analyst"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ml_likelihood"] == 0.25
+    assert seen["description"] == "Description from the prepared dataset."

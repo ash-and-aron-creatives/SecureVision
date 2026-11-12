@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 
@@ -22,7 +23,15 @@ LOGIN_USERNAME_MAX_LENGTH = 120
 ASSET_NAME_MAX_LENGTH = 200
 ASSET_IP_OR_DOMAIN_MAX_LENGTH = 253
 ASSET_OWNER_MAX_LENGTH = 120
-CVE_DATASET_PATH = Path(__file__).resolve().parents[1] / "data" / "processed" / "master_cves_2026-10-08.csv"
+_DEFAULT_CVE_DATASET_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "data"
+    / "processed"
+    / "master_cves_2026-10-08.csv"
+)
+CVE_DATASET_PATH = Path(
+    os.environ.get("CVE_DATASET_PATH", str(_DEFAULT_CVE_DATASET_PATH))
+)
 CVE_SEARCH_MAX_RESULTS = 100
 SYNTHETIC_DEMO_MODE_ENV = "SECUREVISION_DEMO_MODE"
 SYNTHETIC_DEMO_SEED_ACTION = "SYNTHETIC_DEMO_SEEDED"

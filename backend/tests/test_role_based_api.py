@@ -406,6 +406,7 @@ def test_unavailable_intelligence_returns_explicit_error_without_zero_score(
         }
 
     monkeypatch.setattr(main, "fetch_cve_data", unavailable_intel)
+    monkeypatch.setattr(main, "dataset_available", lambda: False)
     client = role_api["client"]
     headers = role_api["headers_for"]("analyst")
     cve_id = "CVE-2025-9876"
