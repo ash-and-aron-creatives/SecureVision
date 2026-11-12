@@ -16,8 +16,9 @@ together. PostgreSQL data is stored in the `securevision_postgres_data` named
 volume. The database container does not publish a host port by default.
 
 1. Copy `.env.example` to `.env`.
-2. Set `SECRET_KEY`, `ADMIN_INITIAL_PASSWORD`, and `POSTGRES_PASSWORD` to
-   private, URL-safe random values. Set `POSTGRES_DB` and `POSTGRES_USER` as
+2. Set `SECRET_KEY`, `ADMIN_INITIAL_PASSWORD`, `POSTGRES_PASSWORD`, and
+   `POSTGRES_APP_PASSWORD` to private, URL-safe random values. Set
+   `POSTGRES_DB`, `POSTGRES_USER` (owner/migrator), and `POSTGRES_APP_USER` as
    needed. The example intentionally contains no usable secrets.
 3. From the repository root, run:
 
@@ -28,6 +29,12 @@ volume. The database container does not publish a host port by default.
 4. Open `http://localhost:3000` and sign in as `admin` using the password from
    `.env`. The API docs are at `http://localhost:8000/docs`.
 
+The PostgreSQL init script creates the app role only for a new data volume.
+For a database volume created by an older SecureVision version, retain its
+original owner credentials and provision/rotate the app role before replacing
+its configuration; otherwise use a new Compose project name to create an
+isolated volume.
+
 The demo UI is visibly labeled **SYNTHETIC DEMO DATA**. Seeded assets, findings,
 dates, and CVSS/EPSS inputs are synthetic scenarios, not real inventory or
 observations. The seeded rows have no NVD enrichment, so their ML advisory is
@@ -37,11 +44,14 @@ contains three hard-coded demonstration lookup fixtures; they are not
 authoritative current NVD/FIRST scores. Other live lookups require provider
 network access.
 
-The container build excludes the 201,498,667-byte prepared CVE CSV. As a result,
-the `/cves` API uses its PostgreSQL cache when the prepared catalog is absent;
-uncached live intelligence lookup remains subject to NVD/FIRST availability.
-Alembic migrations run before the backend starts. Synthetic seeding is enabled
-only in the Compose demo and does not delete or overwrite existing records.
+The backend runs as `POSTGRES_APP_USER`; Alembic connects as `POSTGRES_USER`.
+The app role cannot perform DDL or mutate audit rows. The container build
+excludes the 201,498,667-byte prepared CVE CSV and all databases. Without the
+optional dataset mount, `/cves` identifies whether results came from the
+PostgreSQL cache or the live provider; uncached provider lookup depends on
+network availability. Alembic migrations run before the backend starts.
+Synthetic seeding is enabled only in the Compose demo and does not delete or
+overwrite existing records.
 
 ## Setup
 
@@ -54,22 +64,29 @@ python -m pip install -r requirements.txt
 ```
 
 Run `.\setup_dev.ps1` from the repository root to create local configuration
-files, start PostgreSQL 16, and apply Alembic migrations. The local script
-publishes PostgreSQL only on `127.0.0.1:5432` using
-`docker-compose.local.yml`. It generates random URL-safe credentials when
-needed. If `backend\.env` already exists, the script refuses to overwrite it;
-review the file and pass `-UpdateExisting` explicitly to refresh its settings.
-The development `DATABASE_URL` is
-`postgresql+psycopg2://...@localhost:5432/securevision_dev`.
+files, start PostgreSQL 16, and apply Alembic migrations. It generates random
+URL-safe credentials for both database roles and prints the new administrator
+password once. The local script publishes PostgreSQL only on `127.0.0.1:5432`
+using `docker-compose.local.yml` and the isolated `securevision-dev` Compose
+project. It never overwrites an existing
+`backend\.env`; move it aside manually before requesting fresh settings. For an
+isolated project, pass `-ComposeProjectName sv_local_test`. `DATABASE_URL` is
+the app-role URL; `MIGRATION_DATABASE_URL` is the owner/migrator URL.
 
 | Variable | Purpose |
 |---|---|
 | `SECRET_KEY` | Private JWT signing key; required by the API and must be at least 32 characters. |
 | `ADMIN_INITIAL_PASSWORD` | Password used when bootstrapping or rotating the `admin` account; must be at least 8 characters. |
-| `DATABASE_URL` | Required SQLAlchemy PostgreSQL URL; all backend database access and Alembic migrations use this value. |
+| `DATABASE_URL` | Required SQLAlchemy PostgreSQL runtime URL for the app role. |
+| `MIGRATION_DATABASE_URL` | Optional Alembic URL for the owner/migrator role; falls back to `DATABASE_URL` only when unset. |
 | `POSTGRES_DB` | PostgreSQL database name supplied to the Compose database service. |
-| `POSTGRES_USER` | PostgreSQL login supplied to the Compose database service. |
-| `POSTGRES_PASSWORD` | PostgreSQL password supplied to the Compose database service and used in `DATABASE_URL`. Use URL-safe characters. |
+| `POSTGRES_USER` | Owner/migrator login supplied to the Compose database service. |
+| `POSTGRES_PASSWORD` | Owner/migrator password; use a private, URL-safe value. |
+| `POSTGRES_APP_USER` | Non-superuser PostgreSQL login used by the running API. |
+| `POSTGRES_APP_PASSWORD` | App-role password; use a private, URL-safe value. |
+| `CVE_DATASET_PATH` | Optional path to the prepared CVE CSV. |
+| `CVE_DATASET_FILENAME` | Dated filename used by the optional Compose bind mount. |
+| `CVE_DATASET_HOST_PATH` | Host path to that CSV when enabling the optional dataset mount. |
 | `CORS_ORIGINS` | Comma-separated, exact browser origins allowed to call the API. The default is empty; `*` is rejected. |
 | `NEXT_PUBLIC_API_BASE` | Frontend API URL. Defaults to `http://localhost:8000`; set it in `frontend/.env.local` when needed. |
 
@@ -106,7 +123,9 @@ python update_admin.py
 Remove-Item Env:ADMIN_INITIAL_PASSWORD
 ```
 
-Both scripts must be run from the repository root so Python can import the `backend` package.
+Both scripts must be run from the repository root so Python can import the
+`backend` package. Load `DATABASE_URL` (app role) and
+`MIGRATION_DATABASE_URL` (owner/migrator) before running local commands.
 
 ## Run locally
 
@@ -117,9 +136,10 @@ setup above:
 .\setup_dev.ps1
 ```
 
-If `backend\.env` already exists, review it before explicitly opting into an
-update with `.\setup_dev.ps1 -UpdateExisting`. An old SQLite URL is rejected
-when the backend starts; use PostgreSQL as the `DATABASE_URL`.
+`setup_dev.ps1` stops without modifying an existing `backend\.env`. Move or
+rename that file yourself only when you intend to create fresh local settings.
+An old SQLite URL is rejected when the backend starts; use PostgreSQL as the
+`DATABASE_URL`.
 
 In a PowerShell terminal at the repository root, load the generated backend settings and start the API on port 8000:
 
@@ -155,15 +175,22 @@ database port.
 
 Alembic owns the schema. `docker-entrypoint.sh` applies `alembic upgrade head`
 before the API starts, and `python init_db.py` applies the same migration before
-bootstrapping the administrator. The initial migration creates the current
-models, audit-log UPDATE/DELETE triggers, and supported indexes. A subsequent
-migration also blocks TRUNCATE on the audit log. Application import does not
-create or alter tables.
+bootstrapping the administrator. The migrations create the current models,
+audit-log UPDATE/DELETE/TRUNCATE triggers, uniqueness constraints, and
+least-privilege app grants. Alembic uses `MIGRATION_DATABASE_URL` when set.
+Migration `0003` refuses to proceed if case-insensitive asset-name duplicates
+or duplicate `(asset_id, cve_id)` findings exist. It reports each conflict and
+points to `scripts/dedupe_postgres.py`; that manual-only script takes a
+PostgreSQL owner URL, prints a plan without changing data by default, keeps the
+oldest finding per pair, and moves all its score history to that finding.
+Pass `--apply` explicitly to write. Asset-name conflicts must be resolved
+manually. Never run the script against real data without a reviewed backup and
+approval.
 
 For a one-time migration from an existing SQLite installation, first create an
-empty PostgreSQL database and apply `alembic upgrade head` to its
-`DATABASE_URL`. Then run the manual-only script with explicit source and target
-URLs:
+empty PostgreSQL database and apply `alembic upgrade head` using its
+`MIGRATION_DATABASE_URL`; use the app URL as `DATABASE_URL`. Then run the
+manual-only script with explicit source and target URLs:
 
 ```powershell
 python scripts\sqlite_to_postgres.py "sqlite:///file:path/to/source.db?mode=ro&uri=true" "postgresql+psycopg2://user:password@host:5432/database"
@@ -175,6 +202,40 @@ timestamps, resets PostgreSQL sequences, and verifies copied row counts. It is
 not called by setup, startup, Compose, or tests.
 
 ## CVE intelligence and scoring
+
+The prepared dataset is optional and is never committed. The current
+`data/processed/master_cves_2026-10-08.csv` is 201,498,667 bytes. Other files
+read at runtime are:
+
+| Runtime file | Size (bytes) |
+|---|---:|
+| `ml/models/headline_model_calibrated.joblib` | 170,368 |
+| `ml/models/headline_tfidf_transformer.joblib` | 18,010,971 |
+| `frozen_config.json` | 4,453 |
+| `docs/results/p5/p5_console.log` | 3,246 |
+| `docs/results/pipeline_output.txt` | 1,595 |
+| `Decision_Log.md` | 21,427 |
+
+These are inference/configuration and evaluation artifacts, not ML training
+data. Teammates
+should request the dated file from the project's approved internal data
+custodian/artifact store, then keep it at the documented local path. For Docker,
+set `CVE_DATASET_FILENAME` and `CVE_DATASET_HOST_PATH` and include the optional
+read-only mount override:
+
+```powershell
+$env:CVE_DATASET_FILENAME = "master_cves_2026-10-08.csv"
+$env:CVE_DATASET_HOST_PATH = ".\data\processed\master_cves_2026-10-08.csv"
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.cve-dataset.yml up --build
+```
+
+The backend sees the file at `/data/cves/<CVE_DATASET_FILENAME>` through
+`CVE_DATASET_PATH`. With no mount, `/cves` uses the PostgreSQL cache and then
+the live provider; responses identify `prepared_dataset`, `postgres_cache`, or
+`live_provider` (`GET /cves` search responses use the
+`X-CVE-Lookup-Source` header), and lookup failures state that both fallbacks
+missed. The scan endpoint also uses the dataset's description and missing score
+fields for its ML advisory when the provider has no network response.
 
 `POST /token` returns a typed bearer-token response. Authenticated `GET /intel/{cve_id}` validates identifiers using the same `CVE-YYYY-NNNN...` format as scans and returns EPSS/CVSS plus the NVD description, CVSS vector, CWE, and publication date as nullable values. A provider failure or missing score is not represented as a numeric zero.
 
@@ -275,7 +336,9 @@ URL before invoking `pytest`; test cases use disposable PostgreSQL schemas:
 ```powershell
 $env:SECUREVISION_POSTGRES_TESTS = "1"
 $env:DATABASE_URL = "postgresql+psycopg2://user:password@localhost:5432/securevision"
+$env:MIGRATION_DATABASE_URL = "postgresql+psycopg2://owner:password@localhost:5432/securevision"
 pytest
 Remove-Item Env:SECUREVISION_POSTGRES_TESTS
 Remove-Item Env:DATABASE_URL
+Remove-Item Env:MIGRATION_DATABASE_URL
 ```
