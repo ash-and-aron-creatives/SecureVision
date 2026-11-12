@@ -63,3 +63,13 @@ def test_postgres_audit_trigger_rejects_update_and_delete(statement):
             savepoint.rollback()
         finally:
             transaction.rollback()
+
+
+def test_postgres_audit_trigger_rejects_truncate():
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            with pytest.raises(DBAPIError, match="immutable"):
+                connection.execute(text("TRUNCATE TABLE audit_logs"))
+        finally:
+            transaction.rollback()

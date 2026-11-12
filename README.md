@@ -156,8 +156,9 @@ database port.
 Alembic owns the schema. `docker-entrypoint.sh` applies `alembic upgrade head`
 before the API starts, and `python init_db.py` applies the same migration before
 bootstrapping the administrator. The initial migration creates the current
-models, audit-log mutation triggers, and supported indexes. Application import
-does not create or alter tables.
+models, audit-log UPDATE/DELETE triggers, and supported indexes. A subsequent
+migration also blocks TRUNCATE on the audit log. Application import does not
+create or alter tables.
 
 For a one-time migration from an existing SQLite installation, first create an
 empty PostgreSQL database and apply `alembic upgrade head` to its
