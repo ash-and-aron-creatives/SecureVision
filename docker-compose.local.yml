@@ -2,3 +2,8 @@ services:
   postgres:
     ports:
       - "127.0.0.1:5432:5432"
+
+  migrate:
+    depends_on:
+      postgres:
+        condition: service_healthy

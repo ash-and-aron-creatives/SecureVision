@@ -2,6 +2,11 @@ import os
 from pathlib import Path
 
 
+PRIORITY_MODES = ("ml_asset", "deterministic")
+PRIORITY_MODE = os.environ.get("PRIORITY_MODE", "deterministic").strip().casefold()
+if PRIORITY_MODE not in PRIORITY_MODES:
+    raise ValueError(f"PRIORITY_MODE must be one of: {', '.join(PRIORITY_MODES)}.")
+KNOWN_EXPLOITED_FLOOR = "High"
 EXPOSURE_FACTORS = {"internet": 1.5, "internal": 1.0}
 CRITICALITY_FACTORS = {1: 0.6, 2: 0.8, 3: 1.0, 4: 1.2, 5: 1.4}
 CVSS_MISSING_IMPUTATION = 6.7

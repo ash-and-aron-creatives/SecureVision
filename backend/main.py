@@ -30,7 +30,7 @@ from backend.database import get_db
 from backend.ml_inference import predict_exploit_likelihood
 from backend.cve_dataset import dataset_available, lookup_cve, search_cves
 from backend.rules_config import CVE_DATASET_PATH, CVE_SEARCH_MAX_RESULTS, LOGIN_USERNAME_MAX_LENGTH
-from backend.scoring_engine import TIER_SCORES, calculate_priority
+from backend.scoring_engine import TIER_SCORES, calculate_priority, resolve_final_priority
 from backend.threat_intel import fetch_cve_data
 from backend.csv_import import MAX_BYTES, ImportFileError, detect_format, parse_and_validate, problems_to_csv
 from backend.model_results import read_model_results
@@ -493,7 +493,10 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
         exposure=asset.exposure,
         criticality=asset.criticality,
     )
-    tier = scoring["tier"]
+    rule_tier = scoring["tier"]
+    final_tier, priority_source = resolve_final_priority(
+        rule_tier, ml_assessment["priority"], req.in_kev
+    )
 
     finding = (
         db.query(models.Finding)
@@ -514,6 +517,8 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
                     cve_id=cve_clean,
                     cvss_score=cvss_score,
                     in_kev=req.in_kev,
+                    final_priority=final_tier,
+                    priority_source=priority_source,
                     status="Open",
                 )
                 .on_conflict_do_nothing(index_elements=["asset_id", "cve_id"])
@@ -555,18 +560,22 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
             finding.in_kev = req.in_kev
             if reopened:
                 finding.status = "Open"
+        finding.final_priority = final_tier
+        finding.priority_source = priority_source
         db.flush()
         score = models.FindingScore(
             finding_id=finding.id,
             provider_id=1,
             likelihood=epss_percentile,
-            priority_tier=tier,
+            priority_tier=rule_tier,
             provenance={
                 "source": "Manual Scan",
                 "in_kev": req.in_kev,
                 "cvss": cvss_score,
                 "epss": epss_percentile,
                 "score": scoring["score"],
+                "final_priority": final_tier,
+                "priority_source": priority_source,
                 "scoring_explanation": scoring["explanation"],
             },
             explanation=scoring["explanation"]["summary"],
@@ -582,7 +591,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
         db.add(models.AuditLog(
             user_id=current_user.id,
             action="SCAN_RUN",
-            details=f"finding_id={finding.id} Finding {action}: scanned {cve_clean} on {asset.name} -> {tier}",
+            details=f"finding_id={finding.id} Finding {action}: scanned {cve_clean} on {asset.name} -> {final_tier}",
         ))
         db.commit()
     except IntegrityError as exc:
@@ -598,8 +607,11 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
         "finding_id": finding.id,
         "action": action,
         "reopened": reopened,
-        "priority_tier": tier,
-        "score": scoring["score"],
+        "priority_tier": final_tier,
+        "final_priority": final_tier,
+        "priority_source": priority_source,
+        "rule_priority_tier": rule_tier,
+        "score": TIER_SCORES[final_tier],
         "explanation": scoring["explanation"],
         **_ml_score_fields(score),
     }
@@ -650,7 +662,8 @@ def get_findings(
             .order_by(models.FindingScore.id.desc())
             .first()
         )
-        tier = (latest.priority_tier if latest and latest.priority_tier else "Low")
+        rule_tier = latest.priority_tier if latest and latest.priority_tier else "Low"
+        tier = f.final_priority or rule_tier
         likelihood = float(latest.likelihood) if (latest and latest.likelihood is not None) else 0.0
         explanation = _stored_explanation(latest, f, f.asset)
         cvss_val = float(f.cvss_score) if f.cvss_score is not None else 0.0
@@ -669,7 +682,10 @@ def get_findings(
             "epss": likelihood,
             "in_kev": bool(f.in_kev),
             "priority_tier": tier,
-            "score": _stored_score(latest, tier),
+            "final_priority": tier,
+            "priority_source": f.priority_source or "rules",
+            "rule_priority_tier": rule_tier,
+            "score": TIER_SCORES.get(tier, 0),
             "status": str(f.status or "Open"),
             "date_found": str(f.date_found) if f.date_found else None,
             "explanation": explanation,
@@ -782,7 +798,8 @@ def get_dashboard_analytics(
 
     for finding in findings:
         score = latest_scores.get(finding.id)
-        tier = score.priority_tier if score and score.priority_tier else "Low"
+        rule_tier = score.priority_tier if score and score.priority_tier else "Low"
+        tier = finding.final_priority or rule_tier
         if tier not in tier_counts:
             tier = "Low"
         tier_counts[tier] += 1
@@ -890,8 +907,13 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_u
             "exposure": f.asset.exposure if f.asset else "Internal",
             "criticality": f.asset.criticality if f.asset else 1,
         },
-        "priority_tier": latest.priority_tier if latest else "Unknown",
-        "score": _stored_score(latest, latest.priority_tier if latest else "Unknown"),
+        "priority_tier": f.final_priority or (latest.priority_tier if latest else "Unknown"),
+        "final_priority": f.final_priority or (latest.priority_tier if latest else "Unknown"),
+        "priority_source": f.priority_source or "rules",
+        "rule_priority_tier": latest.priority_tier if latest else "Unknown",
+        "score": TIER_SCORES.get(
+            f.final_priority or (latest.priority_tier if latest else "Unknown"), 0
+        ),
         "likelihood": float(latest.likelihood or 0.0) if latest else 0.0,
         "explanation": _stored_explanation(latest, f, f.asset),
         **_ml_score_fields(latest),
@@ -1040,7 +1062,10 @@ async def commit_csv(
                 exposure=asset.exposure,
                 criticality=asset.criticality,
             )
-            tier = scoring["tier"]
+            rule_tier = scoring["tier"]
+            final_tier, priority_source = resolve_final_priority(
+                rule_tier, ml_assessment["priority"], in_kev
+            )
 
             finding = models.Finding(
                 asset_id=r.asset_id,
@@ -1049,6 +1074,8 @@ async def commit_csv(
                 date_found=r.date_found,
                 cvss_score=cvss_val,
                 in_kev=in_kev,
+                final_priority=final_tier,
+                priority_source=priority_source,
             )
             db.add(finding)
             db.flush()
@@ -1057,12 +1084,14 @@ async def commit_csv(
                 finding_id=finding.id,
                 provider_id=1,
                 likelihood=epss_val,
-                priority_tier=tier,
+                priority_tier=rule_tier,
                 provenance={
                     "source": "CSV Import",
                     "filename": file.filename,
                     "in_kev": in_kev,
                     "score": scoring["score"],
+                    "final_priority": final_tier,
+                    "priority_source": priority_source,
                     "scoring_explanation": scoring["explanation"],
                 },
                 explanation=scoring["explanation"]["summary"],

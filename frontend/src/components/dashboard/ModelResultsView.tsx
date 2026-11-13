@@ -57,7 +57,7 @@ export function ModelResultsView({
           <p className={`mt-1 text-sm ${mutedText}`}>Recorded evaluation metrics only; missing metrics are not inferred.</p>
         </div>
         <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-xs font-bold text-amber-300">
-          Experimental advisory
+          Experimental priority mode
         </span>
       </div>
 
@@ -70,12 +70,15 @@ export function ModelResultsView({
             <p className="text-[11px] font-bold uppercase tracking-wider text-amber-300">Decision log conclusion</p>
             <p className={`mt-2 text-sm leading-relaxed ${headingColor}`}>{data.conclusion || "not available"}</p>
           </div>
+          <p className={`mt-3 text-xs ${mutedText}`}>
+            Recorded model splits: XGBoost — Test 2026 and Validation 2025; Logistic Regression — Validation 2025 only (Test 2026 not available); Random Forest — not available.
+          </p>
 
           <div className={`mt-5 overflow-x-auto rounded-2xl border ${darkMode ? "border-white/10" : "border-slate-200"}`}>
-            <table className="min-w-[1080px] w-full text-left text-xs">
+            <table className="min-w-[1180px] w-full text-left text-xs">
               <thead className={darkMode ? "bg-white/5 text-white/60" : "bg-slate-50 text-slate-500"}>
                 <tr>
-                  {["Model", "Dataset", "PR-AUC", "Precision", "Recall", "F1", "P@50", "P@100", "P@500", "ROC-AUC"].map((label) => (
+                  {["Model", "Dataset / split", "PR-AUC", "Precision", "Recall", "F1", "P@50", "P@100", "P@500", "ROC-AUC", "Notes"].map((label) => (
                     <th key={label} className="px-3 py-3 font-bold">{label}</th>
                   ))}
                 </tr>
@@ -93,6 +96,7 @@ export function ModelResultsView({
                     <td className="px-3 py-3">{formatMetric(row.precision_at_k["100"] ?? null)}</td>
                     <td className="px-3 py-3">{formatMetric(row.precision_at_k["500"] ?? null)}</td>
                     <td className="px-3 py-3">{formatMetric(row.roc_auc)}</td>
+                    <td className="px-3 py-3">{row.note ?? "not available"}</td>
                   </tr>
                 ))}
               </tbody>

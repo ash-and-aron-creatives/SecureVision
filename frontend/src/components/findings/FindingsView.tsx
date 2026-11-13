@@ -51,7 +51,7 @@ export function FindingsView(props: SecureAppViewProps) {
                     <th className="py-3 px-4">Host / Asset</th>
                     <th className="py-3 px-4">CVSS</th>
                     <th className="py-3 px-4">Score</th>
-                    <th className="py-3 px-4">Tier</th>
+                    <th className="py-3 px-4">Final priority</th>
                     <th className="py-3 px-4">Action</th>
                   </tr>
                 </thead>

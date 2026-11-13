@@ -26,7 +26,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:?Set ADMIN_INITIAL_PASSWORD in .env}
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      MIGRATION_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      PRIORITY_MODE: ${PRIORITY_MODE:-deterministic}
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       SECUREVISION_DEMO_MODE: "true"
     ports:
@@ -34,6 +34,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD
@@ -45,6 +47,20 @@ services:
       retries: 5
       start_period: 30s
     restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["alembic"]
+    command: ["upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   frontend:
     build:
@@ -73,6 +89,7 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
       MIGRATION_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       POSTGRES_APP_USER: ${POSTGRES_APP_USER:?Set POSTGRES_APP_USER in .env}
+      PRIORITY_MODE: ${PRIORITY_MODE:-deterministic}
       SECUREVISION_POSTGRES_TESTS: "1"
       CORS_ORIGINS: http://testserver
     volumes:

@@ -54,12 +54,15 @@ class Finding(Base):
     __tablename__ = 'findings'
     __table_args__ = (
         UniqueConstraint('asset_id', 'cve_id', name='uq_findings_asset_cve'),
+        Index('ix_findings_final_priority', 'final_priority'),
     )
     id = Column(Integer, primary_key=True, index=True)
     asset_id = Column(Integer, ForeignKey('assets.id'), index=True)
     cve_id = Column(String, index=True)
     cvss_score = Column(Float)
     in_kev = Column(Boolean, default=False)
+    final_priority = Column(String, nullable=False, default="Low", server_default="Low")
+    priority_source = Column(String, nullable=False, default="rules", server_default="rules")
     status = Column(String, default='Open')
     date_found = Column(String, nullable=True) # <-- ADDED FOR CSV IMPORT
     asset = relationship('Asset', back_populates='findings')

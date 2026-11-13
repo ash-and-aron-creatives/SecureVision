@@ -1,6 +1,6 @@
 # SecureVision
 
-SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. It provides deterministic, explainable scoring across a 320-rule matrix, role-based access control (RBAC), an immutable audit log, scanner CSV import, CVSS/EPSS lookup, and a separate experimental ML advisory. The deterministic matrix remains the primary and sole source of the live priority tier; the ML signal never changes it.
+SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. It provides selectable deterministic or ML-plus-asset priority modes, an explainable 320-rule cross-check, role-based access control (RBAC), an immutable audit log, scanner CSV import, and CVE intelligence lookup. The default `PRIORITY_MODE=deterministic` preserves the rule-matrix tier; `ml_asset` uses the experimental ML risk tier when available and falls back to the rule matrix otherwise.
 
 ## Requirements
 
@@ -44,12 +44,14 @@ contains three hard-coded demonstration lookup fixtures; they are not
 authoritative current NVD/FIRST scores. Other live lookups require provider
 network access.
 
-The backend runs as `POSTGRES_APP_USER`; Alembic connects as `POSTGRES_USER`.
-The app role cannot perform DDL or mutate audit rows. The container build
+The backend runs only with the app-role `DATABASE_URL`; it receives no owner
+URL or owner password. A one-shot `migrate` service runs Alembic as
+`POSTGRES_USER` before the backend starts, and the app role cannot perform DDL
+or mutate audit rows. The container build
 excludes the 201,498,667-byte prepared CVE CSV and all databases. Without the
 optional dataset mount, `/cves` identifies whether results came from the
 PostgreSQL cache or the live provider; uncached provider lookup depends on
-network availability. Alembic migrations run before the backend starts.
+network availability. The migration service completes before the backend starts.
 Synthetic seeding is enabled only in the Compose demo and does not delete or
 overwrite existing records.
 
@@ -64,21 +66,24 @@ python -m pip install -r requirements.txt
 ```
 
 Run `.\setup_dev.ps1` from the repository root to create local configuration
-files, start PostgreSQL 16, and apply Alembic migrations. It generates random
+files, start PostgreSQL 16, run the owner-credentialed migration service, and
+initialize the administrator through the app role. It generates random
 URL-safe credentials for both database roles and prints the new administrator
 password once. The local script publishes PostgreSQL only on `127.0.0.1:5432`
 using `docker-compose.local.yml` and the isolated `securevision-dev` Compose
 project. It never overwrites an existing
 `backend\.env`; move it aside manually before requesting fresh settings. For an
 isolated project, pass `-ComposeProjectName sv_local_test`. `DATABASE_URL` is
-the app-role URL; `MIGRATION_DATABASE_URL` is the owner/migrator URL.
+the app-role URL; `MIGRATION_DATABASE_URL` is reserved for the migration
+service and maintenance/test tools, not the backend service.
 
 | Variable | Purpose |
 |---|---|
 | `SECRET_KEY` | Private JWT signing key; required by the API and must be at least 32 characters. |
 | `ADMIN_INITIAL_PASSWORD` | Password used when bootstrapping or rotating the `admin` account; must be at least 8 characters. |
 | `DATABASE_URL` | Required SQLAlchemy PostgreSQL runtime URL for the app role. |
-| `MIGRATION_DATABASE_URL` | Optional Alembic URL for the owner/migrator role; falls back to `DATABASE_URL` only when unset. |
+| `MIGRATION_DATABASE_URL` | Owner/migrator URL supplied only to the migration service and explicit maintenance/test tools. |
+| `PRIORITY_MODE` | `deterministic` (default) or `ml_asset`; selects which available tier is persisted as final priority. |
 | `POSTGRES_DB` | PostgreSQL database name supplied to the Compose database service. |
 | `POSTGRES_USER` | Owner/migrator login supplied to the Compose database service. |
 | `POSTGRES_PASSWORD` | Owner/migrator password; use a private, URL-safe value. |
@@ -97,14 +102,18 @@ shown below.
 
 ## Administrator bootstrap and password rotation
 
-There is no default administrator password. For a new database, set `ADMIN_INITIAL_PASSWORD` securely and initialize the database. The script creates the `admin` account only if it does not already exist:
+There is no default administrator password. For a new database, apply
+`alembic upgrade head` through the owner-credentialed migration service first,
+then initialize the database with `ADMIN_INITIAL_PASSWORD`. The script creates
+the `admin` account only if it does not already exist:
 
 Load the generated backend settings into the current PowerShell session before
 running either maintenance script:
 
 ```powershell
 Get-Content backend\.env | ForEach-Object {
-    if ($_ -match '^\s*([^#=]+?)\s*=\s*(.*?)\s*$') {
+    if ($_ -match '^\s*([^#=]+?)\s*=\s*(.*?)\s*$' -and
+        $matches[1].Trim() -in @("DATABASE_URL", "SECRET_KEY", "ADMIN_INITIAL_PASSWORD", "CORS_ORIGINS", "CVE_DATASET_PATH", "PRIORITY_MODE")) {
         [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
     }
 }
@@ -124,8 +133,9 @@ Remove-Item Env:ADMIN_INITIAL_PASSWORD
 ```
 
 Both scripts must be run from the repository root so Python can import the
-`backend` package. Load `DATABASE_URL` (app role) and
-`MIGRATION_DATABASE_URL` (owner/migrator) before running local commands.
+`backend` package. Load `DATABASE_URL` (app role) before running the initializer.
+The setup script runs migrations in the Compose `migrate` service using the
+owner URL.
 
 ## Run locally
 
@@ -146,7 +156,8 @@ In a PowerShell terminal at the repository root, load the generated backend sett
 ```powershell
 .\.venv\Scripts\Activate.ps1
 Get-Content backend\.env | ForEach-Object {
-    if ($_ -match '^\s*([^#=]+?)\s*=\s*(.*?)\s*$') {
+    if ($_ -match '^\s*([^#=]+?)\s*=\s*(.*?)\s*$' -and
+        $matches[1].Trim() -in @("DATABASE_URL", "SECRET_KEY", "ADMIN_INITIAL_PASSWORD", "CORS_ORIGINS", "CVE_DATASET_PATH", "PRIORITY_MODE")) {
         [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
     }
 }
@@ -173,11 +184,14 @@ database port.
 
 ## Database migrations and SQLite conversion
 
-Alembic owns the schema. `docker-entrypoint.sh` applies `alembic upgrade head`
-before the API starts, and `python init_db.py` applies the same migration before
-bootstrapping the administrator. The migrations create the current models,
+Alembic owns every schema change. The one-shot Compose `migrate` service runs
+`alembic upgrade head` with the owner URL and completes before the API starts.
+`docker-entrypoint.sh` does not run migrations; `python init_db.py` only
+bootstraps the administrator through the app URL. The migrations create the current models,
 audit-log UPDATE/DELETE/TRUNCATE triggers, uniqueness constraints, and
-least-privilege app grants. Alembic uses `MIGRATION_DATABASE_URL` when set.
+least-privilege app grants and final-priority fields. Alembic uses
+`MIGRATION_DATABASE_URL` in the migration service; the backend receives only
+the app-role `DATABASE_URL`.
 Migration `0003` refuses to proceed if case-insensitive asset-name duplicates
 or duplicate `(asset_id, cve_id)` findings exist. It reports each conflict and
 points to `scripts/dedupe_postgres.py`; that manual-only script takes a
@@ -241,11 +255,13 @@ fields for its ML advisory when the provider has no network response.
 
 The scan form can look up scores before submission. Blank score fields are resolved by the backend; if a score required for scoring cannot be obtained, `POST /scan` returns `503` and does not create a finding. CSV imports likewise skip rows whose intelligence is unavailable and report the provider error in the row result. Explicitly entered scan scores remain manual inputs.
 
-The scorer evaluates CVSS, EPSS, recorded KEV status, internet exposure, and asset criticality against the documented 320-row rule matrix. KEV status is a scoring input; there is no live CISA KEV feed integration. Scoring returns the deterministic tier, ordinal score, and rationale.
+The scorer evaluates CVSS, EPSS, recorded KEV status, internet exposure, and asset criticality against the documented 320-row rule matrix. KEV status is a scoring input; there is no live CISA KEV feed integration. Every finding stores `final_priority` and `priority_source`; the rule tier remains available as a visible cross-check.
 
-The additional calibrated XGBoost likelihood uses only CVSS score/vector, CWE, and the publication-time NVD description; KEV and EPSS are explicitly excluded from its feature list. ML risk is `likelihood × exposure_factor × criticality_factor`: Internet exposure is 1.5, Internal is 1.0, and criticality 1-5 maps linearly from 0.6 to 1.4. The P99/P90/P50 risk thresholds are derived from the 2025 validation-set risk distribution, not the test set. Factors, thresholds, and recommended-action templates are centralized in [`backend/rules_config.py`](./backend/rules_config.py). If required model inputs or artifacts are missing, the ML fields remain null with a reason; the deterministic tier still works.
+The additional calibrated XGBoost likelihood uses only CVSS score/vector, CWE, and the publication-time NVD description; KEV and EPSS are explicitly excluded from its feature list. ML risk is `likelihood × exposure_factor × criticality_factor`: Internet exposure is 1.5, Internal is 1.0, and criticality 1-5 maps linearly from 0.6 to 1.4. The P99/P90/P50 risk thresholds are derived from the 2025 validation-set risk distribution, not the test set. Factors, thresholds, mode, the known-exploited High floor, and recommended-action templates are centralized in [`backend/rules_config.py`](./backend/rules_config.py).
 
-The authenticated `GET /model/results` endpoint and **Model Results** screen are available to all roles. They read evaluation outputs from `docs/results/` without modifying them. The frozen test result is negative: XGBoost PR-AUC 0.0114 versus CVSS 0.0117; XGBoost also trails CVSS at P@100 and P@500. EPSS is shown as a hindsight baseline, not a prospective comparison. Metrics not present in the recorded results are shown as not available.
+In `deterministic` mode, `final_priority` is the rule-matrix tier and its source is `rules`. In `ml_asset` mode, a successful prediction makes `final_priority` the ML priority (`ml`); absent ML output falls back to the rule-matrix tier (`rules`). If a KEV-flagged finding's ML tier is below High, a rules-layer floor raises it to High and records `ml+kev_floor`. KEV remains a runtime fact and never enters model features. The Model Results screen preserves the negative test result (PR-AUC 0.0114 vs CVSS 0.0117) and validation reference (0.0352); that result is a reason to keep deterministic mode as the default. Missing model inputs or artifacts leave ML fields null with an explicit reason.
+
+The authenticated `GET /model/results` endpoint and **Model Results** screen are available to all roles. They read evaluation outputs from `docs/results/` without modifying them. Recorded model coverage is XGBoost on Test 2026 and Validation 2025, Logistic Regression on Validation 2025, and Random Forest not available. The frozen test result is negative: XGBoost PR-AUC 0.0114 versus CVSS 0.0117; XGBoost also trails CVSS at P@100 and P@500. Validation reference PR-AUC is 0.0352. EPSS is shown as a hindsight baseline, not a prospective comparison. Metrics not present in the recorded results are shown as not available.
 
 ## CSV scanner imports
 
@@ -288,11 +304,11 @@ administrator. Successful and failed login attempts are audited with the
 attempted username and timestamp; passwords are never written to audit details.
 Failed attempts for existing and unknown usernames return the same response.
 
-## Research: offline ML evaluation (negative result; ML is advisory only)
+## Research: offline ML evaluation (negative result; deterministic remains default)
 
-The calibrated XGBoost model is wired into the finding flow only as an
-experimental likelihood/risk advisory; it does not drive or reorder the
-deterministic tier. The frozen single-pass evaluation on 61,611 held-out rows
+The calibrated XGBoost model is an experimental priority input only when
+`PRIORITY_MODE=ml_asset`; the default remains `deterministic`. The frozen
+single-pass evaluation on 61,611 held-out rows
 (122 positives) reported test PR-AUC 0.0114 versus 0.0117 +/- 0.0018 for CVSS.
 The paired-bootstrap mean PR-AUC difference was -0.0004 (95% CI: -0.0081 to
 0.0045), which does not establish an improvement. The model also had lower
@@ -303,9 +319,10 @@ is also recorded in `Decision_Log.md`; see
 [`docs/P5_protocol.md`](./docs/P5_protocol.md).
 
 The configured headline artifact is XGBoost 2.0.3 with scikit-learn 1.4.1.post1
-and joblib 1.6.0 as pinned in `requirements.txt`. SHAP is not installed; factor
-explanations use XGBoost native contribution values. The test set is not used
-to configure the ML risk thresholds.
+and joblib 1.6.0 as pinned in `requirements.txt`. Top-factor explanations use
+SHAP 0.46.0 `TreeExplainer` on the calibrated model's underlying XGBoost
+estimator, then XGBoost native `pred_contribs`, then `Unavailable`. The test set
+is not used to configure the ML risk thresholds.
 
 ## Roadmap (not implemented)
 
@@ -315,23 +332,16 @@ to configure the ML risk thresholds.
 
 ## Tests
 
-Run all backend tests from the repository root with the Python environment activated:
+All application/database tests require PostgreSQL and use disposable schemas;
+there is no SQLite fallback. Prepare a dedicated `.env.verify` file with
+throwaway credentials, then run the full suite in an isolated Compose project:
 
 ```powershell
-pytest
+docker compose -p sv_verify3 --env-file .env.verify --profile postgres-tests run --build --rm backend-tests
 ```
 
-The default run uses isolated, temporary SQLite fixtures for fast unit tests;
-it never reuses a development database. The complete suite can also run against
-the Compose PostgreSQL service, including PostgreSQL schema and audit-trigger
-tests:
-
-```powershell
-docker compose --env-file .env --profile postgres-tests run --build --rm backend-tests
-```
-
-For an already-running PostgreSQL test database, set the explicit opt-in and
-URL before invoking `pytest`; test cases use disposable PostgreSQL schemas:
+For `pytest` outside Compose, set the explicit test flag and both PostgreSQL
+URLs; never point them at a development or production database:
 
 ```powershell
 $env:SECUREVISION_POSTGRES_TESTS = "1"

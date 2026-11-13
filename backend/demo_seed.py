@@ -9,7 +9,7 @@ from backend.rules_config import (
     SYNTHETIC_DEMO_FINDINGS,
     SYNTHETIC_DEMO_SEED_ACTION,
 )
-from backend.scoring_engine import calculate_priority
+from backend.scoring_engine import calculate_priority, resolve_final_priority
 
 
 def seed_synthetic_demo() -> None:
@@ -64,11 +64,16 @@ def seed_synthetic_demo() -> None:
                 entry["epss_percentile"],
                 entry["cvss_score"],
             )
+            final_tier, priority_source = resolve_final_priority(
+                scoring["tier"], None, entry["in_kev"]
+            )
             finding = models.Finding(
                 asset_id=asset.id,
                 cve_id=entry["cve_id"],
                 cvss_score=entry["cvss_score"],
                 in_kev=entry["in_kev"],
+                final_priority=final_tier,
+                priority_source=priority_source,
                 status=entry["status"],
                 date_found=entry["date_found"],
             )
@@ -85,6 +90,8 @@ def seed_synthetic_demo() -> None:
                     "cvss": entry["cvss_score"],
                     "epss": entry["epss_percentile"],
                     "score": scoring["score"],
+                    "final_priority": final_tier,
+                    "priority_source": priority_source,
                     "scoring_explanation": scoring["explanation"],
                 },
                 explanation=scoring["explanation"]["summary"],

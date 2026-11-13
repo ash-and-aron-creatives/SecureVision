@@ -45,6 +45,8 @@ def _add_finding(db, asset, cve_id, tier, status, found_date):
         date_found=found_date,
         cvss_score=8.0,
         in_kev=False,
+        final_priority=tier,
+        priority_source="rules",
     )
     db.add(finding)
     db.flush()

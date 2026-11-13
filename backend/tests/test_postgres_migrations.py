@@ -60,7 +60,14 @@ def test_initial_migration_creates_current_models_and_blueprint_indexes():
         "ml_recommended_action",
         "ml_unavailable_reason",
     } <= score_columns
-    assert {"ix_findings_asset_id", "ix_findings_cve_id"} <= finding_indexes
+    assert {"final_priority", "priority_source"} <= {
+        column["name"] for column in inspector.get_columns("findings")
+    }
+    assert {
+        "ix_findings_asset_id",
+        "ix_findings_cve_id",
+        "ix_findings_final_priority",
+    } <= finding_indexes
     assert asset_indexes["uq_assets_name_ci"]["unique"] is True
     assert "uq_findings_asset_cve" in finding_constraints
 
@@ -118,6 +125,7 @@ def test_postgres_app_role_is_not_superuser_and_cannot_change_schema_or_audit():
             "DROP TRIGGER IF EXISTS prevent_audit_log_mutation ON audit_logs",
             "ALTER TABLE assets ADD COLUMN app_role_forbidden integer",
             "CREATE TABLE app_role_forbidden (id integer)",
+            "UPDATE alembic_version SET version_num = '0001_initial'",
         ]
         transaction = connection.begin()
         try:
@@ -163,6 +171,102 @@ def test_postgres_default_privileges_restrict_future_tables():
         with owner_engine.begin() as connection:
             connection.exec_driver_sql(f'DROP TABLE IF EXISTS public."{table_name}"')
         owner_engine.dispose()
+
+
+def test_postgres_app_role_has_dml_access_to_final_priority_columns():
+    with engine.connect() as connection:
+        privileges = connection.execute(
+            text(
+                "SELECT "
+                "has_column_privilege(current_user, 'findings', 'final_priority', 'SELECT'), "
+                "has_column_privilege(current_user, 'findings', 'final_priority', 'INSERT'), "
+                "has_column_privilege(current_user, 'findings', 'final_priority', 'UPDATE'), "
+                "has_column_privilege(current_user, 'findings', 'priority_source', 'SELECT'), "
+                "has_column_privilege(current_user, 'findings', 'priority_source', 'INSERT'), "
+                "has_column_privilege(current_user, 'findings', 'priority_source', 'UPDATE')"
+            )
+        ).one()
+    assert privileges == (True, True, True, True, True, True)
+
+
+def test_final_priority_migration_backfills_existing_rows(monkeypatch):
+    schema = f"sv_migration_{uuid.uuid4().hex}"
+    owner_url = make_url(os.environ["MIGRATION_DATABASE_URL"])
+    app_url = make_url(os.environ["DATABASE_URL"])
+    admin_engine = create_engine(owner_url)
+    with admin_engine.begin() as connection:
+        connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+
+    scoped_owner_url = owner_url.update_query_dict(
+        {"options": f"-c search_path={schema}"}
+    )
+    scoped_app_url = app_url.update_query_dict(
+        {"options": f"-c search_path={schema}"}
+    )
+    monkeypatch.setenv(
+        "MIGRATION_DATABASE_URL",
+        scoped_owner_url.render_as_string(hide_password=False),
+    )
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        scoped_app_url.render_as_string(hide_password=False),
+    )
+    try:
+        command.upgrade(Config("alembic.ini"), "0003_app_constraints")
+        scoped_engine = create_engine(scoped_owner_url)
+        try:
+            with scoped_engine.begin() as connection:
+                assert connection.execute(
+                    text("SELECT current_schema()")
+                ).scalar_one() == schema
+                asset_id = connection.execute(
+                    text(
+                        "INSERT INTO assets "
+                        "(name, type, ip_or_domain, owner, environment, needs_review, exposure, criticality) "
+                        "VALUES (:name, 'Other', '', '', 'Unknown', false, 'Internet', 5) "
+                        "RETURNING id"
+                    ),
+                    {"name": f"migration-backfill-{uuid.uuid4().hex}"},
+                ).scalar_one()
+                scored_id = connection.execute(
+                    text(
+                        "INSERT INTO findings (asset_id, cve_id, status, cvss_score) "
+                        "VALUES (:asset_id, 'CVE-2099-8001', 'Open', 6.0) RETURNING id"
+                    ),
+                    {"asset_id": asset_id},
+                ).scalar_one()
+                unscored_id = connection.execute(
+                    text(
+                        "INSERT INTO findings (asset_id, cve_id, status, cvss_score) "
+                        "VALUES (:asset_id, 'CVE-2099-8002', 'Open', 9.8) RETURNING id"
+                    ),
+                    {"asset_id": asset_id},
+                ).scalar_one()
+                connection.execute(
+                    text(
+                        "INSERT INTO finding_scores (finding_id, priority_tier) "
+                        "VALUES (:finding_id, 'High')"
+                    ),
+                    {"finding_id": scored_id},
+                )
+            command.upgrade(Config("alembic.ini"), "head")
+            with scoped_engine.connect() as connection:
+                rows = connection.execute(
+                    text(
+                        "SELECT id, final_priority, priority_source "
+                        "FROM findings ORDER BY id"
+                    )
+                ).all()
+            assert rows == [
+                (scored_id, "High", "rules"),
+                (unscored_id, "Critical", "rules"),
+            ]
+        finally:
+            scoped_engine.dispose()
+    finally:
+        with admin_engine.begin() as connection:
+            connection.exec_driver_sql(f'DROP SCHEMA "{schema}" CASCADE')
+        admin_engine.dispose()
 
 
 def test_postgres_enforces_case_insensitive_assets_and_finding_pairs():

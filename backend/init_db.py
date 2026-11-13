@@ -1,11 +1,8 @@
-from alembic import command
-from alembic.config import Config
 from backend.database import SessionLocal
 from backend.models import AuditLog, User
 from backend.auth import get_initial_admin_password, get_password_hash
 
 def seed_database():
-    command.upgrade(Config("alembic.ini"), "head")
     db = SessionLocal()
     try:
         admin_user = db.query(User).filter(User.username == "admin").first()

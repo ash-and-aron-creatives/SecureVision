@@ -27,6 +27,8 @@ def db_session():
         cve_id="CVE-2021-44228",
         cvss_score=9.8,
         in_kev=True,
+        final_priority="Critical",
+        priority_source="rules",
         status="Open",
         date_found="2026-10-01",
     )
@@ -79,6 +81,8 @@ def test_findings_over_twenty_are_reachable_across_pages(client, db_session):
             asset_id=asset.id,
             cve_id=f"CVE-2026-{index + 1000}",
             cvss_score=5.0,
+            final_priority="Medium",
+            priority_source="rules",
             status="Open",
             date_found="2026-10-01",
         )

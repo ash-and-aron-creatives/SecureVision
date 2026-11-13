@@ -515,7 +515,7 @@ export default function LandingFlow() {
               <h2 className="text-3xl md:text-5xl font-bold mt-2">Inside the Backend Scoring Engine</h2>
             </div>
             <p className="text-white/65 max-w-md text-sm mt-4 md:mt-0">
-              A deterministic 320-rule matrix evaluates CVSS, EPSS, recorded KEV status, internet exposure, and asset criticality, then returns an explainable priority tier and score.
+              Select deterministic or ML-plus-asset priority mode. The 320-rule matrix remains visible as a cross-check, and known-exploited findings receive a High floor in ML mode.
             </p>
           </div>
 
@@ -670,9 +670,9 @@ export default function LandingFlow() {
             <div className="bg-white/5 border border-white/10 rounded-xl p-6 flex flex-col justify-between hover:bg-white/10 transition-all">
               <div>
                 <span className="text-[10px] font-mono uppercase px-2 py-1 bg-white/10 rounded text-[#FFB340]">RESEARCH / OFFLINE ONLY</span>
-                <h4 className="text-lg font-bold mt-4 mb-2">Experimental ML Advisory Signal</h4>
+                <h4 className="text-lg font-bold mt-4 mb-2">Experimental ML Priority Input</h4>
                 <p className="text-white/60 text-xs leading-relaxed">
-                  ML is not used in live scoring. On a frozen test set, it did not significantly improve PR-AUC over CVSS and performed worse at the top 100 and 500.
+                  `PRIORITY_MODE` selects `deterministic` (default) or `ml_asset`. ML mode uses likelihood × exposure × criticality with validation percentiles, then applies the High known-exploited floor. The model remains experimental: test PR-AUC 0.0114 vs CVSS 0.0117; validation PR-AUC 0.0352.
                 </p>
               </div>
               <p className="mt-6 text-xs text-white/50">See README: Research: offline ML evaluation.</p>

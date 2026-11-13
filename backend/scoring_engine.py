@@ -1,4 +1,5 @@
 from typing import TypedDict
+from backend import rules_config
 
 
 class ScoringInputs(TypedDict):
@@ -22,6 +23,23 @@ class ScoringResult(TypedDict):
 
 
 TIER_SCORES = {"Low": 1, "Medium": 2, "High": 3, "Critical": 4}
+_TIER_RANK = {tier: rank for rank, tier in enumerate(("Low", "Medium", "High", "Critical"))}
+
+
+def resolve_final_priority(
+    rule_tier: str,
+    ml_tier: str | None,
+    in_kev: bool,
+) -> tuple[str, str]:
+    if rules_config.PRIORITY_MODE == "ml_asset" and ml_tier is not None:
+        final_tier = ml_tier
+        source = "ml"
+        floor = rules_config.KNOWN_EXPLOITED_FLOOR
+        if in_kev and _TIER_RANK[final_tier] < _TIER_RANK[floor]:
+            final_tier = floor
+            source = "ml+kev_floor"
+        return final_tier, source
+    return rule_tier, "rules"
 
 
 def determine_epss_band(percentile: float | None) -> str:

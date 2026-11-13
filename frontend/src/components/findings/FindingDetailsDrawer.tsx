@@ -3,10 +3,9 @@ import type { SecureAppViewProps } from "@/types/views";
 
 export function FindingDetailsDrawer(props: SecureAppViewProps) {
   const {
-    getTier, toggleFindingStatus, selectedFinding, setSelectedFinding, role,
+    toggleFindingStatus, selectedFinding, setSelectedFinding, role,
   } = props;
   return (selectedFinding && (() => {
-        const tier = getTier(selectedFinding);
         const isResolved = selectedFinding.status.toUpperCase() === "RESOLVED";
         return (
           <div
@@ -21,7 +20,7 @@ export function FindingDetailsDrawer(props: SecureAppViewProps) {
                 <div className="flex items-center justify-between pb-4 border-b border-white/10">
                   <div className="flex items-center gap-2.5">
                     <span className="px-2.5 py-1 rounded-md bg-[#00E5C4]/15 text-[#00E5C4] border border-[#00E5C4]/30 font-mono text-xs font-extrabold">
-                      Deterministic tier
+                      Final priority
                     </span>
                   </div>
                   <button
@@ -43,13 +42,20 @@ export function FindingDetailsDrawer(props: SecureAppViewProps) {
                   </div>
                   <p className="text-sm text-white/75 mt-1">{selectedFinding.asset_name}</p>
                   <span className="mt-3 inline-flex text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#E5007D]/25 text-pink-200 border border-[#E5007D]/40">
-                    Priority: {tier}
+                    Final priority: {selectedFinding.final_priority}
                   </span>
+                  {selectedFinding.priority_source === "ml+kev_floor" && (
+                    <p className="mt-2 text-xs font-semibold text-amber-300">
+                      Raised by known-exploited floor
+                    </p>
+                  )}
                 </div>
 
                 <section className="mt-6 bg-white/5 border border-white/10 rounded-2xl p-5">
-                  <h3 className="text-sm font-extrabold text-white">Deterministic tier</h3>
-                  <p className="text-xs text-white/55 mt-1">The existing 320-rule matrix is the primary priority tier.</p>
+                  <h3 className="text-sm font-extrabold text-white">Rule-matrix cross-check</h3>
+                  <p className="text-xs text-white/55 mt-1">
+                    320-rule tier: {selectedFinding.rule_priority_tier}
+                  </p>
                   <p className="text-sm text-white/90 leading-relaxed">
                     {selectedFinding.explanation.summary}
                   </p>
@@ -64,7 +70,7 @@ export function FindingDetailsDrawer(props: SecureAppViewProps) {
 
                 <section className="mt-4 bg-[#00E5C4]/5 border border-[#00E5C4]/20 rounded-2xl p-5">
                   <h3 className="text-sm font-extrabold text-[#00E5C4]">
-                    ML-assisted risk (experimental, advisory)
+                    ML result (experimental)
                   </h3>
                   <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
                     <div>
@@ -94,7 +100,7 @@ export function FindingDetailsDrawer(props: SecureAppViewProps) {
                     {selectedFinding.ml_recommended_action ?? "Unavailable"}
                   </p>
                   <p className="mt-4 border-t border-white/10 pt-3 text-[11px] leading-relaxed text-white/55">
-                    Offline evaluation: PR-AUC 0.0114 vs CVSS 0.0117; this signal does not drive the tier.
+                    Priority source: {selectedFinding.priority_source}. Offline test PR-AUC was 0.0114 vs CVSS 0.0117; validation PR-AUC was 0.0352.
                   </p>
                 </section>
               </div>

@@ -13,26 +13,28 @@ repository results and are not estimates.
 ### What does SecureVision do?
 
 It is a FastAPI and Next.js vulnerability-triage application. It imports scanner
-CSV exports, maintains an asset inventory and finding queue, scores findings
-using an explainable 320-row deterministic matrix, supports role-based access,
-and records audit events and authenticated reports. The code does not perform
-active network discovery or vulnerability scanning.
+CSV exports, maintains an asset inventory and finding queue, and supports
+deterministic or ML-plus-asset priority modes with a visible 320-row rule
+cross-check. It also supports role-based access and audited reports. The code
+does not perform active network discovery or vulnerability scanning.
 
 ### How is the operational priority determined?
 
-`backend/scoring_engine.py` evaluates the deterministic rule matrix using
-recorded KEV status, asset exposure and criticality, EPSS percentile, and CVSS
-score. `backend/tests/test_scoring.py` checks the documented 320-row matrix and
-band boundaries. This rules layer is an explicit design choice; it is not a
-claim that the tiers are a universally optimal ranking.
+`PRIORITY_MODE=deterministic` (the default) stores the rule-matrix result as
+`final_priority`. `PRIORITY_MODE=ml_asset` uses the successful model priority,
+calculated from likelihood × exposure × criticality with 2025 validation
+percentile cutoffs, and falls back to the rule tier when ML is unavailable.
+The rule-matrix tier remains visible as a cross-check. In ML mode, KEV applies
+after prediction as a rules-layer High floor; if it changes the tier,
+`priority_source` is `ml+kev_floor`. KEV and EPSS are never model features.
 
 ### What is the ML contribution, and does it improve results?
 
-The calibrated XGBoost model is an experimental advisory. Publication-time
-CVSS/vector/CWE/description features are used; KEV and EPSS are excluded from
-the model feature set. ML risk is
-`likelihood × exposure_factor × criticality_factor`; it does not set the
-deterministic tier.
+The calibrated XGBoost model is experimental. SHAP 0.46.0
+`TreeExplainer` explains its underlying estimator; failed SHAP explanations
+fall back to XGBoost native `pred_contribs`, then to unavailable.
+Publication-time CVSS/vector/CWE/description features are used; KEV and EPSS
+are excluded from the feature set.
 
 The recorded held-out test contains 61,611 rows (122 positives). XGBoost
 PR-AUC is `0.0114`, compared with CVSS `0.0117 +/- 0.0018`. The recorded
@@ -40,7 +42,11 @@ paired-bootstrap mean difference is `-0.0004` (95% CI `-0.0081` to `0.0045`).
 XGBoost P@100 is `0.0000` vs `0.0428` for CVSS and P@500 is `0.0060` vs
 `0.0243`. This is a negative result: the evidence does not establish an
 improvement. Source: `docs/results/p5/p5_console.log`, `docs/P5_protocol.md`,
-and `Decision_Log.md`.
+and `Decision_Log.md`. Validation reference PR-AUC is `0.0352`. Recorded split
+availability is XGBoost (Test 2026 and Validation 2025), Logistic Regression
+(Validation 2025), and Random Forest (not available). See `docs/ML_GAPS.md` for
+offline comparison requirements. The negative test result is why deterministic
+mode remains the default.
 
 ### How was time separation handled?
 
@@ -61,23 +67,21 @@ Separately, authenticated `/cves` lookup uses the prepared
 file it uses the database cache. The Docker demo omits the 201,498,667-byte
 prepared CSV and therefore uses the fallback path.
 
-### Why SQLite and PBKDF2?
+### Why PostgreSQL and PBKDF2?
 
-The application currently uses SQLAlchemy with SQLite in local setup, tests,
-and the isolated Docker demo. Although a PostgreSQL driver is pinned, this
-checkout does not provide a verified PostgreSQL deployment/migration path.
+PostgreSQL 16 is the application and test database. Alembic runs as a one-shot
+owner-credentialed Compose service before the backend; the backend receives
+only the app-role `DATABASE_URL`.
 PBKDF2-HMAC-SHA256 at 600,000 iterations is retained to preserve existing
-password hashes; Argon2/bcrypt migration was not performed. These are
-documented deviations, not claims that SQLite/PBKDF2 satisfy every deployment
-requirement.
+password hashes; Argon2/bcrypt migration was not performed.
 
 ### How are access and audit events protected?
 
 JWT authentication and role checks gate APIs. Admin-only screens include user
 management and audit review; analyst write permissions and viewer restrictions
-are tested. SQLite audit records have ORM protections and database triggers
-against update/delete. Login throttling is process-local, and refresh tokens
-are not implemented.
+are tested. PostgreSQL audit records have ORM protections and database
+triggers against update/delete/truncate. Login throttling is process-local,
+and refresh tokens are not implemented.
 
 ## Limitations to state explicitly
 
@@ -88,8 +92,11 @@ are not implemented.
 - **Synthetic assets:** demo records, asset names, values, and dates are
   synthetic. They are not customer assets, scanner output, or performance
   evidence.
-- **Rules layer:** the 320-rule matrix is a design choice and remains the
-  primary tier; it is not shown to be universally optimal.
+- **Rules layer:** the 320-rule matrix is a design choice and the default
+  priority mode; it is not shown to be universally optimal.
+- **Synthetic distribution:** the demo findings have no descriptions/model
+  outputs, so ML mode falls back to the rule tier; the two modes have the same
+  distribution on those fixed rows.
 - **No scanning:** the application imports scanner CSV files but does not
   actively scan hosts or networks.
 - **Negative ML result:** the recorded ML model did not outperform the CVSS
@@ -97,7 +104,7 @@ are not implemented.
 - **External dependencies:** uncached NVD/FIRST intelligence depends on
   network/provider availability; the three demo-cache entries are not
   authoritative current scores.
-- **Deployment gaps:** Docker uses a dedicated SQLite volume, not PostgreSQL;
-  login throttling is process-local and access-token refresh is absent.
+- **Deployment gaps:** login throttling is process-local and access-token
+  refresh is absent.
 - **Blueprint source missing:** exact Section 18 question coverage and
   verbatim P8–P12 criterion sign-off require the missing master blueprint.

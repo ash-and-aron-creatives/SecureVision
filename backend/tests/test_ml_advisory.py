@@ -1,4 +1,6 @@
 import json
+import sys
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,10 +15,14 @@ from backend.models import Asset, User
 from backend.rules_config import (
     CRITICALITY_FACTORS,
     ML_RISK_THRESHOLDS,
+    SYNTHETIC_DEMO_ASSETS,
+    SYNTHETIC_DEMO_FINDINGS,
     criticality_factor,
     exposure_factor,
     ml_priority,
 )
+from backend import rules_config
+from backend.scoring_engine import calculate_priority, resolve_final_priority
 from backend.tests.db_helpers import create_test_engine
 
 
@@ -128,6 +134,20 @@ def test_mocked_prediction_returns_calibrated_assessment_and_reasons(monkeypatch
             assert matrix.shape == (1, 152)
             return np.array([[0.8, 0.2]])
 
+    class FakeShapExplainer:
+        def __init__(self, estimator):
+            assert hasattr(estimator, "get_booster")
+
+        def shap_values(self, matrix):
+            values = np.zeros((1, len(features)))
+            values[0, :3] = [1.0, -0.5, 0.25]
+            return values
+
+    monkeypatch.setitem(
+        sys.modules,
+        "shap",
+        SimpleNamespace(TreeExplainer=FakeShapExplainer),
+    )
     monkeypatch.setattr(
         ml_inference,
         "_load_bundle",
@@ -160,6 +180,108 @@ def test_frozen_feature_list_has_no_kev_or_epss_leakage():
     ]
 
 
+def test_priority_mode_selection_and_known_exploited_floor(monkeypatch):
+    monkeypatch.setattr(rules_config, "PRIORITY_MODE", "deterministic")
+    assert resolve_final_priority("Critical", "Low", False) == ("Critical", "rules")
+
+    monkeypatch.setattr(rules_config, "PRIORITY_MODE", "ml_asset")
+    assert resolve_final_priority("Critical", "Low", False) == ("Low", "ml")
+    assert resolve_final_priority("Critical", "Low", True) == ("High", "ml+kev_floor")
+    assert resolve_final_priority("Low", "High", True) == ("High", "ml")
+    assert resolve_final_priority("Critical", None, True) == ("Critical", "rules")
+
+
+def test_synthetic_demo_final_priority_distribution_by_mode(monkeypatch):
+    assets = {asset["name"]: asset for asset in SYNTHETIC_DEMO_ASSETS}
+    distributions = {}
+    for mode in ("deterministic", "ml_asset"):
+        monkeypatch.setattr(rules_config, "PRIORITY_MODE", mode)
+        tiers = Counter()
+        for finding in SYNTHETIC_DEMO_FINDINGS:
+            asset = assets[finding["asset_name"]]
+            scoring = calculate_priority(
+                finding["in_kev"],
+                asset["exposure"].casefold() == "internet",
+                asset["criticality"],
+                finding["epss_percentile"],
+                finding["cvss_score"],
+            )
+            final_tier, _ = resolve_final_priority(
+                scoring["tier"], None, finding["in_kev"]
+            )
+            tiers[final_tier] += 1
+        distributions[mode] = dict(sorted(tiers.items()))
+
+    assert distributions == {
+        "deterministic": {"Critical": 1, "Low": 1},
+        "ml_asset": {"Critical": 1, "Low": 1},
+    }
+
+
+def test_explanation_uses_shap_then_native_then_unavailable(monkeypatch):
+    feature_names = ["cvss_score", "cwe_79", "term"]
+    contributions = np.array([[0.7, -0.3, 0.1]])
+
+    class FakeExplainer:
+        def __init__(self, classifier):
+            assert classifier == "xgb-estimator"
+
+        def shap_values(self, matrix):
+            assert matrix == "feature-matrix"
+            return contributions
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "shap",
+        SimpleNamespace(TreeExplainer=FakeExplainer),
+    )
+    result = ml_inference._explanation_contributions(
+        "xgb-estimator", "feature-matrix", feature_names
+    )
+    assert result.shape == (3,)
+    assert result.tolist() == [0.7, -0.3, 0.1]
+
+    class BrokenExplainer:
+        def __init__(self, classifier):
+            raise RuntimeError("unsupported model")
+
+    class FakeBooster:
+        def predict(self, matrix, pred_contribs):
+            assert pred_contribs is True
+            return np.array([[0.4, -0.2, 0.05, 0.0]])
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "shap",
+        SimpleNamespace(TreeExplainer=BrokenExplainer),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "xgboost",
+        SimpleNamespace(
+            DMatrix=lambda matrix, feature_names: matrix,
+        ),
+    )
+    native = ml_inference._explanation_contributions(
+        SimpleNamespace(get_booster=lambda: FakeBooster()),
+        "feature-matrix",
+        feature_names,
+    )
+    assert native.shape == (3,)
+    assert native.tolist() == [0.4, -0.2, 0.05]
+
+    class BrokenBooster:
+        def predict(self, matrix, pred_contribs):
+            raise RuntimeError("native explanation unavailable")
+
+    unavailable = ml_inference._explanation_contributions(
+        SimpleNamespace(get_booster=lambda: BrokenBooster()),
+        "feature-matrix",
+        feature_names,
+    )
+    assert unavailable is None
+
+
 def test_model_results_requires_auth_and_is_available_to_every_role(api):
     client = api["client"]
     assert client.get("/model/results").status_code == 401
@@ -180,6 +302,17 @@ def test_model_results_requires_auth_and_is_available_to_every_role(api):
         assert xgboost_test["pr_auc"] == 0.0114
         assert xgboost_test["f1"] is None
         assert xgboost_test["roc_auc"] is None
+        assert any(
+            row["name"] == "Logistic Regression (CVSS-only)"
+            and row["dataset"] == "Validation 2025"
+            and row["pr_auc"] == 0.0148
+            for row in body["models"]
+        )
+        random_forest = next(
+            row for row in body["models"] if row["name"] == "Random Forest"
+        )
+        assert random_forest["dataset"] == "not available"
+        assert random_forest["pr_auc"] is None
 
     assert client.get("/audit", headers=api["headers_for"]("viewer")).status_code == 403
 
@@ -235,6 +368,87 @@ def test_ml_advisory_never_changes_deterministic_tier_or_score(api, monkeypatch)
     ).json()
     assert detail["score_history"][0]["ml_likelihood"] is None
     assert detail["score_history"][1]["ml_likelihood"] == 0.9
+
+
+def test_ml_asset_mode_persists_ml_priority_and_kev_floor(api, monkeypatch):
+    monkeypatch.setattr(rules_config, "PRIORITY_MODE", "ml_asset")
+    monkeypatch.setattr(
+        main,
+        "predict_exploit_likelihood",
+        lambda **kwargs: {
+            "likelihood": 0.1,
+            "risk": 0.21,
+            "priority": "Low",
+            "top_reasons": ["the CVSS base score increased the model score."],
+            "model_version": "mock-model",
+            "recommended_action": "Mock advisory action.",
+            "unavailable_reason": None,
+        },
+    )
+    client = api["client"]
+    headers = api["headers_for"]("analyst")
+    payload = {
+        "asset_id": api["asset_id"],
+        "cve_id": "CVE-2025-7002",
+        "cvss_score": 9.8,
+        "in_kev": False,
+        "epss_percentile": 0.0,
+    }
+
+    response = client.post("/scan", json=payload, headers=headers)
+    assert response.status_code == 200
+    finding_id = response.json()["finding_id"]
+    assert response.json()["final_priority"] == "Low"
+    assert response.json()["rule_priority_tier"] == "Critical"
+    assert response.json()["priority_source"] == "ml"
+
+    payload["in_kev"] = True
+    floored = client.post("/scan", json=payload, headers=headers)
+    assert floored.status_code == 200
+    assert floored.json()["final_priority"] == "High"
+    assert floored.json()["priority_source"] == "ml+kev_floor"
+    assert floored.json()["rule_priority_tier"] == "Critical"
+
+    detail = client.get(f"/findings/{finding_id}", headers=headers).json()
+    assert detail["final_priority"] == "High"
+    assert detail["priority_source"] == "ml+kev_floor"
+    assert detail["rule_priority_tier"] == "Critical"
+    assert detail["explanation"]["inputs"]["in_kev"] is True
+
+
+def test_ml_asset_mode_falls_back_to_rules_when_prediction_is_unavailable(api, monkeypatch):
+    monkeypatch.setattr(rules_config, "PRIORITY_MODE", "ml_asset")
+    seen = {}
+
+    def unavailable(**kwargs):
+        seen.update(kwargs)
+        return {
+            "likelihood": None,
+            "risk": None,
+            "priority": None,
+            "top_reasons": None,
+            "model_version": None,
+            "recommended_action": None,
+            "unavailable_reason": "Frozen model is unavailable.",
+        }
+
+    monkeypatch.setattr(main, "predict_exploit_likelihood", unavailable)
+    response = api["client"].post(
+        "/scan",
+        json={
+            "asset_id": api["asset_id"],
+            "cve_id": "CVE-2025-7003",
+            "cvss_score": 9.8,
+            "in_kev": False,
+            "epss_percentile": 0.0,
+        },
+        headers=api["headers_for"]("analyst"),
+    )
+    assert response.status_code == 200
+    assert response.json()["final_priority"] == "Critical"
+    assert response.json()["priority_source"] == "rules"
+    assert response.json()["ml_unavailable_reason"] == "Frozen model is unavailable."
+    assert "in_kev" not in seen and "epss_percentile" not in seen
 
 
 def test_scan_uses_prepared_dataset_description_when_live_lookup_is_offline(api, monkeypatch):

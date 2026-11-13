@@ -65,6 +65,8 @@ def seeded(db_session):
             cve_id=cve,
             cvss_score=cvss,
             in_kev=kev,
+            final_priority=tier,
+            priority_source="rules",
             status=status,
             date_found="2026-10-14",
         )
@@ -101,6 +103,7 @@ def test_csv_export_basic(client, auth_headers, seeded):
     assert "attachment" in r.headers["content-disposition"]
     lines = r.text.strip().splitlines()
     assert lines[0].startswith("finding_id,cve_id,asset")
+    assert "final_priority" in lines[0] and "priority_source" in lines[0]
     assert len(lines) == 1 + 3
 
 

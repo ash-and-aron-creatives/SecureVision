@@ -180,6 +180,9 @@ class FindingResponse(MLFieldsResponse):
     epss: float
     in_kev: bool
     priority_tier: str
+    final_priority: str
+    priority_source: str
+    rule_priority_tier: str
     score: int
     status: str
     date_found: str | None
@@ -280,6 +283,9 @@ class FindingDetailResponse(MLFieldsResponse):
     in_kev: bool
     asset: AssetSummaryResponse
     priority_tier: str
+    final_priority: str
+    priority_source: str
+    rule_priority_tier: str
     score: int
     likelihood: float
     explanation: ScoringExplanationResponse
@@ -293,6 +299,9 @@ class ScanResultResponse(MLFieldsResponse):
     action: Literal["created", "updated"]
     reopened: bool
     priority_tier: str
+    final_priority: str
+    priority_source: str
+    rule_priority_tier: str
     score: int
     explanation: ScoringExplanationResponse
 

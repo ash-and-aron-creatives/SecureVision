@@ -1,19 +1,14 @@
 import os
 import secrets
-import tempfile
-from pathlib import Path
 
 import pytest
 
-_TEST_DATABASE_DIR = tempfile.TemporaryDirectory(prefix="securevision-tests-")
-_TEST_DATABASE_PATH = Path(_TEST_DATABASE_DIR.name) / "tests.db"
-if os.getenv("SECUREVISION_POSTGRES_TESTS") == "1":
-    if not os.getenv("DATABASE_URL", "").startswith("postgresql"):
-        raise RuntimeError(
-            "SECUREVISION_POSTGRES_TESTS=1 requires a PostgreSQL DATABASE_URL."
-        )
-else:
-    os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DATABASE_PATH.as_posix()}"
+if os.getenv("SECUREVISION_POSTGRES_TESTS") != "1":
+    raise RuntimeError("Tests require PostgreSQL; use the postgres-tests Compose profile.")
+if not os.getenv("DATABASE_URL", "").startswith("postgresql"):
+    raise RuntimeError("SECUREVISION_POSTGRES_TESTS=1 requires a PostgreSQL DATABASE_URL.")
+if not os.getenv("MIGRATION_DATABASE_URL", "").startswith("postgresql"):
+    raise RuntimeError("PostgreSQL tests require an owner MIGRATION_DATABASE_URL.")
 os.environ["SECUREVISION_TESTING"] = "1"
 os.environ.setdefault("SECRET_KEY", secrets.token_urlsafe(48))
 os.environ.setdefault("CORS_ORIGINS", "http://testserver")
@@ -53,4 +48,3 @@ def pytest_unconfigure(config):
     from backend.database import engine
 
     engine.dispose()
-    _TEST_DATABASE_DIR.cleanup()

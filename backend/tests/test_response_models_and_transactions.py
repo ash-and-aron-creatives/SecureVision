@@ -35,6 +35,8 @@ def api(monkeypatch):
         cve_id="CVE-2025-1234",
         cvss_score=8.5,
         in_kev=True,
+        final_priority="Critical",
+        priority_source="rules",
         status="Open",
         date_found="2026-10-01",
     )
@@ -167,7 +169,8 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
     assert scan_response.status_code == 200
     scan_body = scan_response.json()
     assert set(scan_body) == {
-        "finding_id", "action", "reopened", "priority_tier", "score", "explanation",
+        "finding_id", "action", "reopened", "priority_tier", "final_priority",
+        "priority_source", "rule_priority_tier", "score", "explanation",
         "ml_likelihood", "ml_risk", "ml_priority", "ml_top_reasons", "ml_model_version",
         "ml_recommended_action", "ml_unavailable_reason",
     }

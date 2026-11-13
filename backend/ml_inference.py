@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -17,6 +18,8 @@ from backend.rules_config import (
     ml_priority,
     ML_RECOMMENDED_ACTIONS,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class MLAssessment(TypedDict):
@@ -173,6 +176,38 @@ def _feature_label(feature: str) -> str:
     return f"the description term '{feature}'"
 
 
+def _explanation_contributions(classifier: object, matrix: object, features: list[str]):
+    import numpy as np
+
+    try:
+        import shap
+
+        values = shap.TreeExplainer(classifier).shap_values(matrix)
+        if isinstance(values, list):
+            values = values[-1]
+        values = np.asarray(values)
+        if values.ndim == 3:
+            values = values[:, :, -1]
+        if values.shape != (1, len(features)):
+            raise ValueError("SHAP returned an unexpected feature shape.")
+        return values[0]
+    except Exception:
+        _LOGGER.warning("SHAP explanation failed; trying native XGBoost contributions.", exc_info=True)
+
+    try:
+        from xgboost import DMatrix
+
+        values = classifier.get_booster().predict(
+            DMatrix(matrix, feature_names=features), pred_contribs=True
+        )[0][:-1]
+        if values.shape != (len(features),):
+            raise ValueError("XGBoost returned an unexpected contribution shape.")
+        return values
+    except Exception:
+        _LOGGER.warning("Native XGBoost explanation failed; factors are unavailable.", exc_info=True)
+        return None
+
+
 def predict_exploit_likelihood(
     cvss_score: float | None,
     cvss_vector: str | None,
@@ -194,8 +229,6 @@ def predict_exploit_likelihood(
 
     try:
         import numpy as np
-        from xgboost import DMatrix
-
         matrix = _feature_row(
             features, transformer, config, cvss_score, cvss_vector, cwe, description
         )
@@ -205,12 +238,10 @@ def predict_exploit_likelihood(
 
         risk = likelihood * exposure_factor(exposure) * criticality_factor(criticality)
         priority = ml_priority(risk)
-        top_reasons: list[str]
-        try:
-            classifier = model.calibrated_classifiers_[0].estimator
-            contribution_values = classifier.get_booster().predict(
-                DMatrix(matrix, feature_names=features), pred_contribs=True
-            )[0][:-1]
+        classifier = model.calibrated_classifiers_[0].estimator
+        contribution_values = _explanation_contributions(classifier, matrix, features)
+        top_reasons: list[str] | None = None
+        if contribution_values is not None:
             ranked = np.argsort(np.abs(contribution_values))[::-1][:ML_REASON_COUNT]
             top_reasons = []
             for index in ranked:
@@ -218,8 +249,6 @@ def predict_exploit_likelihood(
                 top_reasons.append(
                     f"{_feature_label(features[int(index)])} {direction} the model score."
                 )
-        except (AttributeError, IndexError, TypeError, ValueError, RuntimeError) as exc:
-            top_reasons = [f"Influential-factor explanation unavailable: {exc}"]
 
         return {
             "likelihood": likelihood,

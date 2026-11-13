@@ -18,7 +18,7 @@ from backend.models import Asset, AuditLog, Finding, FindingScore, User
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 TIERS = ["Critical", "High", "Medium", "Low"]
-_tier_rank = case({t: i for i, t in enumerate(TIERS)}, value=FindingScore.priority_tier, else_=99)
+_tier_rank = case({t: i for i, t in enumerate(TIERS)}, value=Finding.final_priority, else_=99)
 
 SORTS = {
     "priority": [_tier_rank.asc(), Finding.cvss_score.desc()],
@@ -52,7 +52,7 @@ def _filtered_query(db: Session, priority, status, asset_id, q, sort):
 
 
 def _matches_export_filters(finding, asset, score, priority, status, query) -> bool:
-    if priority and (not score or (score.priority_tier or "").lower() != priority.strip().lower()):
+    if priority and (finding.final_priority or "").lower() != priority.strip().lower():
         return False
     if status and (finding.status or "").lower() != status.strip().lower():
         return False
@@ -95,7 +95,8 @@ def export_findings_csv(
     w = csv.writer(buf)
     w.writerow([
         "finding_id", "cve_id", "asset", "exposure", "criticality", "cvss_score",
-        "in_kev", "status", "priority_tier", "likelihood", "date_found",
+        "in_kev", "status", "final_priority", "priority_source", "rule_priority_tier",
+        "likelihood", "date_found",
     ])
     count = 0
     for f, a, s in _filtered_query(db, priority, status, asset_id, q, sort).yield_per(500):
@@ -113,6 +114,8 @@ def export_findings_csv(
                 f.cvss_score,
                 f.in_kev,
                 f.status,
+                f.final_priority or "",
+                f.priority_source or "rules",
                 s.priority_tier if s else "",
                 s.likelihood if s else "",
                 date_str,
@@ -161,8 +164,8 @@ def export_executive_pdf(
 ):
     now = datetime.now(timezone.utc)
     tier_counts = dict(
-        db.query(FindingScore.priority_tier, func.count(func.distinct(FindingScore.finding_id)))
-        .group_by(FindingScore.priority_tier)
+        db.query(Finding.final_priority, func.count(Finding.id))
+        .group_by(Finding.final_priority)
         .all()
     )
     total_findings = db.query(func.count(Finding.id)).scalar() or 0
@@ -171,13 +174,15 @@ def export_executive_pdf(
         db.query(Finding, Asset)
         .join(Asset, Finding.asset_id == Asset.id)
         .join(FindingScore, FindingScore.finding_id == Finding.id)
-        .filter(FindingScore.priority_tier == "Critical")
+        .filter(Finding.final_priority == "Critical")
         .order_by(Finding.in_kev.desc(), Finding.cvss_score.desc(), Finding.id.asc())
         .limit(10)
         .all()
     )
 
-    crit_sum = func.sum(case((FindingScore.priority_tier == "Critical", 1), else_=0))
+    crit_sum = func.count(
+        func.distinct(case((Finding.final_priority == "Critical", Finding.id), else_=None))
+    )
     assets = (
         db.query(
             Asset.name,

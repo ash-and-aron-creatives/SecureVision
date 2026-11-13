@@ -11,6 +11,9 @@ export interface Finding {
   epss: number;
   in_kev: boolean;
   priority_tier: string;
+  final_priority: string;
+  priority_source: string;
+  rule_priority_tier: string;
   score: number;
   status: string;
   date_found: string | null;
@@ -103,6 +106,9 @@ export interface ScanResult {
   action: "created" | "updated";
   reopened: boolean;
   priority_tier: string;
+  final_priority: string;
+  priority_source: string;
+  rule_priority_tier: string;
   score: number;
   explanation: ScoringExplanation;
   ml_likelihood: number | null;

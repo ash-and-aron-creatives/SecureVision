@@ -45,6 +45,7 @@ function Write-BackendEnv($settings) {
         "POSTGRES_PASSWORD=$($settings["POSTGRES_PASSWORD"])",
         "POSTGRES_APP_USER=$($settings["POSTGRES_APP_USER"])",
         "POSTGRES_APP_PASSWORD=$($settings["POSTGRES_APP_PASSWORD"])",
+        "PRIORITY_MODE=$($settings["PRIORITY_MODE"])",
         "DATABASE_URL=$($settings["DATABASE_URL"])",
         "MIGRATION_DATABASE_URL=$($settings["MIGRATION_DATABASE_URL"])",
         "CVE_DATASET_PATH=$($settings["CVE_DATASET_PATH"])",
@@ -70,6 +71,7 @@ try {
         POSTGRES_PASSWORD = New-RandomUrlSafeValue 32
         POSTGRES_APP_USER = "securevision_app"
         POSTGRES_APP_PASSWORD = New-RandomUrlSafeValue 32
+        PRIORITY_MODE = "deterministic"
         CVE_DATASET_FILENAME = "master_cves_2026-10-08.csv"
         CVE_DATASET_HOST_PATH = ".\data\processed\master_cves_2026-10-08.csv"
         CVE_DATASET_PATH = ".\data\processed\master_cves_2026-10-08.csv"
@@ -97,7 +99,16 @@ try {
     }
 
     foreach ($name in $backendSettings.Keys) {
-        [Environment]::SetEnvironmentVariable($name, $backendSettings[$name], "Process")
+        if ($name -notin @(
+            "POSTGRES_DB",
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+            "POSTGRES_APP_USER",
+            "POSTGRES_APP_PASSWORD",
+            "MIGRATION_DATABASE_URL"
+        )) {
+            [Environment]::SetEnvironmentVariable($name, $backendSettings[$name], "Process")
+        }
     }
 
     $frontendConfig = Get-Content -LiteralPath $frontendEnvPath
@@ -140,6 +151,18 @@ try {
     }
     if (-not $roleProvisioned) {
         throw "Application database role provisioning failed with exit code $LASTEXITCODE."
+    }
+
+    $migrationArgs = @(
+        "-p", $ComposeProjectName,
+        "--env-file", $backendEnvPath,
+        "-f", "docker-compose.yml",
+        "-f", "docker-compose.local.yml",
+        "run", "--rm", "migrate"
+    )
+    & docker compose @migrationArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Database migration failed with exit code $LASTEXITCODE."
     }
 
     python .\init_db.py

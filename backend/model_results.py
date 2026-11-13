@@ -74,7 +74,7 @@ def _decision_conclusion() -> str:
         return "not available"
     contents = DECISION_LOG_PATH.read_text(encoding="utf-8-sig")
     decision = re.search(
-        r"### D-023:[\s\S]*?(?=### D-|\Z)",
+        r"### D-033:[\s\S]*?(?=### D-|\Z)",
         contents,
     )
     if not decision:
@@ -128,12 +128,37 @@ def read_model_results() -> dict[str, Any]:
             xgb_validation,
             precision_at_k=val_precision,
             recall_at_k=val_recall,
+            note="Recorded validation reference line; this is not a test result.",
         ),
-        _row("Logistic Regression (CVSS-only)", "Validation 2025", *logreg_cvss_values),
-        _row("Logistic Regression (text-masked)", "Validation 2025", *logreg_text_values),
-        _row("XGBoost (CVSS-only ablation)", "Validation 2025", *xgb_cvss_values),
-        _row("XGBoost (text-masked ablation)", "Validation 2025", *xgb_text_values),
-        _row("Random Forest", "not available", note="No recorded evaluation metrics were found."),
+        _row(
+            "Logistic Regression (CVSS-only)",
+            "Validation 2025",
+            *logreg_cvss_values,
+            note="No corresponding test-split result is recorded.",
+        ),
+        _row(
+            "Logistic Regression (text-masked)",
+            "Validation 2025",
+            *logreg_text_values,
+            note="No corresponding test-split result is recorded.",
+        ),
+        _row(
+            "XGBoost (CVSS-only ablation)",
+            "Validation 2025",
+            *xgb_cvss_values,
+            note="Validation ablation; not a separate test result.",
+        ),
+        _row(
+            "XGBoost (text-masked ablation)",
+            "Validation 2025",
+            *xgb_text_values,
+            note="Validation ablation; not a separate test result.",
+        ),
+        _row(
+            "Random Forest",
+            "not available",
+            note="No Random Forest evaluation is recorded in docs/results.",
+        ),
     ]
 
     return {
