@@ -10,7 +10,10 @@ node_modules
 .next
 **/.next
 notebooks
-scripts
+scripts/*
+!scripts/
+scripts/*
+!scripts/load_cve_catalog.py
 data
 securevision.db
 securevision_dev.db

@@ -1,12 +1,16 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.engine import make_url
 
 from backend import auth, main
 from backend.database import Base, get_db
 from backend.main import app
-from backend.models import User
+from backend.models import CVECatalog, User
 from backend.tests.db_helpers import create_test_engine
+from scripts.load_cve_catalog import CATALOG_COLUMNS, load_csv
 
 
 @pytest.fixture
@@ -32,33 +36,40 @@ def cve_client(monkeypatch):
     engine.dispose()
 
 
-@pytest.mark.skipif(
-    not main.dataset_available(),
-    reason="prepared CVE dataset is not present in this checkout",
-)
-def test_prepared_cve_dataset_lookup_and_search(cve_client):
-    client, _, headers, _ = cve_client
+def test_catalog_hit_and_search(cve_client):
+    client, db, headers, _ = cve_client
+    db.add(
+        CVECatalog(
+            cve_id="CVE-1999-0095",
+            published_date="1999-04-26",
+            description="Test catalog description.",
+            cvss_score=10.0,
+            cvss_vector="CVSS:2.0/AV:N",
+            cwe="CWE-20",
+            epss=0.01,
+            percentile=0.4,
+            in_kev=False,
+        )
+    )
+    db.commit()
+
     lookup = client.get("/cves/CVE-1999-0095", headers=headers)
     assert lookup.status_code == 200
     assert lookup.json()["cve_id"] == "CVE-1999-0095"
-    assert lookup.json()["source"] == "prepared_dataset"
-    assert lookup.json()["description"]
-    assert lookup.json()["in_kev"] is False
+    assert lookup.json()["source"] == "catalog"
+    assert lookup.json()["description"] == "Test catalog description."
 
-    search = client.get("/cves?search=CVE-1999-0095", headers=headers)
+    search = client.get("/cves?search=Test%20catalog", headers=headers)
     assert search.status_code == 200
-    assert search.headers["x-cve-lookup-source"] == "prepared_dataset"
-    assert len(search.json()) == 1
-    assert search.json()[0]["cve_id"] == "CVE-1999-0095"
-    assert search.json()[0]["source"] == "prepared_dataset"
+    assert search.headers["x-cve-lookup-source"] == "catalog"
+    assert search.json()[0]["source"] == "catalog"
     assert client.get("/cves/not-a-cve", headers=headers).status_code == 422
     assert client.get("/cves?search=%20%20", headers=headers).status_code == 422
     assert client.get("/cves/CVE-1999-0095").status_code == 401
 
 
-def test_cve_lookup_uses_and_populates_cache_when_dataset_is_missing(cve_client):
+def test_catalog_miss_falls_back_to_live_provider_and_caches(cve_client):
     client, db, headers, monkeypatch = cve_client
-    monkeypatch.setattr(main, "dataset_available", lambda: False)
     calls = []
 
     async def fetch(cve_id):
@@ -87,15 +98,9 @@ def test_cve_lookup_uses_and_populates_cache_when_dataset_is_missing(cve_client)
     assert calls == ["CVE-2025-7878"]
     assert db.query(main.models.CVECache).count() == 1
 
-    search = client.get("/cves?search=Cached%20test%20description", headers=headers)
-    assert search.status_code == 200
-    assert search.headers["x-cve-lookup-source"] == "postgres_cache"
-    assert search.json()[0]["cve_id"] == "CVE-2025-7878"
 
-
-def test_cve_cache_does_not_hide_provider_failure(cve_client, monkeypatch):
+def test_empty_catalog_and_unavailable_provider_are_explicit(cve_client, monkeypatch):
     client, db, headers, _ = cve_client
-    monkeypatch.setattr(main, "dataset_available", lambda: False)
 
     async def unavailable(cve_id):
         return {"cve_id": cve_id, "available": False, "errors": ["provider unavailable"]}
@@ -103,5 +108,32 @@ def test_cve_cache_does_not_hide_provider_failure(cve_client, monkeypatch):
     monkeypatch.setattr(main, "fetch_cve_data", unavailable)
     response = client.get("/cves/CVE-2025-7879", headers=headers)
     assert response.status_code == 503
-    assert "prepared CVE dataset is unavailable" in response.json()["detail"]["message"]
+    assert "CVE catalog" in response.json()["detail"]["message"]
+    assert "live provider" in response.json()["detail"]["message"]
+    assert db.query(CVECatalog).count() == 0
     assert db.query(main.models.CVECache).count() == 0
+
+
+def test_loader_upserts_twenty_synthetic_rows_idempotently(cve_client, tmp_path):
+    _, db, _, _ = cve_client
+    csv_path = tmp_path / "synthetic-cves.csv"
+    header = ",".join(CATALOG_COLUMNS)
+    rows = [
+        f"CVE-2025-{index:04d},2025-01-01,Description {index},7.5,CVSS:3.1/AV:N,"
+        f"CWE-79,,0.2,0.7,{int(index % 2 == 0)}"
+        for index in range(20)
+    ]
+    csv_path.write_text(header + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
+    schema = getattr(db.get_bind(), "_securevision_test_schema")
+    loader_url = make_url(os.environ["DATABASE_URL"]).set(
+        query={"options": f"-csearch_path={schema}"}
+    ).render_as_string(hide_password=False)
+
+    assert load_csv(loader_url, csv_path, batch_size=7) == 20
+    rows[0] = rows[0].replace("Description 0", "Updated description")
+    csv_path.write_text(header + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
+    assert load_csv(loader_url, csv_path, batch_size=7) == 20
+    assert db.query(CVECatalog).count() == 20
+    assert db.query(CVECatalog).filter_by(cve_id="CVE-2025-0000").one().description == (
+        "Updated description"
+    )

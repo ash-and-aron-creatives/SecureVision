@@ -50,6 +50,19 @@ class CVECache(Base):
     cve_id = Column(String, primary_key=True)
     data = Column(JSON, nullable=False)
 
+class CVECatalog(Base):
+    __tablename__ = 'cve_catalog'
+    cve_id = Column(String, primary_key=True)
+    published_date = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    cvss_score = Column(Float, nullable=True)
+    cvss_vector = Column(String, nullable=True)
+    cwe = Column(String, nullable=True)
+    kev_date_added = Column(String, nullable=True)
+    epss = Column(Float, nullable=True)
+    percentile = Column(Float, nullable=True)
+    in_kev = Column(Boolean, nullable=False, default=False)
+
 class Finding(Base):
     __tablename__ = 'findings'
     __table_args__ = (

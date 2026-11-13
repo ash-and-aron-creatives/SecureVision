@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
 COPY backend ./backend
+COPY scripts/load_cve_catalog.py ./scripts/load_cve_catalog.py
 COPY docs/scoring_matrix_v1.csv ./docs/scoring_matrix_v1.csv
 COPY ml/models/headline_model_calibrated.joblib ./ml/models/headline_model_calibrated.joblib
 COPY ml/models/headline_tfidf_transformer.joblib ./ml/models/headline_tfidf_transformer.joblib

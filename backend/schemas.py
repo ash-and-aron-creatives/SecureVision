@@ -27,6 +27,10 @@ class UserResponse(ResponseSchema):
     role: str
 
 
+class CurrentUserResponse(UserResponse):
+    priority_mode: Literal["ml_asset", "deterministic"]
+
+
 class AssetRequest(BaseModel):
     name: str = Field(min_length=1, max_length=ASSET_NAME_MAX_LENGTH)
     type: str = ASSET_DEFAULT_TYPE

@@ -266,6 +266,13 @@ def test_final_priority_migration_backfills_existing_rows(monkeypatch):
     finally:
         with admin_engine.begin() as connection:
             connection.exec_driver_sql(f'DROP SCHEMA "{schema}" CASCADE')
+            app_role = admin_engine.dialect.identifier_preparer.quote(app_url.username)
+            connection.exec_driver_sql(
+                f"REVOKE ALL ON TABLE public.cve_catalog FROM {app_role}"
+            )
+            connection.exec_driver_sql(
+                f"GRANT SELECT ON TABLE public.cve_catalog TO {app_role}"
+            )
         admin_engine.dispose()
 
 
@@ -648,3 +655,26 @@ def test_postgres_migration_reports_existing_duplicates():
         with admin_engine.begin() as connection:
             connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         admin_engine.dispose()
+
+
+def test_app_role_can_select_but_cannot_write_cve_catalog():
+    with engine.connect() as connection:
+        privileges = connection.execute(
+            text(
+                """
+                SELECT has_table_privilege(current_user, 'public.cve_catalog', 'SELECT'),
+                       has_table_privilege(current_user, 'public.cve_catalog', 'INSERT'),
+                       has_table_privilege(current_user, 'public.cve_catalog', 'UPDATE'),
+                       has_table_privilege(current_user, 'public.cve_catalog', 'DELETE')
+                """
+            )
+        ).one()
+        assert privileges == (True, False, False, False)
+        with pytest.raises(DBAPIError, match="permission denied"):
+            connection.execute(
+                text(
+                    "INSERT INTO public.cve_catalog (cve_id, in_kev) "
+                    "VALUES ('CVE-2099-90001', false)"
+                )
+            )
+        connection.rollback()

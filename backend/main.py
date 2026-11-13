@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 import hashlib
 import csv
 import io
@@ -28,8 +29,8 @@ from datetime import date, datetime, timedelta, timezone
 from backend import models, auth
 from backend.database import get_db
 from backend.ml_inference import predict_exploit_likelihood
-from backend.cve_dataset import dataset_available, lookup_cve, search_cves
-from backend.rules_config import CVE_DATASET_PATH, CVE_SEARCH_MAX_RESULTS, LOGIN_USERNAME_MAX_LENGTH
+from backend.cve_dataset import lookup_catalog, search_catalog
+from backend.rules_config import CVE_SEARCH_MAX_RESULTS, LOGIN_USERNAME_MAX_LENGTH, PRIORITY_MODE
 from backend.scoring_engine import TIER_SCORES, calculate_priority, resolve_final_priority
 from backend.threat_intel import fetch_cve_data
 from backend.csv_import import MAX_BYTES, ImportFileError, detect_format, parse_and_validate, problems_to_csv
@@ -41,6 +42,7 @@ from backend.schemas import (
     AssetRequest,
     AuditEntryResponse,
     CVEResponse,
+    CurrentUserResponse,
     DeletedAssetResponse,
     DashboardAnalyticsResponse,
     FindingDetailResponse,
@@ -204,9 +206,14 @@ def login_for_access_token(
     auth.clear_login_failures(form_data.username, client_ip)
     return {"access_token": access_token, "token_type": "bearer", "role": user.role, "username": user.username}
 
-@app.get("/me", response_model=UserResponse)
+@app.get("/me", response_model=CurrentUserResponse)
 def get_me(current_user: models.User = Depends(auth.get_current_user)):
-    return current_user
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "role": current_user.role,
+        "priority_mode": PRIORITY_MODE,
+    }
 
 @app.post("/assets", response_model=AssetResponse)
 def create_asset(
@@ -335,8 +342,9 @@ def _cve_from_intel(info: dict) -> dict:
     }
 
 
-def _enrich_from_prepared_dataset(info: dict, cve_id: str) -> dict:
-    if not dataset_available():
+def _enrich_from_catalog(db: Session, info: dict, cve_id: str) -> dict:
+    dataset_record = lookup_catalog(db, cve_id)
+    if dataset_record is None:
         return info
     fields = (
         "description",
@@ -351,9 +359,6 @@ def _enrich_from_prepared_dataset(info: dict, cve_id: str) -> dict:
         for field in fields
     ):
         return info
-    dataset_record = lookup_cve(cve_id, str(CVE_DATASET_PATH))
-    if dataset_record is None:
-        return info
     enriched = dict(info)
     for target, source in (
         ("description", "description"),
@@ -364,7 +369,24 @@ def _enrich_from_prepared_dataset(info: dict, cve_id: str) -> dict:
     ):
         if enriched.get(target) is None:
             enriched[target] = dataset_record.get(source)
+    if not enriched.get("available") and enriched.get("cvss") is not None:
+        enriched["available"] = True
+        enriched["errors"] = []
     return enriched
+
+
+def _lookup_cached_cve(db: Session, cve_id: str) -> dict | None:
+    cached = db.query(models.CVECache).filter_by(cve_id=cve_id).first()
+    return cached.data if cached is not None else None
+
+
+def _store_cached_cve(db: Session, cve_id: str, record: dict) -> None:
+    try:
+        db.add(models.CVECache(cve_id=cve_id, data=record))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 @app.get("/cves/{cve_id}", response_model=CVEResponse)
@@ -376,34 +398,27 @@ async def get_cve(
     cve_clean = cve_id.strip().upper()
     if not CVE_ID_PATTERN.fullmatch(cve_clean):
         raise HTTPException(status_code=422, detail="cve_id must look like CVE-2021-44228.")
-    if dataset_available():
-        record = lookup_cve(cve_clean, str(CVE_DATASET_PATH))
-        if record is None:
-            raise HTTPException(status_code=404, detail="CVE not found in the prepared dataset.")
-        return {**record, "source": "prepared_dataset"}
+    record = await run_in_threadpool(lookup_catalog, db, cve_clean)
+    if record is not None:
+        return {**record, "source": "catalog"}
 
-    cached = db.query(models.CVECache).filter_by(cve_id=cve_clean).first()
-    if cached:
-        return {**cached.data, "source": "postgres_cache"}
+    cached = await run_in_threadpool(_lookup_cached_cve, db, cve_clean)
+    if cached is not None:
+        return {**cached, "source": "postgres_cache"}
     intel = await fetch_cve_data(cve_clean)
     if not intel.get("available"):
         raise HTTPException(
             status_code=503,
             detail={
                 "message": (
-                    "The prepared CVE dataset is unavailable and both the PostgreSQL "
-                    "cache and live provider fallback missed."
+                    "The CVE catalog and PostgreSQL cache missed, and the live provider "
+                    "did not return this CVE."
                 ),
                 "errors": intel.get("errors", []),
             },
         )
     record = _cve_from_intel(intel)
-    try:
-        db.add(models.CVECache(cve_id=cve_clean, data=record))
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
+    await run_in_threadpool(_store_cached_cve, db, cve_clean, record)
     return {**record, "source": "live_provider"}
 
 
@@ -418,12 +433,10 @@ def search_cve_records(
     query = search.strip()
     if not query:
         raise HTTPException(status_code=422, detail="search cannot be empty.")
-    if dataset_available():
-        response.headers["X-CVE-Lookup-Source"] = "prepared_dataset"
-        results = tuple(
-            {**record, "source": "prepared_dataset"}
-            for record in search_cves(query, str(CVE_DATASET_PATH))[:limit]
-        )
+    catalog_records = search_catalog(db, query, limit)
+    if catalog_records:
+        response.headers["X-CVE-Lookup-Source"] = "catalog"
+        results = tuple({**record, "source": "catalog"} for record in catalog_records)
     else:
         response.headers["X-CVE-Lookup-Source"] = "postgres_cache"
         needle = query.casefold()
@@ -464,7 +477,9 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
     cve_clean = req.cve_id.strip().upper()
     if not CVE_ID_PATTERN.fullmatch(cve_clean):
         raise HTTPException(status_code=422, detail="cve_id must look like CVE-2021-44228.")
-    intel = _enrich_from_prepared_dataset(
+    intel = await run_in_threadpool(
+        _enrich_from_catalog,
+        db,
         await fetch_cve_data(cve_clean),
         cve_clean,
     )
@@ -485,7 +500,8 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
             )
     internet_facing = (asset.exposure.lower() == "internet")
     scoring = calculate_priority(req.in_kev, internet_facing, asset.criticality, epss_percentile, cvss_score)
-    ml_assessment = predict_exploit_likelihood(
+    ml_assessment = await run_in_threadpool(
+        predict_exploit_likelihood,
         cvss_score=cvss_score,
         cvss_vector=intel.get("cvss_vector"),
         cwe=intel.get("cwe"),
