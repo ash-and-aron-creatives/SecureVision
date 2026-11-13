@@ -20,8 +20,11 @@ does not perform active network discovery or vulnerability scanning.
 
 ### How is the operational priority determined?
 
-`PRIORITY_MODE=deterministic` (the default) stores the rule-matrix result as
-`final_priority`. `PRIORITY_MODE=ml_asset` uses the successful model priority,
+`PRIORITY_MODE=ml_asset` (the proposal default) uses the successful model priority;
+`PRIORITY_MODE=deterministic` stores the rule-matrix result as
+`final_priority`. The recorded test PR-AUC is negative relative to CVSS
+(0.0114 vs 0.0117), so the Model Results screen preserves that evidence and the
+finding drawer shows the active mode and rule-matrix cross-check. The ML tier is
 calculated from likelihood × exposure × criticality with 2025 validation
 percentile cutoffs, and falls back to the rule tier when ML is unavailable.
 The rule-matrix tier remains visible as a cross-check. In ML mode, KEV applies

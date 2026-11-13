@@ -1,6 +1,6 @@
 # SecureVision
 
-SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. It provides selectable deterministic or ML-plus-asset priority modes, an explainable 320-rule cross-check, role-based access control (RBAC), an immutable audit log, scanner CSV import, and CVE intelligence lookup. The default `PRIORITY_MODE=deterministic` preserves the rule-matrix tier; `ml_asset` uses the experimental ML risk tier when available and falls back to the rule matrix otherwise.
+SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. It provides selectable deterministic or ML-plus-asset priority modes, an explainable 320-rule cross-check, role-based access control (RBAC), an immutable audit log, scanner CSV import, and CVE intelligence lookup. The default `PRIORITY_MODE=ml_asset` uses the experimental ML risk tier when available and falls back to the rule matrix otherwise; `deterministic` remains selectable. The recorded test evaluation is negative (PR-AUC 0.0114 vs CVSS 0.0117), so the active mode label and rule-matrix cross-check remain visible.
 
 ## Requirements
 
@@ -47,11 +47,10 @@ network access.
 The backend runs only with the app-role `DATABASE_URL`; it receives no owner
 URL or owner password. A one-shot `migrate` service runs Alembic as
 `POSTGRES_USER` before the backend starts, and the app role cannot perform DDL
-or mutate audit rows. The container build
-excludes the 201,498,667-byte prepared CVE CSV and all databases. Without the
-optional dataset mount, `/cves` identifies whether results came from the
-PostgreSQL cache or the live provider; uncached provider lookup depends on
-network availability. The migration service completes before the backend starts.
+or mutate audit rows. The container build excludes the 201,498,667-byte
+prepared CVE CSV and all databases. CVE lookups use the indexed PostgreSQL
+`cve_catalog`; a catalog miss falls through to the live provider and reports
+unavailability explicitly if that provider also misses.
 Synthetic seeding is enabled only in the Compose demo and does not delete or
 overwrite existing records.
 
@@ -83,15 +82,14 @@ service and maintenance/test tools, not the backend service.
 | `ADMIN_INITIAL_PASSWORD` | Password used when bootstrapping or rotating the `admin` account; must be at least 8 characters. |
 | `DATABASE_URL` | Required SQLAlchemy PostgreSQL runtime URL for the app role. |
 | `MIGRATION_DATABASE_URL` | Owner/migrator URL supplied only to the migration service and explicit maintenance/test tools. |
-| `PRIORITY_MODE` | `deterministic` (default) or `ml_asset`; selects which available tier is persisted as final priority. |
+| `PRIORITY_MODE` | `ml_asset` (default) or `deterministic`; selects which available tier is persisted as final priority. |
 | `POSTGRES_DB` | PostgreSQL database name supplied to the Compose database service. |
 | `POSTGRES_USER` | Owner/migrator login supplied to the Compose database service. |
 | `POSTGRES_PASSWORD` | Owner/migrator password; use a private, URL-safe value. |
 | `POSTGRES_APP_USER` | Non-superuser PostgreSQL login used by the running API. |
 | `POSTGRES_APP_PASSWORD` | App-role password; use a private, URL-safe value. |
-| `CVE_DATASET_PATH` | Optional path to the prepared CVE CSV. |
-| `CVE_DATASET_FILENAME` | Dated filename used by the optional Compose bind mount. |
-| `CVE_DATASET_HOST_PATH` | Host path to that CSV when enabling the optional dataset mount. |
+| `CVE_DATASET_FILENAME` | Dated filename supplied to the one-shot catalog loader. |
+| `CVE_DATASET_HOST_PATH` | Read-only host path to the CSV supplied to the loader. |
 | `CORS_ORIGINS` | Comma-separated, exact browser origins allowed to call the API. The default is empty; `*` is rejected. |
 | `NEXT_PUBLIC_API_BASE` | Frontend API URL. Defaults to `http://localhost:8000`; set it in `frontend/.env.local` when needed. |
 
@@ -113,7 +111,7 @@ running either maintenance script:
 ```powershell
 Get-Content backend\.env | ForEach-Object {
     if ($_ -match '^\s*([^#=]+?)\s*=\s*(.*?)\s*$' -and
-        $matches[1].Trim() -in @("DATABASE_URL", "SECRET_KEY", "ADMIN_INITIAL_PASSWORD", "CORS_ORIGINS", "CVE_DATASET_PATH", "PRIORITY_MODE")) {
+        $matches[1].Trim() -in @("DATABASE_URL", "SECRET_KEY", "ADMIN_INITIAL_PASSWORD", "CORS_ORIGINS", "PRIORITY_MODE")) {
         [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
     }
 }
@@ -157,7 +155,7 @@ In a PowerShell terminal at the repository root, load the generated backend sett
 .\.venv\Scripts\Activate.ps1
 Get-Content backend\.env | ForEach-Object {
     if ($_ -match '^\s*([^#=]+?)\s*=\s*(.*?)\s*$' -and
-        $matches[1].Trim() -in @("DATABASE_URL", "SECRET_KEY", "ADMIN_INITIAL_PASSWORD", "CORS_ORIGINS", "CVE_DATASET_PATH", "PRIORITY_MODE")) {
+        $matches[1].Trim() -in @("DATABASE_URL", "SECRET_KEY", "ADMIN_INITIAL_PASSWORD", "CORS_ORIGINS", "PRIORITY_MODE")) {
         [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
     }
 }
@@ -231,25 +229,31 @@ read at runtime are:
 | `Decision_Log.md` | 21,427 |
 
 These are inference/configuration and evaluation artifacts, not ML training
-data. Teammates
-should request the dated file from the project's approved internal data
-custodian/artifact store, then keep it at the documented local path. For Docker,
-set `CVE_DATASET_FILENAME` and `CVE_DATASET_HOST_PATH` and include the optional
-read-only mount override:
+data. Teammates should request the dated file from the project's approved
+internal data custodian/artifact store, then keep it at the documented local
+path. CVE lookup requests do not read this file. To populate the database
+explicitly, set `CVE_DATASET_FILENAME` and `CVE_DATASET_HOST_PATH` and run the
+manual owner-role loader:
 
 ```powershell
 $env:CVE_DATASET_FILENAME = "master_cves_2026-10-08.csv"
 $env:CVE_DATASET_HOST_PATH = ".\data\processed\master_cves_2026-10-08.csv"
-docker compose --env-file .env -f docker-compose.yml -f docker-compose.cve-dataset.yml up --build
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.cve-dataset.yml --profile load-catalog run --rm load-catalog
 ```
 
-The backend sees the file at `/data/cves/<CVE_DATASET_FILENAME>` through
-`CVE_DATASET_PATH`. With no mount, `/cves` uses the PostgreSQL cache and then
-the live provider; responses identify `prepared_dataset`, `postgres_cache`, or
-`live_provider` (`GET /cves` search responses use the
-`X-CVE-Lookup-Source` header), and lookup failures state that both fallbacks
-missed. The scan endpoint also uses the dataset's description and missing score
-fields for its ML advisory when the provider has no network response.
+The loader streams the read-only CSV in batches, upserts idempotently into
+`cve_catalog`, and is never invoked by application startup. The runtime app role
+has SELECT-only privileges on that table. `GET /cves/{cve_id}` reports
+`catalog`, `postgres_cache`, or `live_provider`; when the catalog is empty or
+does not contain an ID, a live provider miss returns an explicit unavailable
+response. `GET /cves` search uses the catalog and cache and reports its source in
+`X-CVE-Lookup-Source`. Scans use catalog descriptions and missing score fields
+for their ML advisory when the live provider has no network response.
+
+For reproducible host-side distribution evidence, run
+`python -m scripts.priority_distribution`; it samples 20 KEV and 20 non-KEV
+CVEs with a fixed seed and compares the rules and `ml_asset` tiers on two
+hypothetical assets. Its checked-in output is `docs/priority_distribution.txt`.
 
 `POST /token` returns a typed bearer-token response. Authenticated `GET /intel/{cve_id}` validates identifiers using the same `CVE-YYYY-NNNN...` format as scans and returns EPSS/CVSS plus the NVD description, CVSS vector, CWE, and publication date as nullable values. A provider failure or missing score is not represented as a numeric zero.
 
@@ -259,7 +263,7 @@ The scorer evaluates CVSS, EPSS, recorded KEV status, internet exposure, and ass
 
 The additional calibrated XGBoost likelihood uses only CVSS score/vector, CWE, and the publication-time NVD description; KEV and EPSS are explicitly excluded from its feature list. ML risk is `likelihood × exposure_factor × criticality_factor`: Internet exposure is 1.5, Internal is 1.0, and criticality 1-5 maps linearly from 0.6 to 1.4. The P99/P90/P50 risk thresholds are derived from the 2025 validation-set risk distribution, not the test set. Factors, thresholds, mode, the known-exploited High floor, and recommended-action templates are centralized in [`backend/rules_config.py`](./backend/rules_config.py).
 
-In `deterministic` mode, `final_priority` is the rule-matrix tier and its source is `rules`. In `ml_asset` mode, a successful prediction makes `final_priority` the ML priority (`ml`); absent ML output falls back to the rule-matrix tier (`rules`). If a KEV-flagged finding's ML tier is below High, a rules-layer floor raises it to High and records `ml+kev_floor`. KEV remains a runtime fact and never enters model features. The Model Results screen preserves the negative test result (PR-AUC 0.0114 vs CVSS 0.0117) and validation reference (0.0352); that result is a reason to keep deterministic mode as the default. Missing model inputs or artifacts leave ML fields null with an explicit reason.
+In `deterministic` mode, `final_priority` is the rule-matrix tier and its source is `rules`. In `ml_asset` mode, a successful prediction makes `final_priority` the ML priority (`ml`); absent ML output falls back to the rule-matrix tier (`rules`). If a KEV-flagged finding's ML tier is below High, a rules-layer floor raises it to High and records `ml+kev_floor`. KEV remains a runtime fact and never enters model features. The API `/me` response and UI label the active mode. The drawer and Model Results screen preserve the negative test result (PR-AUC 0.0114 vs CVSS 0.0117) and validation reference (0.0352); the result remains visible even though `ml_asset` is the requested default. Missing model inputs or artifacts leave ML fields null with an explicit reason.
 
 The authenticated `GET /model/results` endpoint and **Model Results** screen are available to all roles. They read evaluation outputs from `docs/results/` without modifying them. Recorded model coverage is XGBoost on Test 2026 and Validation 2025, Logistic Regression on Validation 2025, and Random Forest not available. The frozen test result is negative: XGBoost PR-AUC 0.0114 versus CVSS 0.0117; XGBoost also trails CVSS at P@100 and P@500. Validation reference PR-AUC is 0.0352. EPSS is shown as a hindsight baseline, not a prospective comparison. Metrics not present in the recorded results are shown as not available.
 
@@ -304,10 +308,11 @@ administrator. Successful and failed login attempts are audited with the
 attempted username and timestamp; passwords are never written to audit details.
 Failed attempts for existing and unknown usernames return the same response.
 
-## Research: offline ML evaluation (negative result; deterministic remains default)
+## Research: offline ML evaluation (negative result; ML-asset proposal default)
 
-The calibrated XGBoost model is an experimental priority input only when
-`PRIORITY_MODE=ml_asset`; the default remains `deterministic`. The frozen
+The calibrated XGBoost model is an experimental priority input when
+`PRIORITY_MODE=ml_asset`, which is the proposal default; `deterministic` remains
+selectable. The frozen
 single-pass evaluation on 61,611 held-out rows
 (122 positives) reported test PR-AUC 0.0114 versus 0.0117 +/- 0.0018 for CVSS.
 The paired-bootstrap mean PR-AUC difference was -0.0004 (95% CI: -0.0081 to
@@ -337,7 +342,7 @@ there is no SQLite fallback. Prepare a dedicated `.env.verify` file with
 throwaway credentials, then run the full suite in an isolated Compose project:
 
 ```powershell
-docker compose -p sv_verify3 --env-file .env.verify --profile postgres-tests run --build --rm backend-tests
+docker compose -p sv_verify4 --env-file .env.verify --profile postgres-tests run --rm backend-tests
 ```
 
 For `pytest` outside Compose, set the explicit test flag and both PostgreSQL

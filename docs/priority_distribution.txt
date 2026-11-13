@@ -1,0 +1,12 @@
+Seed: 42
+Sample: 40 real CVEs (20 KEV, 20 non-KEV); 40 selected from published year >= 2026.
+Selection: independent reservoir sampling within KEV strata; prefer published years after the 2025 validation period, falling back per stratum to all publication years if fewer than 20 are available.
+Hypothetical assets: Internet-facing criticality 5; Internal criticality 2.
+Scenarios: 40 CVEs x 2 assets = 80.
+
+Mode          Critical  High  Medium  Low
+deterministic       21    28      17   14
+ml_asset             0    40       0   40
+
+Tiers differing between rule matrix and ml_asset: 46 of 80 scenarios.
+Raised by known-exploited floor: 40 of 80 scenarios.
