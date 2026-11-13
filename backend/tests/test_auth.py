@@ -9,7 +9,7 @@ from pathlib import Path
 
 from backend.main import app
 from backend.database import Base, get_db
-from backend import auth
+from backend import auth, main
 from backend.models import User, AuditLog
 from backend.tests.db_helpers import create_test_engine
 
@@ -145,7 +145,12 @@ def test_me_returns_the_authenticated_user(client):
     ).json()["access_token"]
     response = client.get("/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
-    assert response.json() == {"id": 1, "username": "admin", "role": "admin"}
+    assert response.json() == {
+        "id": 1,
+        "username": "admin",
+        "role": "admin",
+        "priority_mode": main.PRIORITY_MODE,
+    }
 
 
 def test_protected_routes_reject_missing_or_invalid_jwt(client):

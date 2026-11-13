@@ -19,6 +19,7 @@ services:
     restart: unless-stopped
 
   backend:
+    image: ${BACKEND_IMAGE:-securevision-backend:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -26,7 +27,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:?Set ADMIN_INITIAL_PASSWORD in .env}
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      PRIORITY_MODE: ${PRIORITY_MODE:-deterministic}
+      PRIORITY_MODE: ${PRIORITY_MODE:-ml_asset}
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       SECUREVISION_DEMO_MODE: "true"
     ports:
@@ -43,12 +44,13 @@ services:
         - -c
         - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/docs', timeout=3)"
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 5
       start_period: 30s
     restart: unless-stopped
 
   migrate:
+    image: ${BACKEND_IMAGE:-securevision-backend:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -78,6 +80,7 @@ services:
 
   backend-tests:
     profiles: ["postgres-tests"]
+    image: ${BACKEND_IMAGE:-securevision-backend:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -89,7 +92,7 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
       MIGRATION_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       POSTGRES_APP_USER: ${POSTGRES_APP_USER:?Set POSTGRES_APP_USER in .env}
-      PRIORITY_MODE: ${PRIORITY_MODE:-deterministic}
+      PRIORITY_MODE: ${PRIORITY_MODE:-ml_asset}
       SECUREVISION_POSTGRES_TESTS: "1"
       CORS_ORIGINS: http://testserver
     volumes:

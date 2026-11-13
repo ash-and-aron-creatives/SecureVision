@@ -48,7 +48,6 @@ function Write-BackendEnv($settings) {
         "PRIORITY_MODE=$($settings["PRIORITY_MODE"])",
         "DATABASE_URL=$($settings["DATABASE_URL"])",
         "MIGRATION_DATABASE_URL=$($settings["MIGRATION_DATABASE_URL"])",
-        "CVE_DATASET_PATH=$($settings["CVE_DATASET_PATH"])",
         "CVE_DATASET_FILENAME=$($settings["CVE_DATASET_FILENAME"])",
         "CVE_DATASET_HOST_PATH=$($settings["CVE_DATASET_HOST_PATH"])",
         "CORS_ORIGINS=$($settings["CORS_ORIGINS"])"
@@ -71,10 +70,9 @@ try {
         POSTGRES_PASSWORD = New-RandomUrlSafeValue 32
         POSTGRES_APP_USER = "securevision_app"
         POSTGRES_APP_PASSWORD = New-RandomUrlSafeValue 32
-        PRIORITY_MODE = "deterministic"
+        PRIORITY_MODE = "ml_asset"
         CVE_DATASET_FILENAME = "master_cves_2026-10-08.csv"
         CVE_DATASET_HOST_PATH = ".\data\processed\master_cves_2026-10-08.csv"
-        CVE_DATASET_PATH = ".\data\processed\master_cves_2026-10-08.csv"
         CORS_ORIGINS = "http://localhost:3000"
     }
 

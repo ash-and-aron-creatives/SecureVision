@@ -1,4 +1,5 @@
 export type UserRole = "admin" | "analyst" | "viewer";
+export type PriorityMode = "ml_asset" | "deterministic";
 
 export interface Finding {
   id: number;
@@ -171,6 +172,13 @@ export interface LoginResponse {
   token_type: "bearer";
   role: UserRole;
   username: string;
+}
+
+export interface CurrentUser {
+  id: number;
+  username: string;
+  role: UserRole;
+  priority_mode: PriorityMode;
 }
 
 export interface IntelResponse {

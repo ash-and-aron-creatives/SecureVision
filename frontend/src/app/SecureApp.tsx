@@ -4,10 +4,12 @@ import { ApiRequestError, requestApi } from "../api/client";
 import type {
   Asset,
   AuditEntry,
+  CurrentUser,
   DashboardAnalytics,
   Finding,
   LoginResponse,
   ModelResults,
+  PriorityMode,
   UserItem,
   UserRole,
 } from "../types";
@@ -55,6 +57,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     return savedRole === "admin" || savedRole === "analyst" || savedRole === "viewer" ? savedRole : "";
   });
   const [currentUser, setCurrentUser] = useState<string>(() => getStoredValue("sv_user") ?? "");
+  const [priorityMode, setPriorityMode] = useState<PriorityMode | null>(null);
 
   // Feature data
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
@@ -103,6 +106,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     setToken(null);
     setRole("");
     setCurrentUser("");
+    setPriorityMode(null);
     setActiveTab("dashboard");
     setFindings([]);
     setAssets([]);
@@ -144,6 +148,24 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
       throw requestError;
     }
   }, [handleLogout]);
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    void requestApi<CurrentUser>("/me", token)
+      .then((profile) => {
+        if (active) setPriorityMode(profile.priority_mode);
+      })
+      .catch((requestError: unknown) => {
+        if (active) {
+          setActionMessage(
+            requestError instanceof Error ? requestError.message : "Unable to load the active priority mode.",
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [apiRequest, token]);
   useEffect(() => {
     if (!token || activeTab !== "model-results") return;
     let active = true;
@@ -299,6 +321,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   const headingColor = darkMode ? "text-white" : "text-[#1D0C3B]";
   const mutedText = darkMode ? "text-white/55" : "text-slate-400";
   const viewProps: SecureAppViewProps = {
+    priorityMode,
     activeTab, tabAnimKey, surfaceCard, headingColor, mutedText, switchTab, darkMode, exportExecutiveReport,
     criticalCount, highCount, mediumCount, lowCount, subSurfaceCard, itemSurface, getTier, weeklyBars, analytics,
     completionPct, totalCount, resolvedCount, displayFindings, setTierFilter, tierFilter, exportPriorityCsv, filteredFindings,
@@ -692,6 +715,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
         {activeTab === "model-results" && (
           <ModelResultsView
             data={modelResults}
+            priorityMode={priorityMode}
             loading={modelResults === null && modelResultsError === null}
             error={modelResultsError}
             surfaceCard={surfaceCard}

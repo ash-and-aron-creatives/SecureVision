@@ -451,13 +451,12 @@ def test_ml_asset_mode_falls_back_to_rules_when_prediction_is_unavailable(api, m
     assert "in_kev" not in seen and "epss_percentile" not in seen
 
 
-def test_scan_uses_prepared_dataset_description_when_live_lookup_is_offline(api, monkeypatch):
+def test_scan_uses_catalog_description_when_live_lookup_is_offline(api, monkeypatch):
     seen = {}
-    monkeypatch.setattr(main, "dataset_available", lambda: True)
     monkeypatch.setattr(
         main,
-        "lookup_cve",
-        lambda cve_id, dataset_path: {
+        "lookup_catalog",
+        lambda db, cve_id: {
             "cve_id": cve_id,
             "description": "Description from the prepared dataset.",
             "cvss_score": 8.0,

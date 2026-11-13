@@ -3,7 +3,7 @@ import type { SecureAppViewProps } from "@/types/views";
 
 export function FindingDetailsDrawer(props: SecureAppViewProps) {
   const {
-    toggleFindingStatus, selectedFinding, setSelectedFinding, role,
+    toggleFindingStatus, selectedFinding, setSelectedFinding, role, priorityMode,
   } = props;
   return (selectedFinding && (() => {
         const isResolved = selectedFinding.status.toUpperCase() === "RESOLVED";
@@ -44,6 +44,11 @@ export function FindingDetailsDrawer(props: SecureAppViewProps) {
                   <span className="mt-3 inline-flex text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#E5007D]/25 text-pink-200 border border-[#E5007D]/40">
                     Final priority: {selectedFinding.final_priority}
                   </span>
+                  {priorityMode && (
+                    <span className="ml-2 mt-3 inline-flex text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-white/10 text-white/75 border border-white/15">
+                      Mode: {priorityMode}
+                    </span>
+                  )}
                   {selectedFinding.priority_source === "ml+kev_floor" && (
                     <p className="mt-2 text-xs font-semibold text-amber-300">
                       Raised by known-exploited floor

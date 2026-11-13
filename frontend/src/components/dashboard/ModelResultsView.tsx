@@ -10,10 +10,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { ModelResults } from "@/types";
+import type { ModelResults, PriorityMode } from "@/types";
 
 interface ModelResultsViewProps {
   data: ModelResults | null;
+  priorityMode: PriorityMode | null;
   loading: boolean;
   error: string | null;
   surfaceCard: string;
@@ -28,6 +29,7 @@ function formatMetric(value: number | null): string {
 
 export function ModelResultsView({
   data,
+  priorityMode,
   loading,
   error,
   surfaceCard,
@@ -57,7 +59,7 @@ export function ModelResultsView({
           <p className={`mt-1 text-sm ${mutedText}`}>Recorded evaluation metrics only; missing metrics are not inferred.</p>
         </div>
         <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-xs font-bold text-amber-300">
-          Experimental priority mode
+          Active mode: {priorityMode ?? "loading"}
         </span>
       </div>
 

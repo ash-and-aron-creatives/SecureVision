@@ -5,6 +5,7 @@ import type {
   DashboardAnalytics,
   Finding,
   ImportPreview,
+  PriorityMode,
   UserItem,
   UserRole,
 } from "./index";
@@ -24,6 +25,7 @@ export interface LoginViewProps {
 }
 
 export interface SecureAppViewProps {
+  priorityMode: PriorityMode | null;
   activeTab: string;
   tabAnimKey: number;
   surfaceCard: string;
