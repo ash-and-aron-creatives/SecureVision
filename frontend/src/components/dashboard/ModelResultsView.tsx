@@ -48,6 +48,9 @@ export function ModelResultsView({
       "P@50": row.precision_at_k["50"],
       "P@100": row.precision_at_k["100"],
       "P@500": row.precision_at_k["500"],
+      "R@50": row.recall_at_k["50"],
+      "R@100": row.recall_at_k["100"],
+      "R@500": row.recall_at_k["500"],
     }));
   const chartColor = darkMode ? "#D5CDE6" : "#475569";
 
@@ -73,14 +76,14 @@ export function ModelResultsView({
             <p className={`mt-2 text-sm leading-relaxed ${headingColor}`}>{data.conclusion || "not available"}</p>
           </div>
           <p className={`mt-3 text-xs ${mutedText}`}>
-            Recorded model splits: XGBoost — Test 2026 and Validation 2025; Logistic Regression — Validation 2025 only (Test 2026 not available); Random Forest — not available.
+            Validation 2025 comparison: XGBoost, Logistic Regression (152 features), Random Forest (152 features), CVSS-only, and EPSS hindsight baseline. Existing Test 2026 rows are shown separately.
           </p>
 
           <div className={`mt-5 overflow-x-auto rounded-2xl border ${darkMode ? "border-white/10" : "border-slate-200"}`}>
-            <table className="min-w-[1180px] w-full text-left text-xs">
+            <table className="min-w-[1420px] w-full text-left text-xs">
               <thead className={darkMode ? "bg-white/5 text-white/60" : "bg-slate-50 text-slate-500"}>
                 <tr>
-                  {["Model", "Dataset / split", "PR-AUC", "Precision", "Recall", "F1", "P@50", "P@100", "P@500", "ROC-AUC", "Notes"].map((label) => (
+                  {["Model", "Dataset / split", "PR-AUC", "Precision", "Recall", "F1", "P@50", "P@100", "P@500", "R@50", "R@100", "R@500", "ROC-AUC", "Notes"].map((label) => (
                     <th key={label} className="px-3 py-3 font-bold">{label}</th>
                   ))}
                 </tr>
@@ -97,6 +100,9 @@ export function ModelResultsView({
                     <td className="px-3 py-3">{formatMetric(row.precision_at_k["50"] ?? null)}</td>
                     <td className="px-3 py-3">{formatMetric(row.precision_at_k["100"] ?? null)}</td>
                     <td className="px-3 py-3">{formatMetric(row.precision_at_k["500"] ?? null)}</td>
+                    <td className="px-3 py-3">{formatMetric(row.recall_at_k["50"] ?? null)}</td>
+                    <td className="px-3 py-3">{formatMetric(row.recall_at_k["100"] ?? null)}</td>
+                    <td className="px-3 py-3">{formatMetric(row.recall_at_k["500"] ?? null)}</td>
                     <td className="px-3 py-3">{formatMetric(row.roc_auc)}</td>
                     <td className="px-3 py-3">{row.note ?? "not available"}</td>
                   </tr>

@@ -309,10 +309,35 @@ def test_model_results_requires_auth_and_is_available_to_every_role(api):
             for row in body["models"]
         )
         random_forest = next(
-            row for row in body["models"] if row["name"] == "Random Forest"
+            row for row in body["models"]
+            if row["name"] == "Random Forest"
+            and row["dataset"] == "Validation 2025"
         )
-        assert random_forest["dataset"] == "not available"
-        assert random_forest["pr_auc"] is None
+        assert random_forest["pr_auc"] is not None
+        assert random_forest["precision"] is not None
+        assert random_forest["recall"] is not None
+        assert random_forest["f1"] is not None
+        assert random_forest["roc_auc"] is not None
+        assert set(random_forest["precision_at_k"]) == {"50", "100", "500"}
+        assert set(random_forest["recall_at_k"]) == {"50", "100", "500"}
+        for model_name in (
+            "XGBoost calibrated",
+            "Logistic Regression (152 features)",
+            "Random Forest",
+            "CVSS-only baseline",
+            "EPSS baseline",
+        ):
+            row = next(
+                item for item in body["models"]
+                if item["name"] == model_name
+                and item["dataset"] == "Validation 2025"
+            )
+            assert all(
+                row[field] is not None
+                for field in ("pr_auc", "precision", "recall", "f1", "roc_auc")
+            )
+            assert set(row["precision_at_k"]) == {"50", "100", "500"}
+            assert set(row["recall_at_k"]) == {"50", "100", "500"}
 
     assert client.get("/audit", headers=api["headers_for"]("viewer")).status_code == 403
 

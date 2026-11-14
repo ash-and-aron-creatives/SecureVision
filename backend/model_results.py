@@ -1,8 +1,13 @@
+import json
 import re
 from pathlib import Path
 from typing import Any
 
-from backend.rules_config import DECISION_LOG_PATH, MODEL_RESULTS_DIRECTORY
+from backend.rules_config import (
+    DECISION_LOG_PATH,
+    MODEL_RESULTS_DIRECTORY,
+    REPOSITORY_ROOT,
+)
 
 
 _METRIC_PATTERNS = {
@@ -15,6 +20,14 @@ _METRIC_PATTERNS = {
     "xgboost_cvss_validation": r"XGB 1_CVSS Mean Val PR:\s*([\d.]+) \+/- ([\d.]+)",
     "xgboost_text_validation": r"XGB 4_Text_Masked Mean Val PR:\s*([\d.]+) \+/- ([\d.]+)",
 }
+
+OFFLINE_COMPARISON_PATH = (
+    REPOSITORY_ROOT
+    / "docs"
+    / "results_offline"
+    / "2026-11-14"
+    / "val2025_comparison.json"
+)
 
 
 def _find_values(pattern: str, text: str) -> tuple[float | None, ...]:
@@ -52,6 +65,10 @@ def _row(
     pr_auc_stddev: float | None = None,
     precision_at_k: dict[str, float | None] | None = None,
     recall_at_k: dict[str, float | None] | None = None,
+    precision: float | None = None,
+    recall: float | None = None,
+    f1: float | None = None,
+    roc_auc: float | None = None,
     note: str | None = None,
 ) -> dict[str, Any]:
     return {
@@ -59,14 +76,39 @@ def _row(
         "dataset": dataset,
         "pr_auc": pr_auc,
         "pr_auc_stddev": pr_auc_stddev,
-        "precision": None,
-        "recall": None,
-        "f1": None,
-        "roc_auc": None,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "roc_auc": roc_auc,
         "precision_at_k": precision_at_k or {},
         "recall_at_k": recall_at_k or {},
         "note": note,
     }
+
+
+def _offline_row(result: dict[str, Any]) -> dict[str, Any]:
+    metrics = result["metrics"]
+    threshold = result["threshold"]
+    note = f"Validation 2025; training-selected F1 threshold={threshold:.6g}."
+    if result.get("feature_count"):
+        note = f"{note} {result['feature_count']} model features."
+    if result.get("note"):
+        note = f"{note} {result['note']}"
+    if result.get("calibration_note"):
+        note = f"{note} Frozen calibration: {result['calibration_note']}."
+    return _row(
+        result["name"],
+        "Validation 2025",
+        pr_auc=metrics["pr_auc"],
+        pr_auc_stddev=metrics["pr_auc_stddev"],
+        precision=metrics["precision"],
+        recall=metrics["recall"],
+        f1=metrics["f1"],
+        roc_auc=metrics["roc_auc"],
+        precision_at_k=metrics["precision_at_k"],
+        recall_at_k=metrics["recall_at_k"],
+        note=note,
+    )
 
 
 def _decision_conclusion() -> str:
@@ -88,6 +130,16 @@ def read_model_results() -> dict[str, Any]:
     pipeline_path = MODEL_RESULTS_DIRECTORY / "pipeline_output.txt"
     p5 = p5_path.read_text(encoding="utf-8-sig") if p5_path.is_file() else ""
     pipeline = pipeline_path.read_text(encoding="utf-8-sig") if pipeline_path.is_file() else ""
+    offline_results = (
+        json.loads(OFFLINE_COMPARISON_PATH.read_text(encoding="utf-8-sig"))
+        if OFFLINE_COMPARISON_PATH.is_file()
+        else None
+    )
+    offline_by_name = (
+        {result["name"]: result for result in offline_results["models"]}
+        if offline_results is not None
+        else {}
+    )
 
     xgb_test, = _find_values(_METRIC_PATTERNS["xgboost_test"], p5)
     cvss_test_values = _find_values(_METRIC_PATTERNS["cvss_test"], p5)
@@ -122,7 +174,9 @@ def read_model_results() -> dict[str, Any]:
             recall_at_k=epss_recall,
             note="Hindsight snapshot; not a like-for-like prospective baseline.",
         ),
-        _row(
+        _offline_row(offline_by_name["XGBoost calibrated"])
+        if "XGBoost calibrated" in offline_by_name
+        else _row(
             "XGBoost calibrated",
             "Validation 2025",
             xgb_validation,
@@ -154,19 +208,27 @@ def read_model_results() -> dict[str, Any]:
             *xgb_text_values,
             note="Validation ablation; not a separate test result.",
         ),
-        _row(
-            "Random Forest",
-            "not available",
-            note="No Random Forest evaluation is recorded in docs/results.",
-        ),
     ]
+    for model_name in (
+        "Logistic Regression (152 features)",
+        "Random Forest",
+        "CVSS-only baseline",
+        "EPSS baseline",
+    ):
+        if model_name in offline_by_name:
+            models.append(_offline_row(offline_by_name[model_name]))
 
     return {
         "models": models,
         "conclusion": _decision_conclusion(),
         "source_files": [
             str(path.relative_to(MODEL_RESULTS_DIRECTORY.parent.parent))
-            for path in (pipeline_path, p5_path, DECISION_LOG_PATH)
+            for path in (
+                pipeline_path,
+                p5_path,
+                OFFLINE_COMPARISON_PATH,
+                DECISION_LOG_PATH,
+            )
             if path.is_file()
         ],
     }

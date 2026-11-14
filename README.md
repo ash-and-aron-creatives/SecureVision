@@ -1,6 +1,6 @@
 # SecureVision
 
-SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. It provides selectable deterministic or ML-plus-asset priority modes, an explainable 320-rule cross-check, role-based access control (RBAC), an immutable audit log, scanner CSV import, and CVE intelligence lookup. The default `PRIORITY_MODE=ml_asset` uses the experimental ML risk tier when available and falls back to the rule matrix otherwise; `deterministic` remains selectable. The recorded test evaluation is negative (PR-AUC 0.0114 vs CVSS 0.0117), so the active mode label and rule-matrix cross-check remain visible.
+SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. It provides selectable deterministic or ML-plus-asset priority modes, an explainable 320-rule cross-check, role-based access control (RBAC), an immutable audit log, scanner CSV import, and CVE intelligence lookup. The code default is `PRIORITY_MODE=deterministic`; `ml_asset` is the proposal target mode and uses the experimental ML risk tier when available, falling back to the rule matrix otherwise. The recorded test evaluation is negative (PR-AUC 0.0114 vs CVSS 0.0117), so the active mode label and rule-matrix cross-check remain visible.
 
 ## Requirements
 
@@ -87,7 +87,7 @@ service and maintenance/test tools, not the backend service.
 | `ADMIN_INITIAL_PASSWORD` | Password used when bootstrapping or rotating the `admin` account; must be at least 8 characters. |
 | `DATABASE_URL` | Required SQLAlchemy PostgreSQL runtime URL for the app role. |
 | `MIGRATION_DATABASE_URL` | Owner/migrator URL supplied only to the migration service and explicit maintenance/test tools. |
-| `PRIORITY_MODE` | `ml_asset` (default) or `deterministic`; selects which available tier is persisted as final priority. |
+| `PRIORITY_MODE` | `deterministic` (code default) or `ml_asset` (proposal target); selects which available tier is persisted as final priority. |
 | `POSTGRES_DB` | PostgreSQL database name supplied to the Compose database service. |
 | `POSTGRES_USER` | Owner/migrator login supplied to the Compose database service. |
 | `POSTGRES_PASSWORD` | Owner/migrator password; use a private, URL-safe value. |

@@ -46,10 +46,12 @@ XGBoost P@100 is `0.0000` vs `0.0428` for CVSS and P@500 is `0.0060` vs
 `0.0243`. This is a negative result: the evidence does not establish an
 improvement. Source: `docs/results/p5/p5_console.log`, `docs/P5_protocol.md`,
 and `Decision_Log.md`. Validation reference PR-AUC is `0.0352`. Recorded split
-availability is XGBoost (Test 2026 and Validation 2025), Logistic Regression
-(Validation 2025), and Random Forest (not available). See `docs/ML_GAPS.md` for
-offline comparison requirements. The negative test result is why deterministic
-mode remains the default.
+availability now includes the five-way Validation 2025 comparison:
+XGBoost, 152-feature Logistic Regression, tuned Random Forest, CVSS-only, and
+EPSS hindsight baseline. See `docs/results_offline/2026-11-14/` for full
+metrics and predictions. The new comparison does not change the prior Test
+2026 result; the negative test result is why deterministic mode remains the
+code default.
 
 ### How was time separation handled?
 
