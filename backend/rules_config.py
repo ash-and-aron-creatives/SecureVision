@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 PRIORITY_MODES = ("ml_asset", "deterministic")
-PRIORITY_MODE = os.environ.get("PRIORITY_MODE", "ml_asset").strip().casefold()
+PRIORITY_MODE = os.environ.get("PRIORITY_MODE", "deterministic").strip().casefold()
 if PRIORITY_MODE not in PRIORITY_MODES:
     raise ValueError(f"PRIORITY_MODE must be one of: {', '.join(PRIORITY_MODES)}.")
 KNOWN_EXPLOITED_FLOOR = "High"

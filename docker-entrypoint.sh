@@ -6,4 +6,4 @@ set -eu
 if [ "${SECUREVISION_DEMO_MODE:-false}" = "true" ]; then
     python -m backend.demo_seed
 fi
-exec uvicorn backend.main:app --host 0.0.0.0 --port 8000
+exec uvicorn backend.main:app --host 0.0.0.0 --port 8000 --log-level "${LOG_LEVEL:-info}"

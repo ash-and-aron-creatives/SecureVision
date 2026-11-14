@@ -22,13 +22,17 @@ import hashlib
 import csv
 import io
 import json
+import logging
 import os
 import re
+import threading
+import time
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 
 from backend import models, auth
 from backend.database import get_db
-from backend.ml_inference import predict_exploit_likelihood
+from backend.ml_inference import predict_exploit_likelihood, warm_up_model
 from backend.cve_dataset import lookup_catalog, search_catalog
 from backend.rules_config import CVE_SEARCH_MAX_RESULTS, LOGIN_USERNAME_MAX_LENGTH, PRIORITY_MODE
 from backend.scoring_engine import TIER_SCORES, calculate_priority, resolve_final_priority
@@ -57,7 +61,28 @@ from backend.schemas import (
     UserResponse,
 )
 
-app = FastAPI(title="SecureVision Backend API")
+_LOGGER = logging.getLogger(__name__)
+
+
+def start_ml_warmup() -> None:
+    try:
+        worker = threading.Thread(
+            target=warm_up_model,
+            name="ml-model-warmup",
+            daemon=True,
+        )
+        worker.start()
+    except Exception:
+        _LOGGER.exception("Could not start the ML warm-up thread.")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    start_ml_warmup()
+    yield
+
+
+app = FastAPI(title="SecureVision Backend API", lifespan=lifespan)
 cors_origins = [
     origin.strip()
     for origin in os.getenv("CORS_ORIGINS", "").split(",")
@@ -343,7 +368,14 @@ def _cve_from_intel(info: dict) -> dict:
 
 
 def _enrich_from_catalog(db: Session, info: dict, cve_id: str) -> dict:
+    catalog_started = time.perf_counter()
     dataset_record = lookup_catalog(db, cve_id)
+    _LOGGER.debug(
+        "scan.catalog_lookup cve_id=%s hit=%s elapsed_ms=%.3f",
+        cve_id,
+        dataset_record is not None,
+        (time.perf_counter() - catalog_started) * 1000,
+    )
     if dataset_record is None:
         return info
     fields = (
@@ -500,6 +532,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
             )
     internet_facing = (asset.exposure.lower() == "internet")
     scoring = calculate_priority(req.in_kev, internet_facing, asset.criticality, epss_percentile, cvss_score)
+    inference_started = time.perf_counter()
     ml_assessment = await run_in_threadpool(
         predict_exploit_likelihood,
         cvss_score=cvss_score,
@@ -509,11 +542,17 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
         exposure=asset.exposure,
         criticality=asset.criticality,
     )
+    _LOGGER.debug(
+        "scan.ml_inference cve_id=%s elapsed_ms=%.3f",
+        cve_clean,
+        (time.perf_counter() - inference_started) * 1000,
+    )
     rule_tier = scoring["tier"]
     final_tier, priority_source = resolve_final_priority(
         rule_tier, ml_assessment["priority"], req.in_kev
     )
 
+    persistence_started = time.perf_counter()
     finding = (
         db.query(models.Finding)
         .filter(
@@ -610,6 +649,12 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
             details=f"finding_id={finding.id} Finding {action}: scanned {cve_clean} on {asset.name} -> {final_tier}",
         ))
         db.commit()
+        _LOGGER.debug(
+            "scan.persistence cve_id=%s action=%s elapsed_ms=%.3f",
+            cve_clean,
+            action,
+            (time.perf_counter() - persistence_started) * 1000,
+        )
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(

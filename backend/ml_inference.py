@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import TypedDict
@@ -42,6 +43,7 @@ class _DescriptionPreprocessor:
 
 @lru_cache(maxsize=1)
 def _load_bundle() -> tuple[object, object, list[str], str, dict]:
+    bundle_started = time.perf_counter()
     try:
         import joblib
         import numpy as np
@@ -68,8 +70,12 @@ def _load_bundle() -> tuple[object, object, list[str], str, dict]:
     if not transformer_path.is_file():
         raise FileNotFoundError(f"Frozen text transformer is missing: {TFIDF_TRANSFORMER_FILENAME}")
 
+    model_started = time.perf_counter()
     model = joblib.load(model_path)
+    model_load_ms = (time.perf_counter() - model_started) * 1000
+    transformer_started = time.perf_counter()
     transformer = joblib.load(transformer_path)
+    transformer_load_ms = (time.perf_counter() - transformer_started) * 1000
     features = config.get("features")
     if not isinstance(features, list) or not all(isinstance(item, str) for item in features):
         raise ValueError("Frozen model feature list is invalid.")
@@ -91,6 +97,12 @@ def _load_bundle() -> tuple[object, object, list[str], str, dict]:
         raise ValueError("Frozen text transformer does not match frozen_config.json.")
 
     version = f"{model_filename}:{expected_hash[:12]}"
+    _LOGGER.debug(
+        "ml.artifact_load model_ms=%.3f tfidf_ms=%.3f total_ms=%.3f",
+        model_load_ms,
+        transformer_load_ms,
+        (time.perf_counter() - bundle_started) * 1000,
+    )
     return model, transformer, features, version, config
 
 
@@ -179,6 +191,7 @@ def _feature_label(feature: str) -> str:
 def _explanation_contributions(classifier: object, matrix: object, features: list[str]):
     import numpy as np
 
+    shap_started = time.perf_counter()
     try:
         import shap
 
@@ -190,10 +203,19 @@ def _explanation_contributions(classifier: object, matrix: object, features: lis
             values = values[:, :, -1]
         if values.shape != (1, len(features)):
             raise ValueError("SHAP returned an unexpected feature shape.")
+        _LOGGER.debug(
+            "ml.explanation method=shap elapsed_ms=%.3f",
+            (time.perf_counter() - shap_started) * 1000,
+        )
         return values[0]
     except Exception:
+        _LOGGER.debug(
+            "ml.explanation method=shap outcome=failed elapsed_ms=%.3f",
+            (time.perf_counter() - shap_started) * 1000,
+        )
         _LOGGER.warning("SHAP explanation failed; trying native XGBoost contributions.", exc_info=True)
 
+    native_started = time.perf_counter()
     try:
         from xgboost import DMatrix
 
@@ -202,8 +224,16 @@ def _explanation_contributions(classifier: object, matrix: object, features: lis
         )[0][:-1]
         if values.shape != (len(features),):
             raise ValueError("XGBoost returned an unexpected contribution shape.")
+        _LOGGER.debug(
+            "ml.explanation method=native_xgboost elapsed_ms=%.3f",
+            (time.perf_counter() - native_started) * 1000,
+        )
         return values
     except Exception:
+        _LOGGER.debug(
+            "ml.explanation method=native_xgboost outcome=failed elapsed_ms=%.3f",
+            (time.perf_counter() - native_started) * 1000,
+        )
         _LOGGER.warning("Native XGBoost explanation failed; factors are unavailable.", exc_info=True)
         return None
 
@@ -261,3 +291,32 @@ def predict_exploit_likelihood(
         }
     except (ImportError, AttributeError, TypeError, ValueError, RuntimeError) as exc:
         return _unavailable(f"Prediction unavailable: {exc}", model_version)
+
+
+def warm_up_model() -> None:
+    started = time.perf_counter()
+    try:
+        assessment = predict_exploit_likelihood(
+            7.5,
+            "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "CWE-79",
+            "SecureVision startup warm-up description.",
+            "Internal",
+            3,
+        )
+    except Exception:
+        _LOGGER.exception(
+            "ML startup warm-up failed after %.3f ms.",
+            (time.perf_counter() - started) * 1000,
+        )
+        return
+
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    if assessment["unavailable_reason"] is not None:
+        _LOGGER.warning(
+            "ML startup warm-up unavailable after %.3f ms: %s",
+            elapsed_ms,
+            assessment["unavailable_reason"],
+        )
+        return
+    _LOGGER.info("ML startup warm-up completed in %.3f ms.", elapsed_ms)
