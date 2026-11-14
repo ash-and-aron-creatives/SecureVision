@@ -85,9 +85,9 @@ their prefixes in `backend/users.py` and `backend/reports.py`.
 | GET | `/cves` | Authenticated | `list[CVEResponse]` |
 | GET | `/intel/{cve_id}` | Authenticated | `IntelResponse` |
 | GET | `/model/results` | Authenticated | `ModelResultsResponse` |
-| POST | `/scan` | Admin, Analyst | `ScanResultResponse` |
-| GET | `/findings` | Authenticated | `FindingsPageResponse` |
-| GET | `/findings/{finding_id}` | Authenticated | `FindingDetailResponse` |
+| POST | `/scan` | Admin, Analyst | `ScanResultResponse` (includes final-tier `recommended_action`) |
+| GET | `/findings` | Authenticated | `FindingsPageResponse` (each finding includes final-tier `recommended_action`) |
+| GET | `/findings/{finding_id}` | Authenticated | `FindingDetailResponse` (includes final-tier `recommended_action`) |
 | PUT | `/findings/{finding_id}/status` | Admin, Analyst | `StatusUpdateResponse` |
 | GET | `/dashboard/analytics` | Authenticated | `DashboardAnalyticsResponse` |
 | GET | `/audit` | Admin | `list[AuditEntryResponse]` |
@@ -204,7 +204,7 @@ configuration file was not re-read for this snapshot.
 
 ## Test collection, dependencies, and limitations
 
-Root `pytest --collect-only -q` in the `postgres-tests` profile collected 497
+Root `pytest --collect-only -q` in the `postgres-tests` profile collected 501
 tests from these files:
 
 | Test file | Count | Test file | Count |
@@ -212,7 +212,7 @@ tests from these files:
 | `test_auth.py` | 8 | `test_cli_sqlite_migration.py` | 1 |
 | `test_csv_import.py` | 27 | `test_cve_lookup.py` | 4 |
 | `test_dashboard_analytics.py` | 4 | `test_demo_seed.py` | 2 |
-| `test_findings_api.py` | 5 | `test_ml_advisory.py` | 12 |
+| `test_findings_api.py` | 9 | `test_ml_advisory.py` | 12 |
 | `test_model_results.py` | 1 | `test_postgres_migrations.py` | 15 |
 | `test_reports.py` | 7 | `test_response_models_and_transactions.py` | 11 |
 | `test_role_based_api.py` | 42 | `test_scan_assets_audit.py` | 12 |
@@ -230,9 +230,16 @@ tests from these files:
 | Next.js | 16.4.5 |
 
 Known limitations: no active scanning, auto-patching, LLM agents, or mobile
-client; no live CISA KEV feed; asset inventory has no search/filter controls;
-LR and RF have no test result; LR hyperparameters are fixed; the XGBoost
-calibrator was fitted on validation; and uncached CVE lookups depend on external
-NVD/FIRST availability. The deterministic mode is the code default. The
-proposal-target default and High KEV floor are documented decisions (D-038,
-D-039, and D-033).
+client; no live CISA KEV feed; LR and RF have no test result; LR hyperparameters
+are fixed; the XGBoost calibrator was fitted on validation; and uncached CVE
+lookups depend on external NVD/FIRST availability. Asset search and exposure,
+environment, and review-status filters are client-side in `AssetsView`.
+The optional prepared catalog loader handles 384,522 rows in about 33 minutes;
+on a fresh clone, uncached single-CVE lookups fall back to the live provider.
+The deterministic mode is the code default. The proposal-target default and
+High KEV floor are documented decisions (D-038, D-039, and D-033).
+
+The current collection count is 501 tests: four per-tier finding-detail cases
+were added for rule-only final-tier action templates. Finding list, detail, and
+scan responses derive `recommended_action` from `final_priority`; the separate
+ML-specific action remains unchanged.

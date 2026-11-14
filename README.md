@@ -248,9 +248,13 @@ $env:CVE_DATASET_HOST_PATH = ".\data\processed\master_cves_2026-10-08.csv"
 docker compose --env-file .env -f docker-compose.yml -f docker-compose.cve-dataset.yml --profile load-catalog run --rm load-catalog
 ```
 
-The loader streams the read-only CSV in batches, upserts idempotently into
-`cve_catalog`, and is never invoked by application startup. The runtime app role
-has SELECT-only privileges on that table. `GET /cves/{cve_id}` reports
+The optional `scripts/load_cve_catalog.py` loader streams the read-only CSV in
+batches, upserts idempotently into `cve_catalog`, and is never invoked by
+application startup. Loading the prepared
+catalog of 384,522 rows takes about 33 minutes. Catalog loading is optional: on
+a fresh clone without a populated catalog, an uncached single-CVE lookup falls
+back to the live provider. The runtime app role has SELECT-only privileges on
+the catalog. `GET /cves/{cve_id}` reports
 `catalog`, `postgres_cache`, or `live_provider`; when the catalog is empty or
 does not contain an ID, a live provider miss returns an explicit unavailable
 response. `GET /cves` search uses the catalog and cache and reports its source in

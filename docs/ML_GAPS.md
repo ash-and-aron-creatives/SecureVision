@@ -69,3 +69,8 @@ Protocol (must match the frozen pipeline):
 7. Report real numbers only, including negative results. State clearly which split each number is from.
 8. Integration: the dated offline result is now read-only in `backend/model_results.py` and displayed with its split label. Newly trained LR/RF are not wired into live scan inference; only the existing frozen XGBoost model is used for ML advisory scoring.
 Deliverables for the report: one results table (models and baselines, same rows), PR curve, top-K chart, and a written paragraph on where each model wins and fails.
+
+## Reviewer notes
+
+- **Precision@K ties:** `ml/run_val2025_comparison.py::_top_k` ranks by descending score and then ascending CVE identifier using `np.lexsort((cve_ids, -scores))`. It takes exactly `min(K, row_count)` entries, so a score tie at the K boundary is resolved by CVE identifier rather than extending the selection past K.
+- **XGBoost precision/recall/F1 threshold:** `ml/run_val2025_comparison.py` calls `_best_f1_threshold` on the unchanged frozen calibrated XGBoost model's probabilities for the 2022-2024 training rows and their labels. The threshold is the one maximizing training F1; `np.argmax` selects the first maximum. That selected threshold (`0.05650065467`) is applied to Validation 2025 to report precision, recall, F1, and the confusion matrix; validation labels do not select it. The model's sigmoid calibrator had previously been fitted on Validation 2025, and this comparison did not refit or modify the frozen artifact.
