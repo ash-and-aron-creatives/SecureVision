@@ -213,8 +213,8 @@ def test_synthetic_demo_final_priority_distribution_by_mode(monkeypatch):
         distributions[mode] = dict(sorted(tiers.items()))
 
     assert distributions == {
-        "deterministic": {"Critical": 1, "Low": 1},
-        "ml_asset": {"Critical": 1, "Low": 1},
+        "deterministic": {"Critical": 15, "High": 15, "Low": 5, "Medium": 5},
+        "ml_asset": {"Critical": 15, "High": 15, "Low": 5, "Medium": 5},
     }
 
 

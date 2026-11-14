@@ -145,12 +145,15 @@ def test_me_returns_the_authenticated_user(client):
     ).json()["access_token"]
     response = client.get("/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
-    assert response.json() == {
+    response_data = response.json()
+    assert response_data == {
         "id": 1,
         "username": "admin",
         "role": "admin",
         "priority_mode": main.PRIORITY_MODE,
+        "ml_warmup_state": response_data["ml_warmup_state"],
     }
+    assert response_data["ml_warmup_state"] in {"starting", "ready", "failed"}
 
 
 def test_protected_routes_reject_missing_or_invalid_jwt(client):
