@@ -148,7 +148,8 @@ erDiagram
 |---|---|
 | Asset names | `uq_assets_name_ci` is a unique expression index on `lower(assets.name)`. A separate ordinary `ix_assets_name` index is also declared by the ORM. |
 | Finding identity | `uq_findings_asset_cve` is a unique constraint on `(asset_id, cve_id)`; API CVE identifiers are normalized to uppercase. It is not a case-insensitive database index. |
-| Usernames | `users.username` has a unique B-tree index. User-creation code checks case-folded names, but the database index itself is not a `lower(username)` expression index. |
+| Usernames | `ix_users_username` is a unique B-tree index. User-creation code checks case-folded names, but the database index itself is not a `lower(username)` expression index. |
+| Other ORM indexes | `ix_assets_id`, `ix_findings_id`, `ix_findings_asset_id`, `ix_findings_cve_id`, `ix_findings_final_priority`, and `ix_finding_scores_id` are declared by the models/migrations. `users.id` and `audit_logs.id` also have `ix_users_id` and `ix_audit_logs_id`. |
 | Catalog | `cve_catalog.cve_id` is the primary key / lookup index. The app role receives SELECT only. |
 | Runtime app role | Revision `0003` removes public/schema DDL access and grants table DML and sequence USAGE; `0004` excludes UPDATE/DELETE/TRUNCATE and other mutation privileges on `audit_logs`; `0005` grants the runtime role SELECT only on `cve_catalog`. The runtime role cannot perform schema DDL. |
 | Audit immutability | PostgreSQL triggers reject audit-row UPDATE and DELETE (`0001`) and TRUNCATE (`0002`). SQLAlchemy model hooks also reject ORM update/delete. Audit entries are written by application actions and remain append-only. |
@@ -287,7 +288,7 @@ audit-log access.
 | `frontend/src/components/assets/AssetsView.tsx`, `frontend/src/components/users/UsersView.tsx` | Asset and admin user management views. |
 | `frontend/src/components/audit/AuditView.tsx` | Administrator audit-log view. |
 | `frontend/src/components/login/LoginView.tsx` | Login screen. |
-| `backend/tests/` | Isolated PostgreSQL-backed coverage for auth, CSV import, CVE lookup, dashboard, demo seed, findings, ML advisory, migrations, reports, RBAC, scans, scoring, warm-up, threat intelligence and user management. `backend/test_model_results.py` is the focused non-database validation-results test. |
+| `backend/tests/` | Isolated PostgreSQL-backed coverage for auth, CSV import, CVE lookup, dashboard, demo seed, findings, ML advisory, migrations, reports, RBAC, scans, scoring, warm-up, threat intelligence and user management. `backend/tests/test_model_results.py` is the focused validation-results test. |
 
 ## Endpoint reference
 

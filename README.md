@@ -1,6 +1,6 @@
 # SecureVision
 
-SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. It provides selectable deterministic or ML-plus-asset priority modes, an explainable 320-rule cross-check, role-based access control (RBAC), an immutable audit log, scanner CSV import, and CVE intelligence lookup. The code default is `PRIORITY_MODE=deterministic`; `ml_asset` is the proposal target mode and uses the experimental ML risk tier when available, falling back to the rule matrix otherwise. The recorded test evaluation is negative (PR-AUC 0.0114 vs CVSS 0.0117), so the active mode label and rule-matrix cross-check remain visible.
+SecureVision is a vulnerability-prioritization application with a FastAPI backend and a Next.js frontend. It provides selectable deterministic or ML-plus-asset priority modes, an explainable 320-rule cross-check, role-based access control (RBAC), an immutable audit log, scanner CSV import, and CVE intelligence lookup. The code default is `PRIORITY_MODE=deterministic`; the proposal-target `ml_asset` default was documented in Decision Log D-038 and superseded by D-039. ML uses the experimental risk tier when selected and available, falling back to the rule matrix otherwise. The recorded test evaluation is negative (PR-AUC 0.0114 vs CVSS 0.0117), so the active mode label and rule-matrix cross-check remain visible. See [proposal traceability](./docs/PROPOSAL_TRACEABILITY.md) and the [project snapshot](./docs/PROJECT_SNAPSHOT.md).
 
 ## Requirements
 
@@ -41,9 +41,11 @@ Asset context, finding-to-asset associations, statuses, and dates are synthetic;
 the CVE IDs and CVSS/EPSS values use the prepared local dataset where available.
 This is not real inventory or an observation of those vulnerabilities in the
 demo assets. The seeded rows have no NVD enrichment, so their ML advisory is
-shown as unavailable instead of inventing a prediction. Consequently,
-`deterministic` and `ml_asset` both use the rule-matrix tier as the final demo
-priority. `sample_data/generic.csv` is illustrative input, not scanner output.
+shown as unavailable instead of inventing a prediction. Consequently, `deterministic` and `ml_asset` both use the rule-matrix tier as
+the final priority for these fixed demo rows. This differs from the separate
+fixed-seed 80-scenario offline distribution in `docs/priority_distribution.txt`,
+which uses prediction-capable sample CVEs and includes the ML-mode KEV floor.
+`sample_data/generic.csv` is illustrative input, not scanner output.
 `backend/threat_intel.py` also
 contains three hard-coded demonstration lookup fixtures; they are not
 authoritative current NVD/FIRST scores. Other live lookups require provider
@@ -87,7 +89,7 @@ service and maintenance/test tools, not the backend service.
 | `ADMIN_INITIAL_PASSWORD` | Password used when bootstrapping or rotating the `admin` account; must be at least 8 characters. |
 | `DATABASE_URL` | Required SQLAlchemy PostgreSQL runtime URL for the app role. |
 | `MIGRATION_DATABASE_URL` | Owner/migrator URL supplied only to the migration service and explicit maintenance/test tools. |
-| `PRIORITY_MODE` | `deterministic` (code default) or `ml_asset` (proposal target); selects which available tier is persisted as final priority. |
+| `PRIORITY_MODE` | `deterministic` (code default, D-039) or `ml_asset` (proposal-target mode, D-038); selects which available tier is persisted as final priority. |
 | `POSTGRES_DB` | PostgreSQL database name supplied to the Compose database service. |
 | `POSTGRES_USER` | Owner/migrator login supplied to the Compose database service. |
 | `POSTGRES_PASSWORD` | Owner/migrator password; use a private, URL-safe value. |
@@ -268,9 +270,9 @@ The scorer evaluates CVSS, EPSS, recorded KEV status, internet exposure, and ass
 
 The additional calibrated XGBoost likelihood uses only CVSS score/vector, CWE, and the publication-time NVD description; KEV and EPSS are explicitly excluded from its feature list. ML risk is `likelihood × exposure_factor × criticality_factor`: Internet exposure is 1.5, Internal is 1.0, and criticality 1-5 maps linearly from 0.6 to 1.4. The P99/P90/P50 risk thresholds are derived from the 2025 validation-set risk distribution, not the test set. Factors, thresholds, mode, the known-exploited High floor, and recommended-action templates are centralized in [`backend/rules_config.py`](./backend/rules_config.py).
 
-In `deterministic` mode, `final_priority` is the rule-matrix tier and its source is `rules`. In `ml_asset` mode, a successful prediction makes `final_priority` the ML priority (`ml`); absent ML output falls back to the rule-matrix tier (`rules`). If a KEV-flagged finding's ML tier is below High, a rules-layer floor raises it to High and records `ml+kev_floor`. KEV remains a runtime fact and never enters model features. The API `/me` response and UI label the active mode. The drawer and Model Results screen preserve the negative test result (PR-AUC 0.0114 vs CVSS 0.0117) and validation reference (0.0352); the result remains visible even though `ml_asset` is the requested default. Missing model inputs or artifacts leave ML fields null with an explicit reason.
+In `deterministic` mode, `final_priority` is the rule-matrix tier and its source is `rules`; this is the current code default under Decision Log D-039. In `ml_asset` mode, a successful prediction makes `final_priority` the ML priority (`ml`); absent ML output falls back to the rule-matrix tier (`rules`). If a KEV-flagged finding's ML tier is below High, a rules-layer floor raises it to High and records `ml+kev_floor` (D-033). KEV remains a runtime fact and never enters model features. The API `/me` response and UI label the active mode. The drawer and Model Results screen preserve the negative test result (PR-AUC 0.0114 vs CVSS 0.0117) and validation reference (0.0352). The requested proposal-target `ml_asset` default (D-038) is an explicitly documented deviation from the current deterministic default. Missing model inputs or artifacts leave ML fields null with an explicit reason.
 
-The authenticated `GET /model/results` endpoint and **Model Results** screen are available to all roles. They read evaluation outputs from `docs/results/` without modifying them. Recorded model coverage is XGBoost on Test 2026 and Validation 2025, Logistic Regression on Validation 2025, and Random Forest not available. The frozen test result is negative: XGBoost PR-AUC 0.0114 versus CVSS 0.0117; XGBoost also trails CVSS at P@100 and P@500. Validation reference PR-AUC is 0.0352. EPSS is shown as a hindsight baseline, not a prospective comparison. Metrics not present in the recorded results are shown as not available.
+The authenticated `GET /model/results` endpoint and **Model Results** screen are available to all roles. They show immutable recorded results and the dated offline validation package. Test 2026 evidence exists for XGBoost and CVSS/EPSS baselines; the five-way Validation 2025 comparison includes XGBoost, Logistic Regression, Random Forest, CVSS-only, and EPSS. No LR or RF test result is recorded. The frozen test result is negative: XGBoost PR-AUC 0.0114 versus CVSS 0.0117; XGBoost also trails CVSS at P@100 and P@500. Validation reference PR-AUC is 0.0352. EPSS is shown as a hindsight baseline, not a prospective comparison. Metrics not present in the recorded results are shown as not available.
 
 ## CSV scanner imports
 
@@ -313,11 +315,11 @@ administrator. Successful and failed login attempts are audited with the
 attempted username and timestamp; passwords are never written to audit details.
 Failed attempts for existing and unknown usernames return the same response.
 
-## Research: offline ML evaluation (negative result; ML-asset proposal default)
+## Research: offline ML evaluation (negative result; deterministic code default)
 
 The calibrated XGBoost model is an experimental priority input when
-`PRIORITY_MODE=ml_asset`, which is the proposal default; `deterministic` remains
-selectable. The frozen
+`PRIORITY_MODE=ml_asset`; the current code default is `deterministic` (Decision
+Log D-039), while D-038 records the proposal-target `ml_asset` default. The frozen
 single-pass evaluation on 61,611 held-out rows
 (122 positives) reported test PR-AUC 0.0114 versus 0.0117 +/- 0.0018 for CVSS.
 The paired-bootstrap mean PR-AUC difference was -0.0004 (95% CI: -0.0081 to

@@ -5,7 +5,7 @@
 - Rows: train 93,842 (270 positives); validation 48,152 (126 positives).
 - The test partition was not opened. All encoders and TF-IDF vocabulary were fitted on training rows only.
 - Model inputs are the frozen 152 features. KEV and EPSS are labels/baselines only, never model inputs.
-- Random Forest hyperparameters were selected using four randomized candidates (25/50 trees, depth 4/6/8) and 3-fold stratified CV on training rows only; class weight is balanced and seed is 42.
+- Random Forest hyperparameters were selected using four randomized candidates (25/50 trees, depth 4/6/8) and 3-fold stratified CV on training rows only; class weight is balanced and seed is 42. Logistic Regression used fixed `C=1.0` and `class_weight=balanced`; its 3-fold out-of-fold CV selected the decision threshold, not model hyperparameters. The frozen XGBoost model was not tuned in this comparison; its sigmoid calibrator had historically been fitted on Validation 2025.
 - LR and RF thresholds use 3-fold out-of-fold training scores. Baseline thresholds use their training scores. The frozen XGBoost threshold uses training-split scores without changing its artifact.
 - Top-K ties sort by score descending then CVE identifier ascending. PR-AUC uncertainty is a 200-resample percentile bootstrap 95% interval; one-class samples are skipped.
 - EPSS uses the available snapshot and is explicitly a hindsight baseline.
@@ -23,7 +23,7 @@
 ### Logistic Regression (152 features)
 - Training-selected threshold: `0.973353287`
 - Validation confusion matrix (actual rows, predicted columns): `[[47850, 176], [120, 6]]`
-- Training CV: `{"method": "3-fold stratified cross-validation on training rows", "random_state": 42, "scoring": "average_precision"}`
+- Parameter tuning: none; fixed `C=1.0`, `class_weight=balanced`, `solver=liblinear`. Three-fold out-of-fold training CV selected the threshold only; validation labels were not used for threshold selection.
 
 ### Random Forest
 - Training-selected threshold: `0.7600264453`

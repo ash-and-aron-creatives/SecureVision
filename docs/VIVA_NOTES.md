@@ -20,9 +20,11 @@ does not perform active network discovery or vulnerability scanning.
 
 ### How is the operational priority determined?
 
-`PRIORITY_MODE=ml_asset` (the proposal default) uses the successful model priority;
-`PRIORITY_MODE=deterministic` stores the rule-matrix result as
-`final_priority`. The recorded test PR-AUC is negative relative to CVSS
+`PRIORITY_MODE=deterministic` is the current code default and stores the
+rule-matrix result as `final_priority`. `PRIORITY_MODE=ml_asset` uses the
+successful model priority. The proposal-target `ml_asset` default was recorded
+in D-038 and superseded by D-039; this is a documented deviation. The recorded
+test PR-AUC is negative relative to CVSS
 (0.0114 vs 0.0117), so the Model Results screen preserves that evidence and the
 finding drawer shows the active mode and rule-matrix cross-check. The ML tier is
 calculated from likelihood × exposure × criticality with 2025 validation
@@ -47,9 +49,13 @@ XGBoost P@100 is `0.0000` vs `0.0428` for CVSS and P@500 is `0.0060` vs
 improvement. Source: `docs/results/p5/p5_console.log`, `docs/P5_protocol.md`,
 and `Decision_Log.md`. Validation reference PR-AUC is `0.0352`. Recorded split
 availability now includes the five-way Validation 2025 comparison:
-XGBoost, 152-feature Logistic Regression, tuned Random Forest, CVSS-only, and
-EPSS hindsight baseline. See `docs/results_offline/2026-11-14/` for full
-metrics and predictions. The new comparison does not change the prior Test
+XGBoost, 152-feature Logistic Regression, Random Forest, CVSS-only, and
+EPSS hindsight baseline. Random Forest hyperparameters were tuned by 3-fold
+randomized CV on training rows only. Logistic Regression used fixed
+`C=1.0`/balanced class weights; 3-fold out-of-fold scores selected its
+threshold, not its hyperparameters. XGBoost's sigmoid calibrator was fit on
+Validation 2025, not training-only CV. See `docs/results_offline/2026-11-14/`
+for full metrics and predictions. The new comparison does not change the prior Test
 2026 result; the negative test result is why deterministic mode remains the
 code default.
 
@@ -99,9 +105,12 @@ and refresh tokens are not implemented.
   evidence.
 - **Rules layer:** the 320-rule matrix is a design choice and the default
   priority mode; it is not shown to be universally optimal.
-- **Synthetic distribution:** the demo findings have no descriptions/model
+- **Synthetic distribution:** the fixed demo findings have no descriptions/model
   outputs, so ML mode falls back to the rule tier; the two modes have the same
-  distribution on those fixed rows.
+  distribution on those fixed rows. The separate 80-scenario offline sample
+  has different prediction-capable inputs and reports rule tiers
+  Critical 21 / High 28 / Medium 17 / Low 14 versus `ml_asset` Critical 0 /
+  High 40 / Medium 0 / Low 40, with the KEV floor raising 40 scenarios.
 - **No scanning:** the application imports scanner CSV files but does not
   actively scan hosts or networks.
 - **Negative ML result:** the recorded ML model did not outperform the CVSS
