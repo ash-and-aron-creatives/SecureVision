@@ -35,11 +35,16 @@ original owner credentials and provision/rotate the app role before replacing
 its configuration; otherwise use a new Compose project name to create an
 isolated volume.
 
-The demo UI is visibly labeled **SYNTHETIC DEMO DATA**. Seeded assets, findings,
-dates, and CVSS/EPSS inputs are synthetic scenarios, not real inventory or
-observations. The seeded rows have no NVD enrichment, so their ML advisory is
-shown as unavailable instead of inventing a prediction. `sample_data/generic.csv`
-is illustrative input, not scanner output. `backend/threat_intel.py` also
+The demo UI is visibly labeled **SYNTHETIC DEMO DATA** and seeds eight assets
+with 40 findings spanning Critical, High, Medium, and Low rule-matrix tiers.
+Asset context, finding-to-asset associations, statuses, and dates are synthetic;
+the CVE IDs and CVSS/EPSS values use the prepared local dataset where available.
+This is not real inventory or an observation of those vulnerabilities in the
+demo assets. The seeded rows have no NVD enrichment, so their ML advisory is
+shown as unavailable instead of inventing a prediction. Consequently,
+`deterministic` and `ml_asset` both use the rule-matrix tier as the final demo
+priority. `sample_data/generic.csv` is illustrative input, not scanner output.
+`backend/threat_intel.py` also
 contains three hard-coded demonstration lookup fixtures; they are not
 authoritative current NVD/FIRST scores. Other live lookups require provider
 network access.

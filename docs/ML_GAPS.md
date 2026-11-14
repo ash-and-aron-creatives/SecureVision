@@ -48,3 +48,18 @@ and no common three-family validation output. Therefore this change reads only
 the committed result logs, reports missing entries as unavailable, and leaves
 the offline comparison for Ashley to run under the project's approved data and
 evaluation process.
+
+## Offline model comparison: rules for Random Forest and Logistic Regression runs
+
+Goal: complete the proposal's three-model comparison (Logistic Regression, Random Forest, XGBoost) against CVSS-only and EPSS baselines, without invalidating the frozen XGBoost result.
+
+Protocol (must match the frozen pipeline):
+1. Same data snapshot, labels and feature list (frozen_config.json features; no KEV/EPSS as features), same chronological train/validation split. Fit encoders, TF-IDF and any resampling on the training split only.
+2. Tuning: cross-validation on the training split only; fixed random seeds; record seeds, parameter grids and the selected parameters.
+3. Class imbalance: class weights (or training-set resampling) only; never rebalance validation or test data.
+4. Evaluate on Validation 2025 first. Metrics: PR-AUC (primary), precision/recall/F1 at a stated threshold, precision and recall at K (50, 100, 500), ROC-AUC (secondary), confusion matrix. Report the same metrics for the CVSS-only and EPSS baselines on the same rows.
+5. Test set: the frozen test result for XGBoost already exists. Do NOT use the test set to select, tune or compare models. If a test evaluation of the other models is still wanted, run it once, label it "post-hoc: XGBoost test result was already known", and keep the XGBoost-vs-CVSS test result as the headline.
+6. Never overwrite frozen artifacts: do not modify frozen_config.json, docs/results/p5, ml/models/headline_*. Save new models with a dated, versioned name (e.g. ml/models/rf_<date>.joblib) and write new results to a new folder (e.g. docs/results_offline/<date>/), including the exact command, library versions (xgboost, scikit-learn, python), data snapshot dates, seeds, file SHA-256 hashes, and the console log.
+7. Report real numbers only, including negative results. State clearly which split each number is from.
+8. Integration: these models are NOT wired into the running app. After the run, a separate change can extend backend/model_results.py to read the new folder read-only and label each row by split; that change must not alter the frozen files.
+Deliverables for the report: one results table (models and baselines, same rows), PR curve, top-K chart, and a written paragraph on where each model wins and fails.

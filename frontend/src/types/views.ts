@@ -5,6 +5,7 @@ import type {
   DashboardAnalytics,
   Finding,
   ImportPreview,
+  MlWarmupState,
   PriorityMode,
   UserItem,
   UserRole,
@@ -26,6 +27,7 @@ export interface LoginViewProps {
 
 export interface SecureAppViewProps {
   priorityMode: PriorityMode | null;
+  mlWarmupState: MlWarmupState | null;
   activeTab: string;
   tabAnimKey: number;
   surfaceCard: string;

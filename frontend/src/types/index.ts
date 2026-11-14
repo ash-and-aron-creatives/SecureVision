@@ -1,5 +1,6 @@
 export type UserRole = "admin" | "analyst" | "viewer";
 export type PriorityMode = "ml_asset" | "deterministic";
+export type MlWarmupState = "starting" | "ready" | "failed";
 
 export interface Finding {
   id: number;
@@ -179,6 +180,7 @@ export interface CurrentUser {
   username: string;
   role: UserRole;
   priority_mode: PriorityMode;
+  ml_warmup_state: MlWarmupState;
 }
 
 export interface IntelResponse {

@@ -2,10 +2,11 @@ import hashlib
 import json
 import logging
 import re
+import threading
 import time
 from functools import lru_cache
 from pathlib import Path
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from backend.rules_config import (
     MODEL_CONFIG_PATH,
@@ -21,6 +22,9 @@ from backend.rules_config import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_BUNDLE_LOAD_LOCK = threading.Lock()
+_WARMUP_STATE_LOCK = threading.Lock()
+_WARMUP_STATE: Literal["starting", "ready", "failed"] = "starting"
 
 
 class MLAssessment(TypedDict):
@@ -41,8 +45,24 @@ class _DescriptionPreprocessor:
         return re.sub(self.regex_blacklist, "", str(value).lower(), flags=re.IGNORECASE)
 
 
-@lru_cache(maxsize=1)
 def _load_bundle() -> tuple[object, object, list[str], str, dict]:
+    with _BUNDLE_LOAD_LOCK:
+        return _cached_load_bundle()
+
+
+def _clear_cached_bundle() -> None:
+    _cached_load_bundle.cache_clear()
+
+
+_load_bundle.cache_clear = _clear_cached_bundle
+
+
+@lru_cache(maxsize=1)
+def _cached_load_bundle() -> tuple[object, object, list[str], str, dict]:
+    return _load_bundle_uncached()
+
+
+def _load_bundle_uncached() -> tuple[object, object, list[str], str, dict]:
     bundle_started = time.perf_counter()
     try:
         import joblib
@@ -104,6 +124,21 @@ def _load_bundle() -> tuple[object, object, list[str], str, dict]:
         (time.perf_counter() - bundle_started) * 1000,
     )
     return model, transformer, features, version, config
+
+
+def get_warmup_state() -> Literal["starting", "ready", "failed"]:
+    with _WARMUP_STATE_LOCK:
+        return _WARMUP_STATE
+
+
+def _set_warmup_state(state: Literal["starting", "ready", "failed"]) -> None:
+    global _WARMUP_STATE
+    with _WARMUP_STATE_LOCK:
+        _WARMUP_STATE = state
+
+
+def mark_warmup_failed() -> None:
+    _set_warmup_state("failed")
 
 
 def _unavailable(reason: str, model_version: str | None = None) -> MLAssessment:
@@ -294,6 +329,7 @@ def predict_exploit_likelihood(
 
 
 def warm_up_model() -> None:
+    _set_warmup_state("starting")
     started = time.perf_counter()
     try:
         assessment = predict_exploit_likelihood(
@@ -309,6 +345,7 @@ def warm_up_model() -> None:
             "ML startup warm-up failed after %.3f ms.",
             (time.perf_counter() - started) * 1000,
         )
+        _set_warmup_state("failed")
         return
 
     elapsed_ms = (time.perf_counter() - started) * 1000
@@ -318,5 +355,7 @@ def warm_up_model() -> None:
             elapsed_ms,
             assessment["unavailable_reason"],
         )
+        _set_warmup_state("failed")
         return
+    _set_warmup_state("ready")
     _LOGGER.info("ML startup warm-up completed in %.3f ms.", elapsed_ms)

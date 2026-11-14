@@ -58,6 +58,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   });
   const [currentUser, setCurrentUser] = useState<string>(() => getStoredValue("sv_user") ?? "");
   const [priorityMode, setPriorityMode] = useState<PriorityMode | null>(null);
+  const [mlWarmupState, setMlWarmupState] = useState<CurrentUser["ml_warmup_state"] | null>(null);
 
   // Feature data
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
@@ -153,7 +154,10 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     let active = true;
     void requestApi<CurrentUser>("/me", token)
       .then((profile) => {
-        if (active) setPriorityMode(profile.priority_mode);
+        if (active) {
+          setPriorityMode(profile.priority_mode);
+          setMlWarmupState(profile.ml_warmup_state);
+        }
       })
       .catch((requestError: unknown) => {
         if (active) {
@@ -166,6 +170,30 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
       active = false;
     };
   }, [apiRequest, token]);
+  useEffect(() => {
+    if (!token || mlWarmupState !== "starting") return;
+    let active = true;
+    const interval = window.setInterval(() => {
+      void requestApi<CurrentUser>("/me", token)
+        .then((profile) => {
+          if (active) {
+            setPriorityMode(profile.priority_mode);
+            setMlWarmupState(profile.ml_warmup_state);
+          }
+        })
+        .catch((requestError: unknown) => {
+          if (active) {
+            setActionMessage(
+              requestError instanceof Error ? requestError.message : "Unable to load ML warm-up state.",
+            );
+          }
+        });
+    }, 1000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [apiRequest, mlWarmupState, setActionMessage, token]);
   useEffect(() => {
     if (!token || activeTab !== "model-results") return;
     let active = true;
@@ -322,6 +350,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   const mutedText = darkMode ? "text-white/55" : "text-slate-400";
   const viewProps: SecureAppViewProps = {
     priorityMode,
+    mlWarmupState,
     activeTab, tabAnimKey, surfaceCard, headingColor, mutedText, switchTab, darkMode, exportExecutiveReport,
     criticalCount, highCount, mediumCount, lowCount, subSurfaceCard, itemSurface, getTier, weeklyBars, analytics,
     completionPct, totalCount, resolvedCount, displayFindings, setTierFilter, tierFilter, exportPriorityCsv, filteredFindings,

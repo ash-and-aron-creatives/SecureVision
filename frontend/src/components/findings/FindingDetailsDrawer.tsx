@@ -3,7 +3,7 @@ import type { SecureAppViewProps } from "@/types/views";
 
 export function FindingDetailsDrawer(props: SecureAppViewProps) {
   const {
-    toggleFindingStatus, selectedFinding, setSelectedFinding, role, priorityMode,
+    toggleFindingStatus, selectedFinding, setSelectedFinding, role, priorityMode, mlWarmupState,
   } = props;
   return (selectedFinding && (() => {
         const isResolved = selectedFinding.status.toUpperCase() === "RESOLVED";
@@ -47,6 +47,11 @@ export function FindingDetailsDrawer(props: SecureAppViewProps) {
                   {priorityMode && (
                     <span className="ml-2 mt-3 inline-flex text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-white/10 text-white/75 border border-white/15">
                       Mode: {priorityMode}
+                    </span>
+                  )}
+                  {mlWarmupState !== null && mlWarmupState !== "ready" && (
+                    <span className="ml-2 mt-3 inline-flex text-[10px] font-bold px-2 py-1 rounded-full bg-amber-400/15 text-amber-200 border border-amber-300/30">
+                      ML warming up
                     </span>
                   )}
                   {selectedFinding.priority_source === "ml+kev_floor" && (

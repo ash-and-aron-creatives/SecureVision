@@ -29,6 +29,7 @@ class UserResponse(ResponseSchema):
 
 class CurrentUserResponse(UserResponse):
     priority_mode: Literal["ml_asset", "deterministic"]
+    ml_warmup_state: Literal["starting", "ready", "failed"]
 
 
 class AssetRequest(BaseModel):

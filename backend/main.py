@@ -32,7 +32,12 @@ from datetime import date, datetime, timedelta, timezone
 
 from backend import models, auth
 from backend.database import get_db
-from backend.ml_inference import predict_exploit_likelihood, warm_up_model
+from backend.ml_inference import (
+    get_warmup_state,
+    mark_warmup_failed,
+    predict_exploit_likelihood,
+    warm_up_model,
+)
 from backend.cve_dataset import lookup_catalog, search_catalog
 from backend.rules_config import CVE_SEARCH_MAX_RESULTS, LOGIN_USERNAME_MAX_LENGTH, PRIORITY_MODE
 from backend.scoring_engine import TIER_SCORES, calculate_priority, resolve_final_priority
@@ -73,6 +78,7 @@ def start_ml_warmup() -> None:
         )
         worker.start()
     except Exception:
+        mark_warmup_failed()
         _LOGGER.exception("Could not start the ML warm-up thread.")
 
 
@@ -238,6 +244,7 @@ def get_me(current_user: models.User = Depends(auth.get_current_user)):
         "username": current_user.username,
         "role": current_user.role,
         "priority_mode": PRIORITY_MODE,
+        "ml_warmup_state": get_warmup_state(),
     }
 
 @app.post("/assets", response_model=AssetResponse)
