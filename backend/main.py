@@ -39,7 +39,12 @@ from backend.ml_inference import (
     warm_up_model,
 )
 from backend.cve_dataset import lookup_catalog, search_catalog
-from backend.rules_config import CVE_SEARCH_MAX_RESULTS, LOGIN_USERNAME_MAX_LENGTH, PRIORITY_MODE
+from backend.rules_config import (
+    CVE_SEARCH_MAX_RESULTS,
+    LOGIN_USERNAME_MAX_LENGTH,
+    PRIORITY_MODE,
+    recommended_action_for_priority,
+)
 from backend.scoring_engine import TIER_SCORES, calculate_priority, resolve_final_priority
 from backend.threat_intel import fetch_cve_data
 from backend.csv_import import MAX_BYTES, ImportFileError, detect_format, parse_and_validate, problems_to_csv
@@ -677,6 +682,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
         "reopened": reopened,
         "priority_tier": final_tier,
         "final_priority": final_tier,
+        "recommended_action": recommended_action_for_priority(final_tier),
         "priority_source": priority_source,
         "rule_priority_tier": rule_tier,
         "score": TIER_SCORES[final_tier],
@@ -751,6 +757,7 @@ def get_findings(
             "in_kev": bool(f.in_kev),
             "priority_tier": tier,
             "final_priority": tier,
+            "recommended_action": recommended_action_for_priority(tier),
             "priority_source": f.priority_source or "rules",
             "rule_priority_tier": rule_tier,
             "score": TIER_SCORES.get(tier, 0),
@@ -958,6 +965,7 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_u
                 break
         related_logs = sorted(related_logs, key=lambda log: log.id, reverse=True)[:20]
 
+    final_tier = f.final_priority or (latest.priority_tier if latest else "Unknown")
     return {
         "id": f.id,
         "cve_id": f.cve_id,
@@ -975,13 +983,12 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_u
             "exposure": f.asset.exposure if f.asset else "Internal",
             "criticality": f.asset.criticality if f.asset else 1,
         },
-        "priority_tier": f.final_priority or (latest.priority_tier if latest else "Unknown"),
-        "final_priority": f.final_priority or (latest.priority_tier if latest else "Unknown"),
+        "priority_tier": final_tier,
+        "final_priority": final_tier,
+        "recommended_action": recommended_action_for_priority(final_tier),
         "priority_source": f.priority_source or "rules",
         "rule_priority_tier": latest.priority_tier if latest else "Unknown",
-        "score": TIER_SCORES.get(
-            f.final_priority or (latest.priority_tier if latest else "Unknown"), 0
-        ),
+        "score": TIER_SCORES.get(final_tier, 0),
         "likelihood": float(latest.likelihood or 0.0) if latest else 0.0,
         "explanation": _stored_explanation(latest, f, f.asset),
         **_ml_score_fields(latest),

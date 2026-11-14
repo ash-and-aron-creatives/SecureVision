@@ -14,6 +14,7 @@ export interface Finding {
   in_kev: boolean;
   priority_tier: string;
   final_priority: string;
+  recommended_action: string;
   priority_source: string;
   rule_priority_tier: string;
   score: number;
@@ -109,6 +110,7 @@ export interface ScanResult {
   reopened: boolean;
   priority_tier: string;
   final_priority: string;
+  recommended_action: string;
   priority_source: string;
   rule_priority_tier: string;
   score: number;

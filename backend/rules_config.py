@@ -198,6 +198,21 @@ ML_RECOMMENDED_ACTIONS = {
     "Low": "Address through routine vulnerability maintenance.",
 }
 
+RECOMMENDED_ACTION_TEMPLATES = {
+    "Critical": "Expedite remediation and validate compensating controls.",
+    "High": "Prioritize remediation in the next planned change window.",
+    "Medium": "Schedule remediation and monitor for updated threat intelligence.",
+    "Low": "Address through routine vulnerability maintenance.",
+}
+
+
+def recommended_action_for_priority(priority: str) -> str:
+    try:
+        return RECOMMENDED_ACTION_TEMPLATES[priority]
+    except KeyError as exc:
+        raise ValueError(f"Unknown final priority tier: {priority}") from exc
+
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIRECTORY = REPOSITORY_ROOT / "ml" / "models"
 MODEL_CONFIG_PATH = REPOSITORY_ROOT / "frozen_config.json"

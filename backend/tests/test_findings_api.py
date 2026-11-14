@@ -6,6 +6,7 @@ from backend import auth
 from backend.database import Base, get_db
 from backend.main import app
 from backend.models import Asset, Finding, FindingScore, User
+from backend.rules_config import RECOMMENDED_ACTION_TEMPLATES
 from backend.tests.db_helpers import create_test_engine
 
 
@@ -72,6 +73,7 @@ def test_findings_list_and_counts(client):
     assert "items" in data and "total" in data and "counts" in data
     assert len(data["items"]) <= 10
     assert set(data["counts"].keys()) == {"Critical", "High", "Medium", "Low"}
+    assert data["items"][0]["recommended_action"] == RECOMMENDED_ACTION_TEMPLATES["Critical"]
 
 
 def test_findings_over_twenty_are_reachable_across_pages(client, db_session):
@@ -135,6 +137,32 @@ def test_finding_detail_and_404(client):
 
     missing_res = client.get("/findings/999999", headers=headers)
     assert missing_res.status_code == 404
+
+
+@pytest.mark.parametrize("tier", ("Critical", "High", "Medium", "Low"))
+def test_finding_detail_includes_rule_only_action_for_each_final_tier(
+    client, db_session, tier
+):
+    asset = db_session.query(Asset).first()
+    finding = Finding(
+        asset_id=asset.id,
+        cve_id=f"CVE-2026-{len(tier):04d}",
+        cvss_score=5.0,
+        final_priority=tier,
+        priority_source="rules",
+        status="Open",
+        date_found="2026-10-01",
+    )
+    db_session.add(finding)
+    db_session.commit()
+
+    response = client.get(
+        f"/findings/{finding.id}",
+        headers=get_auth_headers(client),
+    )
+    assert response.status_code == 200
+    assert response.json()["recommended_action"] == RECOMMENDED_ACTION_TEMPLATES[tier]
+    assert response.json()["ml_recommended_action"] is None
 
 
 def test_status_update_records_audit(client):

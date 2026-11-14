@@ -61,6 +61,13 @@ export function FindingDetailsDrawer(props: SecureAppViewProps) {
                   )}
                 </div>
 
+                <section className="mt-4 bg-white/5 border border-white/10 rounded-2xl p-5">
+                  <h3 className="text-sm font-extrabold text-white">Recommended action</h3>
+                  <p className="mt-2 text-sm text-white/85 leading-relaxed">
+                    {selectedFinding.recommended_action}
+                  </p>
+                </section>
+
                 <section className="mt-6 bg-white/5 border border-white/10 rounded-2xl p-5">
                   <h3 className="text-sm font-extrabold text-white">Rule-matrix cross-check</h3>
                   <p className="text-xs text-white/55 mt-1">
@@ -106,7 +113,7 @@ export function FindingDetailsDrawer(props: SecureAppViewProps) {
                     )}
                   </div>
                   <p className="mt-4 text-xs text-white/80">
-                    <span className="font-bold text-white/60">Recommended action: </span>
+                    <span className="font-bold text-white/60">ML-specific recommended action: </span>
                     {selectedFinding.ml_recommended_action ?? "Unavailable"}
                   </p>
                   <p className="mt-4 border-t border-white/10 pt-3 text-[11px] leading-relaxed text-white/55">

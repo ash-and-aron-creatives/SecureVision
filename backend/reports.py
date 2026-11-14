@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.auth import get_current_user
 from backend.models import Asset, AuditLog, Finding, FindingScore, User
+from backend.rules_config import recommended_action_for_priority
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -95,8 +96,8 @@ def export_findings_csv(
     w = csv.writer(buf)
     w.writerow([
         "finding_id", "cve_id", "asset", "exposure", "criticality", "cvss_score",
-        "in_kev", "status", "final_priority", "priority_source", "rule_priority_tier",
-        "likelihood", "date_found",
+        "in_kev", "status", "final_priority", "recommended_action",
+        "priority_source", "rule_priority_tier", "likelihood", "date_found",
     ])
     count = 0
     for f, a, s in _filtered_query(db, priority, status, asset_id, q, sort).yield_per(500):
@@ -115,6 +116,7 @@ def export_findings_csv(
                 f.in_kev,
                 f.status,
                 f.final_priority or "",
+                recommended_action_for_priority(f.final_priority or "Low"),
                 f.priority_source or "rules",
                 s.priority_tier if s else "",
                 s.likelihood if s else "",
@@ -227,6 +229,20 @@ def export_executive_pdf(
         or [("No critical findings", "", "", "", "")],
     )
     pdf.ln(6)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Recommended actions", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    for finding, _asset in top:
+        action = recommended_action_for_priority(finding.final_priority or "Low")
+        pdf.multi_cell(
+            0,
+            5,
+            _t(f"{finding.cve_id} ({finding.final_priority}): {action}"),
+        )
+    if not top:
+        pdf.multi_cell(0, 5, "No critical findings.")
+    pdf.ln(4)
 
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 8, "Asset summary (top 15 by critical findings)", new_x="LMARGIN", new_y="NEXT")

@@ -8,6 +8,7 @@ from backend.main import app
 from backend.database import Base, get_db
 from backend import auth
 from backend.models import Asset, AuditLog, Finding, FindingScore, User
+from backend.rules_config import RECOMMENDED_ACTION_TEMPLATES
 from backend.tests.db_helpers import create_test_engine
 
 
@@ -104,6 +105,8 @@ def test_csv_export_basic(client, auth_headers, seeded):
     lines = r.text.strip().splitlines()
     assert lines[0].startswith("finding_id,cve_id,asset")
     assert "final_priority" in lines[0] and "priority_source" in lines[0]
+    assert "recommended_action" in lines[0]
+    assert RECOMMENDED_ACTION_TEMPLATES["Critical"] in r.text
     assert len(lines) == 1 + 3
 
 
@@ -153,6 +156,8 @@ def test_pdf_export_header_and_audit(client, auth_headers, seeded, db_session):
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/pdf"
     assert r.content.startswith(b"%PDF-")
+    assert b"Recommended actions" in r.content
+    assert b"Expedite remediation" in r.content
     row, d = _last_export(db_session)
     assert d["format"] == "pdf"
     assert d["sha256"] == hashlib.sha256(r.content).hexdigest()

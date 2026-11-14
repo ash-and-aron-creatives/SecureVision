@@ -186,6 +186,7 @@ class FindingResponse(MLFieldsResponse):
     in_kev: bool
     priority_tier: str
     final_priority: str
+    recommended_action: str
     priority_source: str
     rule_priority_tier: str
     score: int
@@ -289,6 +290,7 @@ class FindingDetailResponse(MLFieldsResponse):
     asset: AssetSummaryResponse
     priority_tier: str
     final_priority: str
+    recommended_action: str
     priority_source: str
     rule_priority_tier: str
     score: int
@@ -305,6 +307,7 @@ class ScanResultResponse(MLFieldsResponse):
     reopened: bool
     priority_tier: str
     final_priority: str
+    recommended_action: str
     priority_source: str
     rule_priority_tier: str
     score: int

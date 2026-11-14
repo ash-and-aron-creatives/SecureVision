@@ -15,6 +15,7 @@ from backend.models import Asset, User
 from backend.rules_config import (
     CRITICALITY_FACTORS,
     ML_RISK_THRESHOLDS,
+    RECOMMENDED_ACTION_TEMPLATES,
     SYNTHETIC_DEMO_ASSETS,
     SYNTHETIC_DEMO_FINDINGS,
     criticality_factor,
@@ -424,6 +425,8 @@ def test_ml_asset_mode_persists_ml_priority_and_kev_floor(api, monkeypatch):
     assert response.status_code == 200
     finding_id = response.json()["finding_id"]
     assert response.json()["final_priority"] == "Low"
+    assert response.json()["recommended_action"] == RECOMMENDED_ACTION_TEMPLATES["Low"]
+    assert response.json()["ml_recommended_action"] == "Mock advisory action."
     assert response.json()["rule_priority_tier"] == "Critical"
     assert response.json()["priority_source"] == "ml"
 
@@ -431,11 +434,15 @@ def test_ml_asset_mode_persists_ml_priority_and_kev_floor(api, monkeypatch):
     floored = client.post("/scan", json=payload, headers=headers)
     assert floored.status_code == 200
     assert floored.json()["final_priority"] == "High"
+    assert floored.json()["recommended_action"] == RECOMMENDED_ACTION_TEMPLATES["High"]
+    assert floored.json()["ml_recommended_action"] == "Mock advisory action."
     assert floored.json()["priority_source"] == "ml+kev_floor"
     assert floored.json()["rule_priority_tier"] == "Critical"
 
     detail = client.get(f"/findings/{finding_id}", headers=headers).json()
     assert detail["final_priority"] == "High"
+    assert detail["recommended_action"] == RECOMMENDED_ACTION_TEMPLATES["High"]
+    assert detail["ml_recommended_action"] == "Mock advisory action."
     assert detail["priority_source"] == "ml+kev_floor"
     assert detail["rule_priority_tier"] == "Critical"
     assert detail["explanation"]["inputs"]["in_kev"] is True
@@ -471,6 +478,7 @@ def test_ml_asset_mode_falls_back_to_rules_when_prediction_is_unavailable(api, m
     )
     assert response.status_code == 200
     assert response.json()["final_priority"] == "Critical"
+    assert response.json()["recommended_action"] == RECOMMENDED_ACTION_TEMPLATES["Critical"]
     assert response.json()["priority_source"] == "rules"
     assert response.json()["ml_unavailable_reason"] == "Frozen model is unavailable."
     assert "in_kev" not in seen and "epss_percentile" not in seen
