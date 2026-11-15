@@ -49,15 +49,21 @@ XGBoost P@100 is `0.0000` vs `0.0428` for CVSS and P@500 is `0.0060` vs
 improvement. Source: `docs/results/p5/p5_console.log`, `docs/P5_protocol.md`,
 and `Decision_Log.md`. Validation reference PR-AUC is `0.0352`. Recorded split
 availability now includes the five-way Validation 2025 comparison:
-XGBoost, 152-feature Logistic Regression, Random Forest, CVSS-only, and
-EPSS hindsight baseline. Random Forest hyperparameters were tuned by 3-fold
-randomized CV on training rows only. Logistic Regression used fixed
-`C=1.0`/balanced class weights; 3-fold out-of-fold scores selected its
-threshold, not its hyperparameters. XGBoost's sigmoid calibrator was fit on
-Validation 2025, not training-only CV. See `docs/results_offline/2026-11-14/`
-for full metrics and predictions. The new comparison does not change the prior Test
-2026 result; the negative test result is why deterministic mode remains the
-code default.
+XGBoost, training-CV-tuned Logistic Regression, Random Forest, CVSS-only, and
+EPSS hindsight baseline. Logistic Regression uses a 10-candidate `C` and
+class-weight grid with 3-fold stratified CV on training rows; out-of-fold
+training scores separately select its threshold. Random Forest was tuned by
+3-fold randomized CV on training rows only. The prior fixed-parameter LR result
+remains in `docs/results_offline/2026-11-14/`; the tuned run and CV scores are
+in `docs/results_offline/2026-11-15/`. XGBoost's frozen sigmoid calibrator was
+fit on Validation 2025, a disclosed exception. Neither run changes the prior
+Test 2026 result; the negative test result is why deterministic mode remains
+the code default.
+The tuned LR achieved Validation 2025 PR-AUC `0.021292` (precision `0.041096`,
+recall `0.047619`, F1 `0.044118`, ROC-AUC `0.845647`), versus historical fixed
+LR PR-AUC `0.020851` (precision `0.032967`, recall `0.047619`, F1 `0.038961`,
+ROC-AUC `0.854879`). This modest PR-AUC/F1 increase does not establish
+generalization beyond this validation split.
 
 ### How was time separation handled?
 

@@ -9,7 +9,7 @@ and both baselines:
 | Model | Recorded split evidence | Status |
 |---|---|---|
 | XGBoost | Test 2026 calibrated result and Validation 2025 reference/ablation results | Available, but not every entry is a like-for-like comparison |
-| Logistic Regression | Historical ablations plus full 152-feature comparison | Validation 2025 comparison is available; no test result is recorded. Hyperparameters were fixed (`C=1.0`, `class_weight=balanced`); training-only OOF CV selected the threshold, not model parameters. |
+| Logistic Regression | Historical fixed-parameter comparison and new tuned 152-feature run | Validation 2025 comparison is available; no test result is recorded. The 2026-11-15 run selected `C=100`, `class_weight=None` (mean training-CV average precision `0.062506`) from a 10-candidate, 3-fold stratified CV grid. Validation PR-AUC is `0.021292`, compared with `0.020851` for the fixed `C=1.0`, `class_weight="balanced"` run retained in the 2026-11-14 folder. |
 | Random Forest | Dated 152-feature comparison | Validation 2025 comparison is available; no test result is recorded. Parameters were selected by 3-fold randomized CV on training rows only. |
 | XGBoost calibrated | Frozen artifact | Validation 2025 and Test 2026 metrics are recorded. The sigmoid calibrator was fitted on Validation 2025, so calibration was not training-only; this is a disclosed validation-fitted artifact, not a new fit in the dated comparison. |
 
@@ -20,10 +20,13 @@ Logistic Regression Validation 2025 PR-AUCs `0.0148 +/- 0.0000` (CVSS-only)
 and `0.0241 +/- 0.0000` (text-masked), plus XGBoost Validation 2025 ablation
 PR-AUCs `0.0152 +/- 0.0000` (CVSS-only) and `0.0540 +/- 0.0000`
 (text-masked). These are different model configurations and are not a complete,
-single-protocol three-family comparison. The complete comparison is in
-[`results_offline/2026-11-14/val2025_comparison.md`](results_offline/2026-11-14/val2025_comparison.md);
+single-protocol three-family comparison. The fixed-parameter Logistic Regression comparison is preserved in
+[`results_offline/2026-11-14/val2025_comparison.md`](results_offline/2026-11-14/val2025_comparison.md).
+The new training-CV-tuned result is in
+[`results_offline/2026-11-15/val2025_comparison.md`](results_offline/2026-11-15/val2025_comparison.md);
 raw validation predictions, metrics, thresholds, confusion matrices, seeds,
-versions, hashes and console log are in the adjacent JSON. The PR and top-K
+versions, hashes and console log are in the adjacent JSON. The new run's PR
+and top-K charts are included alongside the report; the historical 2026-11-14
 charts can be regenerated with `python ml/render_val2025_charts.py`.
 
 ## Offline deliverables checklist
@@ -61,7 +64,7 @@ Goal: complete the proposal's three-model comparison (Logistic Regression, Rando
 
 Protocol (must match the frozen pipeline):
 1. Same data snapshot, labels and feature list (frozen_config.json features; no KEV/EPSS as features), same chronological train/validation split. Fit encoders, TF-IDF and any resampling on the training split only.
-2. Tuning: cross-validation on the training split only; fixed random seeds; record seeds, parameter grids and the selected parameters. The existing dated comparison tuned Random Forest this way; Logistic Regression used fixed `C=1.0` and balanced class weights (its OOF CV was for threshold selection only); the frozen XGBoost calibrator was historically fitted on Validation 2025. Do not describe all three as training-CV-tuned.
+2. Tuning: cross-validation on the training split only; fixed random seeds; record seeds, parameter grids, candidate CV scores and selected parameters. Logistic Regression uses the 10-candidate `C` / class-weight grid, and Random Forest uses its recorded 3-fold randomized search. Logistic Regression's F1 threshold is separately selected from 3-fold out-of-fold training probabilities. The frozen XGBoost calibrator was historically fitted on Validation 2025; disclose this exception and do not describe all three as training-CV-tuned.
 3. Class imbalance: class weights (or training-set resampling) only; never rebalance validation or test data.
 4. Evaluate on Validation 2025 first. Metrics: PR-AUC (primary), precision/recall/F1 at a stated threshold, precision and recall at K (50, 100, 500), ROC-AUC (secondary), confusion matrix. Report the same metrics for the CVSS-only and EPSS baselines on the same rows.
 5. Test set: the frozen test result for XGBoost already exists. Do NOT use the test set to select, tune or compare models. If a test evaluation of the other models is still wanted, run it once, label it "post-hoc: XGBoost test result was already known", and keep the XGBoost-vs-CVSS test result as the headline.

@@ -18,6 +18,7 @@ COPY ml/models/headline_tfidf_transformer.joblib ./ml/models/headline_tfidf_tran
 COPY frozen_config.json ./frozen_config.json
 COPY docs/results ./docs/results
 COPY docs/results_offline/2026-11-14/val2025_comparison.json ./docs/results_offline/2026-11-14/val2025_comparison.json
+COPY docs/results_offline/2026-11-15/val2025_comparison.json ./docs/results_offline/2026-11-15/val2025_comparison.json
 COPY Decision_Log.md ./Decision_Log.md
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 

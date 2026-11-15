@@ -1,6 +1,5 @@
 import json
 import re
-from pathlib import Path
 from typing import Any
 
 from backend.rules_config import (
@@ -22,6 +21,13 @@ _METRIC_PATTERNS = {
 }
 
 OFFLINE_COMPARISON_PATH = (
+    REPOSITORY_ROOT
+    / "docs"
+    / "results_offline"
+    / "2026-11-15"
+    / "val2025_comparison.json"
+)
+HISTORICAL_COMPARISON_PATH = (
     REPOSITORY_ROOT
     / "docs"
     / "results_offline"
@@ -141,6 +147,7 @@ def read_model_results() -> dict[str, Any]:
         else {}
     )
 
+
     xgb_test, = _find_values(_METRIC_PATTERNS["xgboost_test"], p5)
     cvss_test_values = _find_values(_METRIC_PATTERNS["cvss_test"], p5)
     epss_test, = _find_values(_METRIC_PATTERNS["epss_test"], p5)
@@ -218,6 +225,19 @@ def read_model_results() -> dict[str, Any]:
         if model_name in offline_by_name:
             models.append(_offline_row(offline_by_name[model_name]))
 
+    historical_logreg = (
+        offline_results.get("historical_fixed_logistic_regression")
+        if offline_results is not None
+        else None
+    )
+    if historical_logreg is not None:
+        historical_logreg = {
+            **historical_logreg,
+            "name": "Logistic Regression (fixed parameters; 2026-11-14)",
+            "note": "Historical fixed-parameter result; retained for comparison.",
+        }
+        models.append(_offline_row(historical_logreg))
+
     return {
         "models": models,
         "conclusion": _decision_conclusion(),
@@ -227,6 +247,7 @@ def read_model_results() -> dict[str, Any]:
                 pipeline_path,
                 p5_path,
                 OFFLINE_COMPARISON_PATH,
+                HISTORICAL_COMPARISON_PATH,
                 DECISION_LOG_PATH,
             )
             if path.is_file()

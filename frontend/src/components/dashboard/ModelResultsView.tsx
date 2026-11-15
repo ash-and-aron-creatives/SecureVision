@@ -76,7 +76,7 @@ export function ModelResultsView({
             <p className={`mt-2 text-sm leading-relaxed ${headingColor}`}>{data.conclusion || "not available"}</p>
           </div>
           <p className={`mt-3 text-xs ${mutedText}`}>
-            Validation 2025 comparison: XGBoost, Logistic Regression (152 features), Random Forest (152 features), CVSS-only, and EPSS hindsight baseline. Existing Test 2026 rows are shown separately.
+            Validation 2025 comparison: training-CV-tuned Logistic Regression, Random Forest (152 features), XGBoost, CVSS-only, and EPSS hindsight baseline. The fixed-parameter Logistic Regression run from 2026-11-14 is retained as a historical row; existing Test 2026 rows are shown separately.
           </p>
 
           <div className={`mt-5 overflow-x-auto rounded-2xl border ${darkMode ? "border-white/10" : "border-slate-200"}`}>

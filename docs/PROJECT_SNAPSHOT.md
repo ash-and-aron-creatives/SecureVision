@@ -1,6 +1,6 @@
 # SecureVision Project Snapshot
 
-Generated from the checked-out source and recorded artifacts on 2026-11-14.
+Generated from the checked-out source and recorded artifacts on 2026-11-15.
 Environment variable names are listed without values. The frozen test split and
 protected `docs/results/p5` outputs were not opened; the Test 2026 table below
 contains only values already transcribed in repository documentation.
@@ -163,22 +163,26 @@ evaluation was performed for this snapshot.
 
 ### Validation 2025
 
-Values below are copied from `docs/results_offline/2026-11-14/val2025_comparison.md`.
+Values below are copied from `docs/results_offline/2026-11-15/val2025_comparison.md`.
 Train: 2022-2024 (93,842 rows, 270 positives); validation: 2025 (48,152 rows,
 126 positives). This comparison did not open the test split.
 
 | Model | PR-AUC | Precision | Recall | F1 | ROC-AUC | P@50 | P@100 | P@500 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Logistic Regression (152 features) | 0.020851 | 0.032967 | 0.047619 | 0.038961 | 0.854879 | 0.0400 | 0.0200 | 0.0420 |
+| Logistic Regression (152 features; tuned) | 0.021292 | 0.041096 | 0.047619 | 0.044118 | 0.845647 | 0.0200 | 0.0300 | 0.0400 |
+| Logistic Regression (fixed; 2026-11-14 historical) | 0.020851 | 0.032967 | 0.047619 | 0.038961 | 0.854879 | 0.0400 | 0.0200 | 0.0420 |
 | Random Forest | 0.033932 | 0.060606 | 0.031746 | 0.041667 | 0.887909 | 0.0400 | 0.0500 | 0.0440 |
 | XGBoost calibrated | 0.035183 | 0.060000 | 0.023810 | 0.034091 | 0.889134 | 0.0600 | 0.0700 | 0.0320 |
 | CVSS-only baseline | 0.014753 | 0.062500 | 0.103175 | 0.077844 | 0.790278 | 0.0800 | 0.0900 | 0.0280 |
 | EPSS baseline (hindsight) | 0.283077 | 0.593750 | 0.150794 | 0.240506 | 0.967154 | 0.5600 | 0.3800 | 0.1320 |
 
-Random Forest tuning used 3-fold randomized CV on training rows. Logistic
-Regression used fixed `C=1.0` and balanced class weights; CV selected its
-threshold, not its model parameters. The frozen XGBoost calibrator was fitted on
-Validation 2025. EPSS is a hindsight baseline.
+Logistic Regression tuning selected `C=100`, `class_weight=None` with mean
+training-CV average precision `0.062506` from a 10-candidate, 3-fold stratified
+grid search; its threshold was selected from training-only out-of-fold scores.
+The fixed `C=1.0`, balanced-class-weight result is retained as a historical row.
+Random Forest tuning used 3-fold randomized CV on training rows. The frozen
+XGBoost calibrator was fitted on Validation 2025, a disclosed exception. EPSS
+is a hindsight baseline.
 
 ## Artifact inventory: SHA-256 and bytes
 
@@ -194,6 +198,7 @@ configuration file was not re-read for this snapshot.
 | `ml/models/headline_tfidf_transformer.joblib` | Frozen production transformer | 18,010,971 | `ed8a5daaad9fa1b7455f32ccb9005372a6bb1da3f993a768485cf4e446ecc58d` |
 | `ml/models/feature_transformers_2026-10-08.joblib` | Historical/auxiliary | 2,059,482 | `965d28a42b0701723b02ecbcc6076afbb4fba05024d1bc9fd02365df924b8368` |
 | `ml/models/logreg_val2025_2026-11-14.joblib` | Offline Validation 2025 | 2,113 | `16b9e5cf4846b975633df76182d8e93f27dd523c63659b92b8d12740b9f02334` |
+| `ml/models/logreg_cv_val2025_2026-11-15.joblib` | Tuned offline Validation 2025 | 2,097 | `8e8914a38cea6be1937e2c7f4f54df42a5fcc96e3e651ad6f02c1377dfa0b6ad` |
 | `ml/models/rf_val2025_2026-11-14.joblib` | Offline Validation 2025 | 252,329 | `334e2e2451ce79b741759ced1bb0a1ae3fe100b9835168d633d5b111ca7fab4c` |
 | `ml/models/xgb_model_2026-10-07.joblib` | Historical/auxiliary | 120,672 | `559a10ab428401f6f9e6a625b240529bebf3b47fdfe7a2ab4531360c6ed77a84` |
 | `ml/models/xgb_model_2026-10-08.joblib` | Historical/auxiliary | 230,046 | `6b7d79436d10e59c916bf20673b09c1337170968ad7a56086064e94becb1388b` |
@@ -201,6 +206,10 @@ configuration file was not re-read for this snapshot.
 | `docs/results_offline/2026-11-14/val2025_comparison.md` | Validation report | 6,491 | `d1869f8c18e5c2bde7f484c20e351f1b5c3547dd51d698ceb528d994676d8072` |
 | `docs/results_offline/2026-11-14/val2025_pr_curve.svg` | Validation chart | 63,123 | `95d4f6687b9d1a4e8c03076f49dac13cc269791d901cf3aade169312a69bca5a` |
 | `docs/results_offline/2026-11-14/val2025_top_k.svg` | Validation chart | 3,539 | `778627ce53c33da36c62a5f87130d9d6c7c927f8972df0b2e965fed8bc33a20b` |
+| `docs/results_offline/2026-11-15/val2025_comparison.json` | Tuned validation metrics and predictions | 16,467,026 | `d208af1e00f339561d082ed981d7b980b64ecc3156da4e2d8f145219a3adc40b` |
+| `docs/results_offline/2026-11-15/val2025_comparison.md` | Tuned validation report | 5,506 | `7fb8669b5a394075ac1a97ccde50dbf588d54b614ad87eea4236fc89a7d13ead` |
+| `docs/results_offline/2026-11-15/val2025_pr_curve.svg` | Tuned validation chart | 63,122 | `4b2b13ddf9ea0e8e12fa682ad877ab6dc0473cfd7b9de252a0f3ce001cce0c2c` |
+| `docs/results_offline/2026-11-15/val2025_top_k.svg` | Tuned validation chart | 3,539 | `37126db8ebda6171c4c481074f1998da0e36f670d277e0183d56ad6d582dbf46` |
 
 ## Test collection, dependencies, and limitations
 
@@ -230,8 +239,8 @@ tests from these files:
 | Next.js | 16.4.5 |
 
 Known limitations: no active scanning, auto-patching, LLM agents, or mobile
-client; no live CISA KEV feed; LR and RF have no test result; LR hyperparameters
-are fixed; the XGBoost calibrator was fitted on validation; and uncached CVE
+client; no live CISA KEV feed; LR and RF have no test result; the frozen XGBoost
+calibrator was fitted on validation; and uncached CVE
 lookups depend on external NVD/FIRST availability. Asset search and exposure,
 environment, and review-status filters are client-side in `AssetsView`.
 The optional prepared catalog loader handles 384,522 rows in about 33 minutes;
