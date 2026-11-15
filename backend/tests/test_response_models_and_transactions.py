@@ -170,7 +170,7 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
     scan_body = scan_response.json()
     assert set(scan_body) == {
         "finding_id", "action", "reopened", "priority_tier", "final_priority",
-        "priority_source", "rule_priority_tier", "score", "explanation",
+        "recommended_action", "priority_source", "rule_priority_tier", "score", "explanation",
         "ml_likelihood", "ml_risk", "ml_priority", "ml_top_reasons", "ml_model_version",
         "ml_recommended_action", "ml_unavailable_reason",
     }

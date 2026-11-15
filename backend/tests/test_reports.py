@@ -1,5 +1,8 @@
 import hashlib
 import json
+import re
+import zlib
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
@@ -10,6 +13,38 @@ from backend import auth
 from backend.models import Asset, AuditLog, Finding, FindingScore, User
 from backend.rules_config import RECOMMENDED_ACTION_TEMPLATES
 from backend.tests.db_helpers import create_test_engine
+
+
+def _extract_pdf_text(data):
+    text = []
+    for stream in re.findall(rb"stream\r?\n(.*?)\r?\nendstream", data, re.DOTALL):
+        try:
+            content = zlib.decompress(stream)
+        except zlib.error:
+            continue
+        for match in re.finditer(rb"\(((?:\\.|[^\\)])*)\)\s*Tj", content):
+            literal = match.group(1)
+            literal = re.sub(
+                rb"\\([0-7]{1,3})",
+                lambda octal: bytes([int(octal.group(1), 8)]),
+                literal,
+            )
+            literal = re.sub(
+                rb"\\([nrtbf()\\])",
+                lambda escape: {
+                    b"n": b"\n",
+                    b"r": b"\r",
+                    b"t": b"\t",
+                    b"b": b"\b",
+                    b"f": b"\f",
+                    b"(": b"(",
+                    b")": b")",
+                    b"\\": b"\\",
+                }[escape.group(1)],
+                literal,
+            )
+            text.append(literal.decode("latin-1"))
+    return "\n".join(text)
 
 
 @pytest.fixture
@@ -156,8 +191,9 @@ def test_pdf_export_header_and_audit(client, auth_headers, seeded, db_session):
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/pdf"
     assert r.content.startswith(b"%PDF-")
-    assert b"Recommended actions" in r.content
-    assert b"Expedite remediation" in r.content
+    pdf_text = _extract_pdf_text(r.content)
+    assert "Recommended actions" in pdf_text
+    assert RECOMMENDED_ACTION_TEMPLATES["Critical"] in pdf_text
     row, d = _last_export(db_session)
     assert d["format"] == "pdf"
     assert d["sha256"] == hashlib.sha256(r.content).hexdigest()
