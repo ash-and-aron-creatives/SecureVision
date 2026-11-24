@@ -188,6 +188,7 @@ export interface CurrentUser {
 export interface IntelResponse {
   cve_id: string;
   epss: number | null;
+  epss_percentile: number | null;
   cvss: number | null;
   available: boolean;
   errors: string[];

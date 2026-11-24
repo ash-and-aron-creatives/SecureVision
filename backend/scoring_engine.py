@@ -90,7 +90,7 @@ def calculate_priority(
             )
     elif epss_band == "High (>0.95)":
         rationale.append(
-            f"High predictive probability of exploitation (EPSS Percentile: {epss_percentile * 100:.1f}%)."
+            f"High EPSS percentile ({epss_percentile * 100:.1f}%)."
         )
         if internet_facing or criticality >= 4:
             tier = "Critical"
@@ -114,7 +114,7 @@ def calculate_priority(
             rationale.append("Internal asset limits maximum severity.")
     elif epss_band == "Med (0.2-0.95)":
         rationale.append(
-            f"Moderate predictive probability of exploitation (EPSS Percentile: {epss_percentile * 100:.1f}%)."
+            f"Moderate EPSS percentile ({epss_percentile * 100:.1f}%)."
         )
         if criticality >= 4:
             tier = "High"

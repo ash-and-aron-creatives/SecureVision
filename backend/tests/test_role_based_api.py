@@ -77,6 +77,7 @@ def role_api(tmp_path, monkeypatch):
         return {
             "cve_id": cve_id,
             "epss": 0.4,
+            "epss_percentile": 0.4,
             "cvss": 8.0,
             "available": True,
             "errors": [],

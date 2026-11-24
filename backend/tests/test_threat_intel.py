@@ -29,6 +29,7 @@ async def test_lookup_failures_are_explicit_and_never_zero_scores(monkeypatch):
     assert result == {
         "cve_id": "CVE-2025-1234",
         "epss": None,
+        "epss_percentile": None,
         "cvss": None,
         "available": False,
         "errors": ["EPSS lookup failed.", "NVD lookup failed."],
@@ -78,6 +79,7 @@ async def test_one_provider_failure_preserves_available_score_as_partial(monkeyp
     result = await threat_intel.fetch_cve_data("CVE-2025-1234")
 
     assert result["epss"] is None
+    assert result["epss_percentile"] is None
     assert result["cvss"] == 8.2
     assert result["available"] is False
     assert result["errors"] == ["EPSS lookup failed."]
@@ -85,3 +87,35 @@ async def test_one_provider_failure_preserves_available_score_as_partial(monkeyp
     assert result["cvss_vector"] == "CVSS:3.1/AV:N"
     assert result["cwe"] == "CWE-79"
     assert result["published_date"] == "2025-01-01T00:00Z"
+
+
+@pytest.mark.anyio
+async def test_lookup_returns_first_probability_and_percentile(monkeypatch):
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.payload
+
+    class Client(FailedClient):
+        async def get(self, url, timeout):
+            if "epss" in url:
+                return Response({"data": [{"epss": "0.30", "percentile": "0.97"}]})
+            return Response({"vulnerabilities": [{
+                "cve": {
+                    "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 0.0}}]},
+                },
+            }]})
+
+    monkeypatch.setattr(threat_intel.httpx, "AsyncClient", Client)
+
+    result = await threat_intel.fetch_cve_data("CVE-2025-1234")
+
+    assert result["epss"] == 0.30
+    assert result["epss_percentile"] == 0.97
+    assert result["cvss"] == 0.0
+    assert result["available"] is True

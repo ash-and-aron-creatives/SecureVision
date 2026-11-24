@@ -56,6 +56,7 @@ def api(monkeypatch):
         return {
             "cve_id": cve_id,
             "epss": 0.4,
+            "epss_percentile": 0.4,
             "cvss": 8.0,
             "available": True,
             "errors": [],
@@ -115,6 +116,7 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
         return {
             "cve_id": cve_id,
             "epss": None,
+            "epss_percentile": None,
             "cvss": None,
             "available": False,
             "errors": ["EPSS lookup failed.", "NVD lookup failed."],
@@ -132,6 +134,7 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
     assert unavailable_response.json() == {
         "cve_id": "CVE-2025-1111",
         "epss": None,
+        "epss_percentile": None,
         "cvss": None,
         "available": False,
         "errors": ["EPSS lookup failed.", "NVD lookup failed."],
@@ -224,6 +227,7 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
             "in_kev": False,
             "cvss": 7.0,
             "epss": 0.4,
+            "epss_percentile": 0.4,
             "available": True,
             "errors": [],
             "description": "Mock vulnerability description.",
@@ -251,6 +255,7 @@ def test_csv_import_skips_findings_when_intel_is_unavailable(api, monkeypatch):
         return {
             "cve_id": cve_id,
             "epss": 0.2,
+            "epss_percentile": 0.2,
             "cvss": None,
             "available": False,
             "errors": ["NVD CVSS score is unavailable."],
@@ -281,6 +286,7 @@ def test_csv_import_skips_repeated_asset_cve_rows_in_one_file(api, monkeypatch):
             "in_kev": False,
             "cvss": 7.0,
             "epss": 0.4,
+            "epss_percentile": 0.4,
             "available": True,
             "errors": [],
             "description": "Repeated-row test description.",
@@ -324,6 +330,7 @@ def test_csv_import_creates_missing_asset_with_review_flag_and_file_cvss(api, mo
         return {
             "cve_id": cve_id,
             "epss": 0.4,
+            "epss_percentile": 0.4,
             "cvss": None,
             "available": True,
             "errors": ["NVD CVSS score is unavailable."],
@@ -532,6 +539,7 @@ def test_import_commit_rolls_back_when_audit_insert_fails(api, monkeypatch):
             "in_kev": False,
             "cvss": 7.0,
             "epss": 0.4,
+            "epss_percentile": 0.4,
             "available": True,
             "errors": [],
         }

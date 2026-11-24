@@ -34,15 +34,17 @@ export function useScan(
     setIntelMessage("");
     try {
       const intel = await lookupIntel(apiRequest, token, cveId);
-      if (!intel.available || intel.cvss === null || intel.epss === null) {
+      if (!intel.available || intel.cvss === null || intel.epss_percentile === null) {
         setIntelMessage(
           `Intelligence unavailable; scores were not changed. ${intel.errors.join(" ")}`,
         );
         return;
       }
       setScanCvss(String(intel.cvss));
-      setScanEpss(String(intel.epss));
-      setIntelMessage(`Loaded CVSS ${intel.cvss} and EPSS ${intel.epss} for ${intel.cve_id}.`);
+      setScanEpss(String(intel.epss_percentile));
+      setIntelMessage(
+        `Loaded CVSS ${intel.cvss}, EPSS percentile ${intel.epss_percentile}, and probability ${intel.epss} for ${intel.cve_id}.`,
+      );
     } catch (lookupError) {
       setIntelMessage(
         lookupError instanceof Error ? lookupError.message : "CVE intelligence lookup failed.",

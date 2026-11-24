@@ -105,6 +105,7 @@ class TokenResponse(ResponseSchema):
 class IntelResponse(ResponseSchema):
     cve_id: str
     epss: float | None
+    epss_percentile: float | None = None
     cvss: float | None
     available: bool
     errors: list[str]

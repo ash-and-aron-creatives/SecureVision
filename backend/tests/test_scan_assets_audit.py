@@ -6,7 +6,7 @@ from backend.main import app
 from backend.database import Base, get_db
 from backend import auth
 from backend import main
-from backend.models import Asset, AuditLog, User, Finding
+from backend.models import Asset, AuditLog, CVECatalog, User, Finding
 from backend.tests.db_helpers import create_test_engine
 
 @pytest.fixture
@@ -19,6 +19,7 @@ def env(monkeypatch):
         return {
             "cve_id": cve_id,
             "epss": 0.4,
+            "epss_percentile": 0.4,
             "cvss": 8.0,
             "available": True,
             "errors": [],
@@ -307,6 +308,80 @@ def test_scan_does_not_score_when_required_intel_is_unavailable(env, monkeypatch
     assert response.status_code == 503
     assert "was not scored" in response.json()["detail"]["message"]
     assert db.query(Finding).filter_by(cve_id="CVE-2025-6789").first() is None
+
+
+def test_catalog_kev_marks_scan_without_calling_live_provider(env, monkeypatch):
+    client, db = env
+    headers = _hdrs(client)
+    asset = Asset(name="CATALOG-KEV-SRV", exposure="Internal", criticality=3)
+    db.add(asset)
+    db.add(CVECatalog(
+        cve_id="CVE-2025-9871",
+        published_date="2025-01-01",
+        description="Catalog KEV test.",
+        cvss_score=0.1,
+        cvss_vector="CVSS:3.1/AV:L",
+        cwe="CWE-79",
+        kev_date_added="2025-01-02",
+        epss=0.30,
+        percentile=0.01,
+        in_kev=True,
+    ))
+    db.commit()
+
+    async def live_provider(_cve_id):
+        pytest.fail("Catalog-complete CVE unexpectedly called the live provider.")
+
+    monkeypatch.setattr(main, "fetch_cve_data", live_provider)
+    response = client.post(
+        "/scan",
+        json={"asset_id": asset.id, "cve_id": "CVE-2025-9871", "in_kev": False},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["rule_priority_tier"] == "High"
+    assert response.json()["explanation"]["inputs"]["in_kev"] is True
+    assert response.json()["explanation"]["inputs"]["epss_percentile"] == 0.01
+    finding = db.query(Finding).filter_by(cve_id="CVE-2025-9871").one()
+    assert finding.in_kev is True
+
+
+def test_live_percentile_drives_scan_band_not_probability(env, monkeypatch):
+    client, db = env
+    headers = _hdrs(client)
+    asset = Asset(name="EPSS-PERCENTILE-SRV", exposure="Internal", criticality=3)
+    db.add(asset)
+    db.commit()
+    calls = []
+
+    async def live_provider(cve_id):
+        calls.append(cve_id)
+        return {
+            "cve_id": cve_id,
+            "epss": 0.30,
+            "epss_percentile": 0.97,
+            "cvss": 0.0,
+            "available": True,
+            "errors": [],
+            "description": "Percentile test.",
+            "cvss_vector": "CVSS:3.1/AV:L",
+            "cwe": "CWE-79",
+            "published_date": "2025-01-01",
+        }
+
+    monkeypatch.setattr(main, "fetch_cve_data", live_provider)
+    response = client.post(
+        "/scan",
+        json={"asset_id": asset.id, "cve_id": "CVE-2025-9872"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert calls == ["CVE-2025-9872"]
+    assert response.json()["rule_priority_tier"] == "High"
+    assert response.json()["explanation"]["inputs"]["epss_percentile"] == 0.97
+    assert "97.0%" in response.json()["explanation"]["summary"]
 
 
 def test_audit_log_immutability_enforced(env):

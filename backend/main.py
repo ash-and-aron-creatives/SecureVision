@@ -38,7 +38,7 @@ from backend.ml_inference import (
     predict_exploit_likelihood,
     warm_up_model,
 )
-from backend.cve_dataset import lookup_catalog, search_catalog
+from backend.cve_dataset import lookup_catalog, lookup_cve_intel, search_catalog
 from backend.rules_config import (
     CVE_SEARCH_MAX_RESULTS,
     LOGIN_USERNAME_MAX_LENGTH,
@@ -374,49 +374,9 @@ def _cve_from_intel(info: dict) -> dict:
         "cwe": info.get("cwe"),
         "kev_date_added": info.get("kev_date_added"),
         "epss": info.get("epss"),
-        "percentile": info.get("percentile"),
+        "percentile": info.get("epss_percentile", info.get("percentile")),
         "in_kev": info.get("in_kev"),
     }
-
-
-def _enrich_from_catalog(db: Session, info: dict, cve_id: str) -> dict:
-    catalog_started = time.perf_counter()
-    dataset_record = lookup_catalog(db, cve_id)
-    _LOGGER.debug(
-        "scan.catalog_lookup cve_id=%s hit=%s elapsed_ms=%.3f",
-        cve_id,
-        dataset_record is not None,
-        (time.perf_counter() - catalog_started) * 1000,
-    )
-    if dataset_record is None:
-        return info
-    fields = (
-        "description",
-        "cvss",
-        "cvss_vector",
-        "cwe",
-        "epss",
-    )
-    if not any(
-        info.get(field) is None
-        or (isinstance(info.get(field), str) and not info[field].strip())
-        for field in fields
-    ):
-        return info
-    enriched = dict(info)
-    for target, source in (
-        ("description", "description"),
-        ("cvss", "cvss_score"),
-        ("cvss_vector", "cvss_vector"),
-        ("cwe", "cwe"),
-        ("epss", "percentile"),
-    ):
-        if enriched.get(target) is None:
-            enriched[target] = dataset_record.get(source)
-    if not enriched.get("available") and enriched.get("cvss") is not None:
-        enriched["available"] = True
-        enriched["errors"] = []
-    return enriched
 
 
 def _lookup_cached_cve(db: Session, cve_id: str) -> dict | None:
@@ -498,11 +458,15 @@ def search_cve_records(
     return results
 
 @app.get("/intel/{cve_id}", response_model=IntelResponse)
-async def get_intel(cve_id: str, current_user: models.User = Depends(auth.get_current_user)):
+async def get_intel(
+    cve_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
     cve_clean = cve_id.strip().upper()
     if not CVE_ID_PATTERN.fullmatch(cve_clean):
         raise HTTPException(status_code=422, detail="cve_id must look like CVE-2021-44228.")
-    return await fetch_cve_data(cve_clean)
+    return await lookup_cve_intel(db, cve_clean, fetch_cve_data)
 
 
 @app.get("/model/results", response_model=ModelResultsResponse)
@@ -521,29 +485,25 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
     cve_clean = req.cve_id.strip().upper()
     if not CVE_ID_PATTERN.fullmatch(cve_clean):
         raise HTTPException(status_code=422, detail="cve_id must look like CVE-2021-44228.")
-    intel = await run_in_threadpool(
-        _enrich_from_catalog,
-        db,
-        await fetch_cve_data(cve_clean),
-        cve_clean,
-    )
+    intel = await lookup_cve_intel(db, cve_clean, fetch_cve_data)
     cvss_score = req.cvss_score
     epss_percentile = req.epss_percentile
+    in_kev = bool(req.in_kev or intel["in_kev"])
     if cvss_score is None or epss_percentile is None:
         if cvss_score is None:
             cvss_score = intel["cvss"]
         if epss_percentile is None:
-            epss_percentile = intel["epss"]
+            epss_percentile = intel["epss_percentile"]
         if cvss_score is None or epss_percentile is None:
             raise HTTPException(
                 status_code=503,
                 detail={
                     "message": "Threat intelligence is unavailable; scan was not scored.",
-                    "errors": intel["errors"],
+                    "errors": intel.get("errors", []),
                 },
             )
     internet_facing = (asset.exposure.lower() == "internet")
-    scoring = calculate_priority(req.in_kev, internet_facing, asset.criticality, epss_percentile, cvss_score)
+    scoring = calculate_priority(in_kev, internet_facing, asset.criticality, epss_percentile, cvss_score)
     inference_started = time.perf_counter()
     ml_assessment = await run_in_threadpool(
         predict_exploit_likelihood,
@@ -561,7 +521,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
     )
     rule_tier = scoring["tier"]
     final_tier, priority_source = resolve_final_priority(
-        rule_tier, ml_assessment["priority"], req.in_kev
+        rule_tier, ml_assessment["priority"], in_kev
     )
 
     persistence_started = time.perf_counter()
@@ -583,7 +543,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
                     asset_id=asset.id,
                     cve_id=cve_clean,
                     cvss_score=cvss_score,
-                    in_kev=req.in_kev,
+                    in_kev=in_kev,
                     final_priority=final_tier,
                     priority_source=priority_source,
                     status="Open",
@@ -607,7 +567,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
                 action = "updated"
                 reopened = (finding.status or "").casefold() == "resolved"
                 finding.cvss_score = cvss_score
-                finding.in_kev = req.in_kev
+                finding.in_kev = in_kev
                 if reopened:
                     finding.status = "Open"
         elif finding is None:
@@ -615,7 +575,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
                 asset_id=asset.id,
                 cve_id=cve_clean,
                 cvss_score=cvss_score,
-                in_kev=req.in_kev,
+                in_kev=in_kev,
                 status="Open",
             )
             db.add(finding)
@@ -624,7 +584,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
             action = "updated"
             reopened = (finding.status or "").casefold() == "resolved"
             finding.cvss_score = cvss_score
-            finding.in_kev = req.in_kev
+            finding.in_kev = in_kev
             if reopened:
                 finding.status = "Open"
         finding.final_priority = final_tier
@@ -637,7 +597,7 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
             priority_tier=rule_tier,
             provenance={
                 "source": "Manual Scan",
-                "in_kev": req.in_kev,
+                "in_kev": in_kev,
                 "cvss": cvss_score,
                 "epss": epss_percentile,
                 "score": scoring["score"],
@@ -1088,7 +1048,7 @@ async def commit_csv(
 
     intel = {}
     for cve in cves:
-        intel[cve] = await fetch_cve_data(cve)
+        intel[cve] = await lookup_cve_intel(db, cve, fetch_cve_data)
 
     asset_by_id = {a.id: a for a in all_assets}
     new_assets: dict[str, models.Asset] = {}
@@ -1098,14 +1058,14 @@ async def commit_csv(
     try:
         for r in ok:
             info = intel.get(r.cve_id)
-            if not info or not info["available"] or info["epss"] is None:
-                errors = "; ".join(info["errors"]) if info else "Threat intelligence lookup failed."
+            if not info or info.get("epss_percentile") is None:
+                errors = "; ".join(info.get("errors", [])) if info else "Threat intelligence lookup failed."
                 r.status, r.reason = "error", errors
                 continue
 
-            cvss_val = r.cvss_score if r.cvss_score is not None else info["cvss"]
+            cvss_val = r.cvss_score if r.cvss_score is not None else info.get("cvss")
             if cvss_val is None:
-                errors = "; ".join(info["errors"]) or "CVSS score is unavailable."
+                errors = "; ".join(info.get("errors", [])) or "CVSS score is unavailable."
                 r.status, r.reason = "error", errors
                 continue
 
@@ -1127,7 +1087,7 @@ async def commit_csv(
             r.asset_id = asset.id
             internet_facing = (asset.exposure.lower() == "internet")
             in_kev = bool(info.get("in_kev", False))
-            epss_val = info["epss"]
+            epss_val = info["epss_percentile"]
             scoring = calculate_priority(in_kev, internet_facing, asset.criticality, epss_val, cvss_val)
             ml_assessment = predict_exploit_likelihood(
                 cvss_score=cvss_val,

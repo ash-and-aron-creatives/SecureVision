@@ -3,15 +3,31 @@ import math
 import httpx
 
 DEMO_CACHE = {
-    "CVE-2021-44228": {"cve_id": "CVE-2021-44228", "epss": 0.995, "cvss": 10.0},
-    "CVE-2017-0144": {"cve_id": "CVE-2017-0144", "epss": 0.952, "cvss": 8.1},
-    "CVE-2021-26855": {"cve_id": "CVE-2021-26855", "epss": 0.971, "cvss": 9.8},
+    "CVE-2021-44228": {
+        "cve_id": "CVE-2021-44228",
+        "epss": 0.99999,
+        "epss_percentile": 1.0,
+        "cvss": 10.0,
+    },
+    "CVE-2017-0144": {
+        "cve_id": "CVE-2017-0144",
+        "epss": 0.9923,
+        "epss_percentile": 0.99935,
+        "cvss": 8.1,
+    },
+    "CVE-2021-26855": {
+        "cve_id": "CVE-2021-26855",
+        "epss": 0.99996,
+        "epss_percentile": 0.99988,
+        "cvss": 9.8,
+    },
 }
 
 
 def _result(
     cve_id: str,
     epss: float | None,
+    epss_percentile: float | None,
     cvss: float | None,
     errors: list[str],
     description: str | None = None,
@@ -22,8 +38,13 @@ def _result(
     return {
         "cve_id": cve_id,
         "epss": epss,
+        "epss_percentile": epss_percentile,
         "cvss": cvss,
-        "available": epss is not None and cvss is not None,
+        "available": (
+            epss is not None
+            and epss_percentile is not None
+            and cvss is not None
+        ),
         "errors": errors,
         "description": description,
         "cvss_vector": cvss_vector,
@@ -36,9 +57,16 @@ async def fetch_cve_data(cve_id: str) -> dict:
     cve_upper = cve_id.upper()
     if cve_upper in DEMO_CACHE:
         cached = DEMO_CACHE[cve_upper]
-        return _result(cve_upper, cached["epss"], cached["cvss"], [])
+        return _result(
+            cve_upper,
+            cached["epss"],
+            cached.get("epss_percentile"),
+            cached["cvss"],
+            [],
+        )
 
     epss_score = None
+    epss_percentile = None
     cvss_score = None
     errors = []
     description = None
@@ -58,9 +86,10 @@ async def fetch_cve_data(cve_id: str) -> dict:
             errors.append("EPSS lookup failed.")
         else:
             results = epss_data.get("data") if isinstance(epss_data, dict) else None
-            raw_epss = results[0].get("epss") if (
+            epss_record = results[0] if (
                 isinstance(results, list) and results and isinstance(results[0], dict)
-            ) else None
+            ) else {}
+            raw_epss = epss_record.get("epss")
             try:
                 parsed_epss = float(raw_epss)
                 if not math.isfinite(parsed_epss) or not 0 <= parsed_epss <= 1:
@@ -68,6 +97,14 @@ async def fetch_cve_data(cve_id: str) -> dict:
                 epss_score = parsed_epss
             except (TypeError, ValueError):
                 errors.append("EPSS score is unavailable.")
+            raw_percentile = epss_record.get("percentile")
+            try:
+                parsed_percentile = float(raw_percentile)
+                if not math.isfinite(parsed_percentile) or not 0 <= parsed_percentile <= 1:
+                    raise ValueError
+                epss_percentile = parsed_percentile
+            except (TypeError, ValueError):
+                errors.append("EPSS percentile is unavailable.")
 
         try:
             nvd_resp = await client.get(
@@ -146,6 +183,7 @@ async def fetch_cve_data(cve_id: str) -> dict:
     return _result(
         cve_upper,
         epss_score,
+        epss_percentile,
         cvss_score,
         errors,
         description,

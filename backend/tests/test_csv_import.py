@@ -1,7 +1,17 @@
 import datetime as dt
 import csv
+import io
 from pathlib import Path
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
+
+from backend import auth, main
+from backend.database import Base, get_db
+from backend.main import app
+from backend.models import Asset, CVECatalog, Finding, FindingScore, User
+from backend.tests.db_helpers import create_test_engine
+
 from backend.csv_import import (
     ImportFileError,
     MAX_BYTES,
@@ -226,6 +236,76 @@ def test_accepts_csv_at_exact_byte_and_row_limits():
         "error": 0,
         "duplicate": MAX_ROWS - 1,
     }
+
+
+def test_csv_import_uses_catalog_kev_without_live_provider(monkeypatch):
+    engine = create_test_engine()
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+    db.add_all([
+        User(
+            username="csv-catalog-admin",
+            hashed_password=auth.get_password_hash("test-password"),
+            role="admin",
+        ),
+        Asset(name="CATALOG-CSV-SRV", exposure="Internal", criticality=3),
+        CVECatalog(
+            cve_id="CVE-2025-9881",
+            published_date="2025-01-01",
+            description="Catalog CSV KEV test.",
+            cvss_score=0.1,
+            cvss_vector="CVSS:3.1/AV:L",
+            cwe="CWE-79",
+            kev_date_added="2025-01-02",
+            epss=0.30,
+            percentile=0.01,
+            in_kev=True,
+        ),
+    ])
+    db.commit()
+
+    async def live_provider(_cve_id):
+        pytest.fail("Catalog-complete CVE unexpectedly called the live provider.")
+
+    monkeypatch.setattr(main, "fetch_cve_data", live_provider)
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as client:
+            token = client.post(
+                "/token",
+                data={"username": "csv-catalog-admin", "password": "test-password"},
+            ).json()["access_token"]
+            response = client.post(
+                "/imports/commit",
+                files={
+                    "file": (
+                        "catalog-kev.csv",
+                        io.BytesIO(
+                            b"asset_name,cve_id,date_found\n"
+                            b"CATALOG-CSV-SRV,CVE-2025-9881,2026-10-01\n"
+                        ),
+                        "text/csv",
+                    ),
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+        db.close()
+
+    assert response.status_code == 200
+    assert response.json()["imported"] == 1
+    finding = db.query(Finding).filter_by(cve_id="CVE-2025-9881").one()
+    score = db.query(FindingScore).filter_by(finding_id=finding.id).one()
+    assert finding.in_kev is True
+    assert finding.final_priority in ("High", "Critical")
+    assert score.priority_tier == "High"
+    assert score.likelihood == 0.01
+
 
 def test_error_report_blocks_formula_injection():
     rows, _ = run("asset_name,cve_id,date_found\n=HYPERLINK(\"http://x\"),CVE-2021-44228,2026-10-01\n")

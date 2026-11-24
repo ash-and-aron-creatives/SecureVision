@@ -374,6 +374,7 @@ def test_postgres_concurrent_scans_upsert_one_finding(postgres_api, monkeypatch)
         return {
             "cve_id": cve_id,
             "epss": 0.4,
+            "epss_percentile": 0.4,
             "cvss": 8.0,
             "available": True,
             "errors": [],
@@ -432,6 +433,7 @@ def test_postgres_csv_import_skips_duplicate_rows_in_one_file(postgres_api, monk
         return {
             "cve_id": cve_id,
             "epss": 0.4,
+            "epss_percentile": 0.4,
             "cvss": 8.0,
             "available": True,
             "errors": [],
@@ -489,6 +491,7 @@ def test_postgres_concurrent_csv_import_returns_readable_conflict(postgres_api, 
         return {
             "cve_id": cve_id,
             "epss": 0.4,
+            "epss_percentile": 0.4,
             "cvss": 8.0,
             "available": True,
             "errors": [],

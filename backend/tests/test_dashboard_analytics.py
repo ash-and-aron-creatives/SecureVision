@@ -200,6 +200,7 @@ def test_csv_import_records_per_finding_creation_time(analytics_client, monkeypa
         return {
             "cve_id": cve_id,
             "epss": 0.2,
+            "epss_percentile": 0.2,
             "cvss": 5.0,
             "available": True,
             "errors": [],
