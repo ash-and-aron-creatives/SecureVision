@@ -1,0 +1,419 @@
+{
+  "analysis": "Validation-only ML tier parity and distribution diagnostic",
+  "combined_three_profiles": {
+    "estimated_total_scenarios": 144455.99999999686,
+    "positive_scenarios": 378,
+    "profiles_included": [
+      "Internet / criticality 5",
+      "Internal / criticality 2",
+      "Internal / criticality 3"
+    ],
+    "tiers": {
+      "Critical": {
+        "intended_share_reference": 0.01,
+        "positive_scenarios": 0,
+        "positive_share": 0.0,
+        "share": 0.0,
+        "weighted_precision": null
+      },
+      "High": {
+        "intended_share_reference": 0.09,
+        "positive_scenarios": 0,
+        "positive_share": 0.0,
+        "share": 0.0,
+        "weighted_precision": null
+      },
+      "Low": {
+        "intended_share_reference": 0.5,
+        "positive_scenarios": 377,
+        "positive_share": 0.9973544973544973,
+        "share": 0.9988294636429086,
+        "weighted_precision": 0.002612849652216253
+      },
+      "Medium": {
+        "intended_share_reference": 0.4,
+        "positive_scenarios": 1,
+        "positive_share": 0.0026455026455026454,
+        "share": 0.0011705363570914582,
+        "weighted_precision": 0.005913975315067034
+      }
+    }
+  },
+  "dataset_path": "C:\\Users\\Cornellious\\SecureVision\\data\\processed\\master_cves_2026-10-08.csv",
+  "model_version": "headline_model_calibrated.joblib:1390b1e65ff9",
+  "negative_sample_size": 2000,
+  "negative_weight": 24.013,
+  "parity": {
+    "label_mismatches": 0,
+    "matched_rows": 2126,
+    "max_absolute_difference": 0.08256213615823071,
+    "mean_absolute_difference": 0.0030774590642809576,
+    "rows_differing_by_more_than_1e-6": 2125,
+    "sample_rows": 2126,
+    "spearman_correlation": -0.35120987312834157,
+    "unmatched_rows": 0
+  },
+  "profiles": {
+    "Internal / criticality 2": {
+      "criticality": 2,
+      "estimated_total_rows": 48151.99999999895,
+      "exposure": "Internal",
+      "negative_sample_weight": 24.013,
+      "positive_rows": 126,
+      "tiers": {
+        "Critical": {
+          "estimated_rows": 0.0,
+          "intended_share": 0.01,
+          "positive_rows": 0,
+          "positive_share": 0.0,
+          "share": 0.0,
+          "share_minus_intended_percentage_points": -1.0,
+          "weighted_precision": null
+        },
+        "High": {
+          "estimated_rows": 0.0,
+          "intended_share": 0.09,
+          "positive_rows": 0,
+          "positive_share": 0.0,
+          "share": 0.0,
+          "share_minus_intended_percentage_points": -9.0,
+          "weighted_precision": null
+        },
+        "Low": {
+          "estimated_rows": 48151.99999999895,
+          "intended_share": 0.5,
+          "positive_rows": 126,
+          "positive_share": 1.0,
+          "share": 1.0,
+          "share_minus_intended_percentage_points": 50.0,
+          "weighted_precision": 0.002616713739823948
+        },
+        "Medium": {
+          "estimated_rows": 0.0,
+          "intended_share": 0.4,
+          "positive_rows": 0,
+          "positive_share": 0.0,
+          "share": 0.0,
+          "share_minus_intended_percentage_points": -40.0,
+          "weighted_precision": null
+        }
+      }
+    },
+    "Internal / criticality 3": {
+      "criticality": 3,
+      "estimated_total_rows": 48151.99999999895,
+      "exposure": "Internal",
+      "negative_sample_weight": 24.013,
+      "positive_rows": 126,
+      "tiers": {
+        "Critical": {
+          "estimated_rows": 0.0,
+          "intended_share": 0.01,
+          "positive_rows": 0,
+          "positive_share": 0.0,
+          "share": 0.0,
+          "share_minus_intended_percentage_points": -1.0,
+          "weighted_precision": null
+        },
+        "High": {
+          "estimated_rows": 0.0,
+          "intended_share": 0.09,
+          "positive_rows": 0,
+          "positive_share": 0.0,
+          "share": 0.0,
+          "share_minus_intended_percentage_points": -9.0,
+          "weighted_precision": null
+        },
+        "Low": {
+          "estimated_rows": 48151.99999999895,
+          "intended_share": 0.5,
+          "positive_rows": 126,
+          "positive_share": 1.0,
+          "share": 1.0,
+          "share_minus_intended_percentage_points": 50.0,
+          "weighted_precision": 0.002616713739823948
+        },
+        "Medium": {
+          "estimated_rows": 0.0,
+          "intended_share": 0.4,
+          "positive_rows": 0,
+          "positive_share": 0.0,
+          "share": 0.0,
+          "share_minus_intended_percentage_points": -40.0,
+          "weighted_precision": null
+        }
+      }
+    },
+    "Internet / criticality 5": {
+      "criticality": 5,
+      "estimated_total_rows": 48151.99999999895,
+      "exposure": "Internet",
+      "negative_sample_weight": 24.013,
+      "positive_rows": 126,
+      "tiers": {
+        "Critical": {
+          "estimated_rows": 0.0,
+          "intended_share": 0.01,
+          "positive_rows": 0,
+          "positive_share": 0.0,
+          "share": 0.0,
+          "share_minus_intended_percentage_points": -1.0,
+          "weighted_precision": null
+        },
+        "High": {
+          "estimated_rows": 0.0,
+          "intended_share": 0.09,
+          "positive_rows": 0,
+          "positive_share": 0.0,
+          "share": 0.0,
+          "share_minus_intended_percentage_points": -9.0,
+          "weighted_precision": null
+        },
+        "Low": {
+          "estimated_rows": 47982.90899999896,
+          "intended_share": 0.5,
+          "positive_rows": 125,
+          "positive_share": 0.9920634920634921,
+          "share": 0.9964883909287258,
+          "share_minus_intended_percentage_points": 49.64883909287258,
+          "weighted_precision": 0.0026050942430356342
+        },
+        "Medium": {
+          "estimated_rows": 169.091,
+          "intended_share": 0.4,
+          "positive_rows": 1,
+          "positive_share": 0.007936507936507936,
+          "share": 0.0035116090712743746,
+          "share_minus_intended_percentage_points": -39.648839092872564,
+          "weighted_precision": 0.005913975315067034
+        }
+      }
+    }
+  },
+  "rows_outside_validation_used": false,
+  "runtime_seconds": 40.73331390000021,
+  "sample_rows": 2126,
+  "sample_used_from_priority_distribution": false,
+  "saved_model_sha256": "1390b1e65ff9bbf9dc3a3f37659a577c32af0f7aac9bb47711f8394331bc8ed1",
+  "saved_prediction_tier_reference": {
+    "combined_three_profiles": {
+      "estimated_total_scenarios": 144455.99999999686,
+      "positive_scenarios": 378,
+      "profiles_included": [
+        "Internet / criticality 5",
+        "Internal / criticality 2",
+        "Internal / criticality 3"
+      ],
+      "tiers": {
+        "Critical": {
+          "intended_share_reference": 0.01,
+          "positive_scenarios": 53,
+          "positive_share": 0.1402116402116402,
+          "share": 0.010008265492606963,
+          "weighted_precision": 0.036659072013634414
+        },
+        "High": {
+          "intended_share_reference": 0.09,
+          "positive_scenarios": 181,
+          "positive_share": 0.47883597883597884,
+          "share": 0.09051878080522965,
+          "weighted_precision": 0.013842173677064872
+        },
+        "Low": {
+          "intended_share_reference": 0.5,
+          "positive_scenarios": 13,
+          "positive_share": 0.03439153439153439,
+          "share": 0.4942934111425012,
+          "weighted_precision": 0.0001820635245125928
+        },
+        "Medium": {
+          "intended_share_reference": 0.4,
+          "positive_scenarios": 131,
+          "positive_share": 0.34656084656084657,
+          "share": 0.40517954255968236,
+          "weighted_precision": 0.002238144905223611
+        }
+      }
+    },
+    "profiles": {
+      "Internal / criticality 2": {
+        "criticality": 2,
+        "estimated_total_rows": 48151.99999999895,
+        "exposure": "Internal",
+        "negative_sample_weight": 24.013,
+        "positive_rows": 126,
+        "tiers": {
+          "Critical": {
+            "estimated_rows": 75.039,
+            "intended_share": 0.01,
+            "positive_rows": 3,
+            "positive_share": 0.023809523809523808,
+            "share": 0.0015583776374813432,
+            "share_minus_intended_percentage_points": -0.8441622362518657,
+            "weighted_precision": 0.039979210810378606
+          },
+          "High": {
+            "estimated_rows": 3212.7029999999936,
+            "intended_share": 0.09,
+            "positive_rows": 67,
+            "positive_share": 0.5317460317460317,
+            "share": 0.06672003239740952,
+            "share_minus_intended_percentage_points": -2.3279967602590474,
+            "weighted_precision": 0.020854713305276003
+          },
+          "Low": {
+            "estimated_rows": 31081.821999999655,
+            "intended_share": 0.5,
+            "positive_rows": 9,
+            "positive_share": 0.07142857142857142,
+            "share": 0.6454938943346139,
+            "share_minus_intended_percentage_points": 14.549389433461391,
+            "weighted_precision": 0.0002895583148246618
+          },
+          "Medium": {
+            "estimated_rows": 13782.436000000169,
+            "intended_share": 0.4,
+            "positive_rows": 47,
+            "positive_share": 0.373015873015873,
+            "share": 0.28622769563051315,
+            "share_minus_intended_percentage_points": -11.377230436948688,
+            "weighted_precision": 0.0034101373661375553
+          }
+        }
+      },
+      "Internal / criticality 3": {
+        "criticality": 3,
+        "estimated_total_rows": 48151.99999999895,
+        "exposure": "Internal",
+        "negative_sample_weight": 24.013,
+        "positive_rows": 126,
+        "tiers": {
+          "Critical": {
+            "estimated_rows": 153.078,
+            "intended_share": 0.01,
+            "positive_rows": 9,
+            "positive_share": 0.07142857142857142,
+            "share": 0.0031790579830537325,
+            "share_minus_intended_percentage_points": -0.6820942016946268,
+            "weighted_precision": 0.0587935562262376
+          },
+          "High": {
+            "estimated_rows": 4172.222999999991,
+            "intended_share": 0.09,
+            "positive_rows": 66,
+            "positive_share": 0.5238095238095238,
+            "share": 0.08664693055324975,
+            "share_minus_intended_percentage_points": -0.3353069446750248,
+            "weighted_precision": 0.015818905173572973
+          },
+          "Low": {
+            "estimated_rows": 27402.832999999806,
+            "intended_share": 0.5,
+            "positive_rows": 4,
+            "positive_share": 0.031746031746031744,
+            "share": 0.5690902350888936,
+            "share_minus_intended_percentage_points": 6.909023508889356,
+            "weighted_precision": 0.00014597030898228766
+          },
+          "Medium": {
+            "estimated_rows": 16423.866000000256,
+            "intended_share": 0.4,
+            "positive_rows": 47,
+            "positive_share": 0.373015873015873,
+            "share": 0.34108377637482584,
+            "share_minus_intended_percentage_points": -5.891622362517418,
+            "weighted_precision": 0.002861689202773529
+          }
+        }
+      },
+      "Internet / criticality 5": {
+        "criticality": 5,
+        "estimated_total_rows": 48151.99999999895,
+        "exposure": "Internet",
+        "negative_sample_weight": 24.013,
+        "positive_rows": 126,
+        "tiers": {
+          "Critical": {
+            "estimated_rows": 1217.637,
+            "intended_share": 0.01,
+            "positive_rows": 41,
+            "positive_share": 0.3253968253968254,
+            "share": 0.025287360857285814,
+            "share_minus_intended_percentage_points": 1.5287360857285814,
+            "weighted_precision": 0.0336717757426885
+          },
+          "High": {
+            "estimated_rows": 5691.054999999986,
+            "intended_share": 0.09,
+            "positive_rows": 48,
+            "positive_share": 0.38095238095238093,
+            "share": 0.11818937946502969,
+            "share_minus_intended_percentage_points": 2.8189379465029694,
+            "weighted_precision": 0.00843428854579689
+          },
+          "Low": {
+            "estimated_rows": 12918.99400000014,
+            "intended_share": 0.5,
+            "positive_rows": 0,
+            "positive_share": 0.0,
+            "share": 0.2682961040039961,
+            "share_minus_intended_percentage_points": -23.170389599600387,
+            "weighted_precision": 0.0
+          },
+          "Medium": {
+            "estimated_rows": 28324.31399999977,
+            "intended_share": 0.4,
+            "positive_rows": 37,
+            "positive_share": 0.29365079365079366,
+            "share": 0.588227155673708,
+            "share_minus_intended_percentage_points": 18.822715567370796,
+            "weighted_precision": 0.0013062981860743495
+          }
+        }
+      }
+    }
+  },
+  "saved_predictions_path": "C:\\Users\\Cornellious\\SecureVision\\docs\\results_offline\\2026-11-14\\val2025_comparison.json",
+  "seed": 42,
+  "threshold_percentiles": {
+    "Critical": 99,
+    "High": 90,
+    "Medium": 50
+  },
+  "threshold_provenance": {
+    "documented_contexts": [
+      "Internet / criticality 1",
+      "Internet / criticality 2",
+      "Internet / criticality 3",
+      "Internet / criticality 4",
+      "Internet / criticality 5",
+      "Internal / criticality 1",
+      "Internal / criticality 2",
+      "Internal / criticality 3",
+      "Internal / criticality 4",
+      "Internal / criticality 5"
+    ],
+    "documented_source": "Decision_Log.md D-023",
+    "documented_split": "2025-01-01 through 2025-12-31",
+    "formula": "likelihood * exposure_factor * criticality_factor",
+    "generating_script": "unverified",
+    "intended_shares": {
+      "Critical": 0.01,
+      "High": 0.09,
+      "Low": 0.5,
+      "Medium": 0.4
+    }
+  },
+  "thresholds": {
+    "Critical": 0.044082497805356974,
+    "High": 0.007056011210661384,
+    "Medium": 0.0008546133991330863
+  },
+  "validation_date_range": [
+    "2025-01-01",
+    "2025-12-31"
+  ],
+  "validation_negatives": 48026,
+  "validation_positives": 126,
+  "validation_rows": 48152
+}
