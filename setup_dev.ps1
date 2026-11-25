@@ -163,7 +163,7 @@ try {
         throw "Database migration failed with exit code $LASTEXITCODE."
     }
 
-    python .\init_db.py
+    python -m backend.init_db
     if ($LASTEXITCODE -ne 0) {
         throw "Database initialization failed with exit code $LASTEXITCODE."
     }

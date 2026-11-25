@@ -45,9 +45,7 @@ versions, hashes and console log are in the adjacent JSON. The new run's PR
 and top-K charts are included alongside the report; the historical 2026-11-14
 charts can be regenerated with `python ml/render_val2025_charts.py`.
 
-`scripts/priority_distribution.py` samples 2026 CVEs and their KEV flags only
-to illustrate tier distributions and was not used for any threshold or model
-decision; thresholds come from Validation 2025 quantiles.
+`scripts/priority_distribution.py` defaults to a reproducible Validation 2025 sample (published 2025-01-01 through 2025-12-31); sampling 2026 or later requires the explicit `--allow-test-period` flag.
 
 ## Offline deliverables checklist
 

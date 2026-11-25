@@ -1,3 +1,8 @@
+raise SystemExit(
+    "This legacy entry point is disabled. Use the administrator user-management API "
+    "PATCH /users/{user_id} to reset the password."
+)
+
 from backend.auth import get_initial_admin_password, get_password_hash
 from backend.database import SessionLocal
 from backend.models import AuditLog, User

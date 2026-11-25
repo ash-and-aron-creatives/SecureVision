@@ -177,3 +177,7 @@
 * **Rationale:** Aligns the default with proposal steps 2 and 3 and objective 3 by making per-CVE exploit likelihood combined with asset exposure and criticality the operational priority. This is a proposal-alignment decision, not a claim that the model outperforms CVSS.
 * **Documented deviation:** Retain the rules-layer High floor for known-exploited findings in `ml_asset` mode. The proposal's KEV behavior is not implemented exactly; the floor remains post-prediction, is shown in the evidence, and is disclosed in the UI and documentation.
 * **Evidence and safeguards:** The frozen 2026 Test result remains negative (XGBoost PR-AUC `0.0114` vs CVSS `0.0117`). Label the model experimental and keep the deterministic option and rule cross-check visible. D-042 records the CSR train/serve parity fix and the CVSS C/I parsing limitation; neither changes the frozen model or test result.
+
+### D-044: Guard Legacy Scripts and Restrict Distribution Sampling
+* **Decision:** Guard the root SQLite-era seed, initialization, deduplication, administrator-update and role-update scripts, and redirect supported workflows to PostgreSQL/backend alternatives. Make the priority distribution sampler use only Validation 2025 by default; require `--allow-test-period` for samples from 2026 or later.
+* **Rationale:** Prevent destructive or schema-incompatible legacy scripts from being run accidentally and keep default distribution diagnostics out of the frozen test period.

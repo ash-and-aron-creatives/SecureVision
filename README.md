@@ -118,7 +118,7 @@ then initialize the database with `ADMIN_INITIAL_PASSWORD`. The script creates
 the `admin` account only if it does not already exist:
 
 Load the generated backend settings into the current PowerShell session before
-running either maintenance script:
+running the supported initializer:
 
 ```powershell
 Get-Content backend\.env | ForEach-Object {
@@ -129,21 +129,18 @@ Get-Content backend\.env | ForEach-Object {
 }
 $securePassword = Read-Host "Initial administrator password" -AsSecureString
 $env:ADMIN_INITIAL_PASSWORD = [System.Net.NetworkCredential]::new("", $securePassword).Password
-python init_db.py
+python -m backend.init_db
 Remove-Item Env:ADMIN_INITIAL_PASSWORD
 ```
 
-For an existing installation, use the same `DATABASE_URL` as the running application and run `update_admin.py` to rotate the existing administrator's password. This operation also records an audit event:
+For an existing installation, use the administrator user-management API
+`PATCH /users/{user_id}` with a new password to reset an administrator's password;
+the root-level `update_admin.py` legacy entry point is disabled.
 
-```powershell
-$securePassword = Read-Host "Replacement administrator password" -AsSecureString
-$env:ADMIN_INITIAL_PASSWORD = [System.Net.NetworkCredential]::new("", $securePassword).Password
-python update_admin.py
-Remove-Item Env:ADMIN_INITIAL_PASSWORD
-```
-
-Both scripts must be run from the repository root so Python can import the
-`backend` package. Load `DATABASE_URL` (app role) before running the initializer.
+Run the initializer from the repository root. Load `DATABASE_URL` (app role)
+before running it. Root-level SQLite-era maintenance scripts are guarded; use
+`scripts/dedupe_postgres.py` for PostgreSQL deduplication and
+`SECUREVISION_DEMO_MODE=true` synthetic seeding where appropriate.
 The setup script runs migrations in the Compose `migrate` service using the
 owner URL.
 

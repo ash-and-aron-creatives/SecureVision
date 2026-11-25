@@ -23,7 +23,7 @@ def seed_database():
             db.commit()
             print("Database initialized. Initial admin created.")
         else:
-            print("Database initialized. Admin already exists; use update_admin.py to rotate its password.")
+            print("Database initialized. Admin already exists; use PATCH /users/{user_id} to reset its password.")
     finally:
         db.close()
 

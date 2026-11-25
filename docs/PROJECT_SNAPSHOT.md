@@ -25,13 +25,13 @@ data files are omitted.
 |-- docker-compose.yml
 |-- docker-compose.local.yml
 |-- docker-compose.cve-dataset.yml
-|-- dedupe_findings.py
-|-- init_db.py
+|-- dedupe_findings.py (guarded legacy entry point)
+|-- init_db.py (guarded legacy entry point)
 |-- postcss.config.js
-|-- seed_db.py
+|-- seed_db.py (guarded legacy entry point)
 |-- setup_dev.ps1
-|-- update_admin.py
-|-- upgrade_role.py
+|-- update_admin.py (guarded legacy entry point)
+|-- upgrade_role.py (guarded legacy entry point)
 |-- alembic/
 |   |-- env.py
 |   |-- script.py.mako

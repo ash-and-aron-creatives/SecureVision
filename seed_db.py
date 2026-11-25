@@ -1,3 +1,8 @@
+raise SystemExit(
+    "Legacy SQLite-era seeding is disabled. Use backend.demo_seed.seed_synthetic_demo "
+    "with SECUREVISION_DEMO_MODE=true."
+)
+
 from backend.database import SessionLocal
 from backend.models import Asset, Finding, FindingScore
 from backend.scoring_engine import calculate_priority

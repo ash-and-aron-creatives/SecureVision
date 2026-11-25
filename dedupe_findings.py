@@ -1,3 +1,5 @@
+raise SystemExit("This legacy SQLite-era entry point is disabled. Run `python scripts/dedupe_postgres.py` instead.")
+
 import argparse
 from collections import defaultdict
 

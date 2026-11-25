@@ -262,7 +262,7 @@ audit-log access.
 | `backend/model_results.py` | Read-only assembly of historic log results and the dated offline validation comparison for `/model/results`. |
 | `backend/reports.py` | Authenticated filtered findings CSV and executive PDF exports; export metadata is audited. |
 | `backend/demo_seed.py` | Explicit synthetic demo data seeding; not a production inventory feed. |
-| `backend/init_db.py`, root `init_db.py` | Administrator bootstrap/runtime initialization; Alembic owns schema creation. |
+| `backend/init_db.py` | Supported administrator bootstrap; Alembic owns schema creation. The root `init_db.py` compatibility entry point is guarded. |
 | `backend/check_db.py` | Database connectivity/schema diagnostics. |
 | `backend/generate_matrix.py`, `docs/scoring_matrix_v1.csv` | Generate the 320-combination rule cross-check; runtime tier logic remains in `scoring_engine.py`. |
 | `backend/test_scoring.py` | Scoring test entry point for the documented matrix. |

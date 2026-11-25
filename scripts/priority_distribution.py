@@ -45,12 +45,20 @@ def _reservoir_add(
         sample[index] = record
 
 
-def select_sample(csv_path: Path) -> tuple[list[dict], int, int]:
+def select_sample(
+    csv_path: Path,
+    sample_year: int = 2025,
+    allow_test_period: bool = False,
+) -> tuple[list[dict], int, int]:
+    if sample_year >= 2026 and not allow_test_period:
+        raise ValueError(
+            "Sampling 2026 or later requires the explicit --allow-test-period flag."
+        )
+    period_start = f"{sample_year}-01-01"
+    period_end = f"{sample_year}-12-31"
     rng = {
-        "preferred_kev": random.Random(SEED),
-        "preferred_nonkev": random.Random(SEED + 1),
-        "all_kev": random.Random(SEED + 2),
-        "all_nonkev": random.Random(SEED + 3),
+        "kev": random.Random(SEED),
+        "nonkev": random.Random(SEED + 1),
     }
     samples = {key: [] for key in rng}
     counts = {key: 0 for key in rng}
@@ -59,9 +67,11 @@ def select_sample(csv_path: Path) -> tuple[list[dict], int, int]:
             cve_id = (row.get("cve_id") or "").strip().upper()
             if not cve_id:
                 continue
+            published_date = (row.get("published_date") or "")[:10]
+            if not period_start <= published_date <= period_end:
+                continue
             in_kev = _is_kev(row.get("in_kev"))
             stratum = "kev" if in_kev else "nonkev"
-            is_after_validation = (row.get("published_date") or "")[:4] >= "2026"
             record = {
                 "cve_id": cve_id,
                 "published_date": row.get("published_date") or "",
@@ -72,38 +82,30 @@ def select_sample(csv_path: Path) -> tuple[list[dict], int, int]:
                 "percentile": _number(row.get("percentile")),
                 "in_kev": in_kev,
             }
-            all_key = f"all_{stratum}"
-            counts[all_key] += 1
-            _reservoir_add(samples[all_key], counts[all_key], record, rng[all_key])
-            if is_after_validation:
-                preferred_key = f"preferred_{stratum}"
-                counts[preferred_key] += 1
-                _reservoir_add(
-                    samples[preferred_key],
-                    counts[preferred_key],
-                    record,
-                    rng[preferred_key],
-                )
+            counts[stratum] += 1
+            _reservoir_add(samples[stratum], counts[stratum], record, rng[stratum])
 
     selected = []
-    selected_after_validation = 0
     for stratum in ("kev", "nonkev"):
-        preferred_key = f"preferred_{stratum}"
-        all_key = f"all_{stratum}"
-        if counts[preferred_key] >= SAMPLE_PER_STRATUM:
-            selected.extend(samples[preferred_key])
-            selected_after_validation += len(samples[preferred_key])
-        elif counts[all_key] >= SAMPLE_PER_STRATUM:
-            selected.extend(samples[all_key])
-        else:
+        if counts[stratum] < SAMPLE_PER_STRATUM:
             raise ValueError(
-                f"CSV has fewer than {SAMPLE_PER_STRATUM} CVEs in the {stratum} stratum."
+                f"CSV has fewer than {SAMPLE_PER_STRATUM} {stratum} CVEs published "
+                f"from {period_start} through {period_end}."
             )
-    return selected, selected_after_validation, len(selected)
+        selected.extend(samples[stratum])
+    return selected, sum(counts.values()), len(selected)
 
 
-def run_distribution(csv_path: Path) -> str:
-    sample, preferred_count, sample_count = select_sample(csv_path)
+def run_distribution(
+    csv_path: Path,
+    sample_year: int = 2025,
+    allow_test_period: bool = False,
+) -> str:
+    sample, eligible_count, sample_count = select_sample(
+        csv_path,
+        sample_year=sample_year,
+        allow_test_period=allow_test_period,
+    )
     tier_counts = {
         mode: {tier: 0 for tier in TIERS}
         for mode in ("deterministic", "ml_asset")
@@ -144,13 +146,12 @@ def run_distribution(csv_path: Path) -> str:
     lines = [
         f"Seed: {SEED}",
         (
-            f"Sample: {sample_count} real CVEs (20 KEV, 20 non-KEV); "
-            f"{preferred_count} selected from published year >= 2026."
+            f"Sample: {sample_count} real CVEs (20 KEV, 20 non-KEV) published in "
+            f"{sample_year}; {eligible_count} eligible records."
         ),
         (
-            "Selection: independent reservoir sampling within KEV strata; prefer "
-            "published years after the 2025 validation period, falling back per "
-            "stratum to all publication years if fewer than 20 are available."
+            f"Selection: independent reservoir sampling within KEV strata, restricted "
+            f"to publication dates {sample_year}-01-01 through {sample_year}-12-31."
         ),
         "Hypothetical assets: Internet-facing criticality 5; Internal criticality 2.",
         "Scenarios: 40 CVEs x 2 assets = 80.",
@@ -181,8 +182,18 @@ def main() -> None:
         description="Compare final-tier distributions on a reproducible real-CVE sample."
     )
     parser.add_argument("--csv-path", type=Path, default=CVE_DATASET_PATH)
+    parser.add_argument("--sample-year", type=int, default=2025)
+    parser.add_argument("--allow-test-period", action="store_true")
     args = parser.parse_args()
-    print(run_distribution(args.csv_path), end="")
+    try:
+        result = run_distribution(
+            args.csv_path,
+            sample_year=args.sample_year,
+            allow_test_period=args.allow_test_period,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+    print(result, end="")
 
 
 if __name__ == "__main__":
