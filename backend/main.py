@@ -806,8 +806,21 @@ def get_dashboard_analytics(
     current_user: models.User = Depends(auth.get_current_user),
 ):
     findings = db.query(models.Finding).all()
+    latest_score_ids = (
+        db.query(
+            models.FindingScore.finding_id.label("finding_id"),
+            func.max(models.FindingScore.id).label("score_id"),
+        )
+        .group_by(models.FindingScore.finding_id)
+        .subquery()
+    )
+    LatestScore = aliased(models.FindingScore)
     latest_scores: dict[int, models.FindingScore] = {}
-    for score in db.query(models.FindingScore).order_by(models.FindingScore.id.asc()).all():
+    for score in (
+        db.query(LatestScore)
+        .join(latest_score_ids, LatestScore.id == latest_score_ids.c.score_id)
+        .all()
+    ):
         latest_scores[score.finding_id] = score
 
     now = datetime.now(timezone.utc)
@@ -824,7 +837,12 @@ def get_dashboard_analytics(
     created_at: dict[int, datetime] = {}
     ingestion_has_history = False
 
-    for log in db.query(models.AuditLog).order_by(models.AuditLog.id.asc()).all():
+    for log in (
+        db.query(models.AuditLog)
+        .filter(models.AuditLog.action.in_(("STATUS_UPDATE", "SCAN_RUN", "IMPORT")))
+        .order_by(models.AuditLog.id.asc())
+        .all()
+    ):
         event_time = _as_utc(log.timestamp)
         if log.action == "STATUS_UPDATE":
             match = STATUS_CHANGE_PATTERN.match(log.details or "")
