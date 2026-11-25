@@ -25,7 +25,7 @@ _LatestFindingScore = aliased(FindingScore)
 SORTS = {
     "priority": [_tier_rank.asc(), Finding.cvss_score.desc()],
     "cvss": [Finding.cvss_score.desc()],
-    "epss": [_LatestFindingScore.likelihood.desc()],
+    "epss": [_LatestFindingScore.likelihood.desc().nulls_last()],
     "newest": [Finding.id.desc()],
     "date": [Finding.date_found.desc()],
     "asset": [Asset.name.asc()],

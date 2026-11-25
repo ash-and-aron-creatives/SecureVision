@@ -209,6 +209,43 @@ def test_csv_exports_finding_without_scores(client, auth_headers, db_session):
     assert finding_rows[0]["rule_priority_tier"] == ""
 
 
+def test_csv_epss_sort_places_unscored_findings_last(client, auth_headers, db_session):
+    asset = Asset(name="RPT-EPSS-NULLS", exposure="Internal", criticality=2)
+    db_session.add(asset)
+    db_session.flush()
+    scored = Finding(
+        asset_id=asset.id,
+        cve_id="CVE-2099-0098",
+        cvss_score=6.0,
+        final_priority="Medium",
+        status="Open",
+    )
+    unscored = Finding(
+        asset_id=asset.id,
+        cve_id="CVE-2099-0097",
+        cvss_score=3.0,
+        final_priority="Low",
+        status="Open",
+    )
+    db_session.add_all([scored, unscored])
+    db_session.flush()
+    db_session.add(FindingScore(
+        finding_id=scored.id,
+        provider_id=1,
+        likelihood=0.91,
+        priority_tier="Medium",
+        provenance={},
+        explanation="Scored finding",
+    ))
+    db_session.commit()
+
+    response = client.get("/reports/findings.csv?sort=epss", headers=auth_headers)
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+
+    assert rows[-1]["cve_id"] == unscored.cve_id
+    assert all(row["likelihood"] for row in rows[:-1])
+
+
 def test_csv_filters_applied(client, auth_headers, seeded):
     r = client.get("/reports/findings.csv?priority=Critical", headers=auth_headers)
     assert "CVE-2099-0001" in r.text

@@ -1,4 +1,6 @@
+import asyncio
 import math
+import os
 
 import httpx
 
@@ -51,6 +53,22 @@ def _result(
         "cwe": cwe,
         "published_date": published_date,
     }
+
+
+async def _fetch_nvd_response(client: httpx.AsyncClient, cve_id: str) -> httpx.Response:
+    url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_id}"
+    api_key = os.getenv("NVD_API_KEY")
+    if api_key:
+        response = await client.get(url, timeout=3.0, headers={"apiKey": api_key})
+    else:
+        response = await client.get(url, timeout=3.0)
+    if getattr(response, "status_code", None) in (429, 503):
+        await asyncio.sleep(2)
+        if api_key:
+            response = await client.get(url, timeout=3.0, headers={"apiKey": api_key})
+        else:
+            response = await client.get(url, timeout=3.0)
+    return response
 
 
 async def fetch_cve_data(cve_id: str) -> dict:
@@ -107,10 +125,7 @@ async def fetch_cve_data(cve_id: str) -> dict:
                 errors.append("EPSS percentile is unavailable.")
 
         try:
-            nvd_resp = await client.get(
-                f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_upper}",
-                timeout=3.0,
-            )
+            nvd_resp = await _fetch_nvd_response(client, cve_upper)
             nvd_resp.raise_for_status()
             nvd_data = nvd_resp.json()
         except (httpx.HTTPError, ValueError):
