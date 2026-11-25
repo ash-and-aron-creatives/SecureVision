@@ -49,10 +49,15 @@ def test_feature_row_returns_csr_with_unstored_zeros():
 
 
 def test_sparse_xgboost_training_distinguishes_dense_zero_from_missing():
-    training = sp.csr_matrix(
-        [[-1.0], [-1.0], [1.0], [1.0], [0.0], [0.0]], dtype=np.float32
+    training = sp.vstack(
+        [
+            sp.csr_matrix(np.ones((4, 1), dtype=np.float32)),
+            sp.csr_matrix(np.full((4, 1), 5.0, dtype=np.float32)),
+            sp.csr_matrix((8, 1), dtype=np.float32),
+        ],
+        format="csr",
     )
-    labels = np.asarray([0, 0, 1, 1, 0, 0])
+    labels = np.asarray([1] * 4 + [0] * 12)
     model = XGBClassifier(
         n_estimators=1,
         max_depth=1,

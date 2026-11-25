@@ -92,7 +92,7 @@ def test_me_exposes_read_only_warmup_state(monkeypatch):
     monkeypatch.setattr(main, "get_warmup_state", lambda: "starting")
 
     response = main.get_me(
-        SimpleNamespace(id=1, username="admin", role="admin")
+        SimpleNamespace(id=1, username="admin", role="admin", is_active=True)
     )
 
     assert response["ml_warmup_state"] == "starting"

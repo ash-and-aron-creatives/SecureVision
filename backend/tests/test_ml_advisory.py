@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
-from backend import auth, main, ml_inference
+from backend import auth, cve_dataset, main, ml_inference
 from backend.database import Base, get_db
 from backend.models import Asset, User
 from backend.rules_config import (
@@ -120,11 +120,14 @@ def test_mocked_prediction_returns_calibrated_assessment_and_reasons(monkeypatch
             return SimpleNamespace(toarray=lambda: np.zeros((1, 100)))
 
     class FakeBooster:
-        def predict(self, matrix, pred_contribs):
-            assert pred_contribs is True
+        def predict(self, matrix, pred_contribs=False, output_margin=False):
             contributions = np.zeros((1, len(features) + 1))
             contributions[0, :3] = [1.0, -0.5, 0.25]
-            return contributions
+            if pred_contribs:
+                return contributions
+            if output_margin:
+                return np.array([contributions.sum()])
+            raise AssertionError("Unexpected XGBoost prediction request.")
 
     class FakeModel:
         calibrated_classifiers_ = [
@@ -135,19 +138,10 @@ def test_mocked_prediction_returns_calibrated_assessment_and_reasons(monkeypatch
             assert matrix.shape == (1, 152)
             return np.array([[0.8, 0.2]])
 
-    class FakeShapExplainer:
-        def __init__(self, estimator):
-            assert hasattr(estimator, "get_booster")
-
-        def shap_values(self, matrix):
-            values = np.zeros((1, len(features)))
-            values[0, :3] = [1.0, -0.5, 0.25]
-            return values
-
     monkeypatch.setitem(
         sys.modules,
-        "shap",
-        SimpleNamespace(TreeExplainer=FakeShapExplainer),
+        "xgboost",
+        SimpleNamespace(DMatrix=lambda matrix, feature_names: matrix),
     )
     monkeypatch.setattr(
         ml_inference,
@@ -219,68 +213,57 @@ def test_synthetic_demo_final_priority_distribution_by_mode(monkeypatch):
     }
 
 
-def test_explanation_uses_shap_then_native_then_unavailable(monkeypatch):
+def test_explanation_uses_native_treeshap_and_verifies_margin(monkeypatch):
     feature_names = ["cvss_score", "cwe_79", "term"]
-    contributions = np.array([[0.7, -0.3, 0.1]])
-
-    class FakeExplainer:
-        def __init__(self, classifier):
-            assert classifier == "xgb-estimator"
-
-        def shap_values(self, matrix):
-            assert matrix == "feature-matrix"
-            return contributions
-
     monkeypatch.setitem(
-        __import__("sys").modules,
-        "shap",
-        SimpleNamespace(TreeExplainer=FakeExplainer),
+        sys.modules,
+        "xgboost",
+        SimpleNamespace(DMatrix=lambda matrix, feature_names: matrix),
     )
-    result = ml_inference._explanation_contributions(
-        "xgb-estimator", "feature-matrix", feature_names
-    )
-    assert result.shape == (3,)
-    assert result.tolist() == [0.7, -0.3, 0.1]
-
-    class BrokenExplainer:
-        def __init__(self, classifier):
-            raise RuntimeError("unsupported model")
 
     class FakeBooster:
-        def predict(self, matrix, pred_contribs):
-            assert pred_contribs is True
-            return np.array([[0.4, -0.2, 0.05, 0.0]])
+        def __init__(self, margin=0.25, raises=False):
+            self.margin = margin
+            self.raises = raises
 
-    monkeypatch.setitem(
-        __import__("sys").modules,
-        "shap",
-        SimpleNamespace(TreeExplainer=BrokenExplainer),
-    )
-    monkeypatch.setitem(
-        __import__("sys").modules,
-        "xgboost",
-        SimpleNamespace(
-            DMatrix=lambda matrix, feature_names: matrix,
-        ),
-    )
+        def predict(self, matrix, pred_contribs=False, output_margin=False):
+            if self.raises:
+                raise RuntimeError("native explanation unavailable")
+            if pred_contribs:
+                return np.array([[0.4, -0.2, 0.05, 0.0]])
+            if output_margin:
+                return np.array([self.margin])
+            raise AssertionError("Unexpected XGBoost prediction request.")
+
+    def classifier_for(booster):
+        return SimpleNamespace(get_booster=lambda: booster)
+
     native = ml_inference._explanation_contributions(
-        SimpleNamespace(get_booster=lambda: FakeBooster()),
+        classifier_for(FakeBooster()),
         "feature-matrix",
         feature_names,
     )
-    assert native.shape == (3,)
     assert native.tolist() == [0.4, -0.2, 0.05]
 
-    class BrokenBooster:
-        def predict(self, matrix, pred_contribs):
-            raise RuntimeError("native explanation unavailable")
-
-    unavailable = ml_inference._explanation_contributions(
-        SimpleNamespace(get_booster=lambda: BrokenBooster()),
+    assert ml_inference._explanation_contributions(
+        classifier_for(FakeBooster(margin=9.0)),
         "feature-matrix",
         feature_names,
-    )
-    assert unavailable is None
+    ) is None
+
+    def broken_get_booster():
+        raise RuntimeError("booster unavailable")
+
+    assert ml_inference._explanation_contributions(
+        SimpleNamespace(get_booster=broken_get_booster),
+        "feature-matrix",
+        feature_names,
+    ) is None
+    assert ml_inference._explanation_contributions(
+        classifier_for(FakeBooster(raises=True)),
+        "feature-matrix",
+        feature_names,
+    ) is None
 
 
 def test_model_results_requires_auth_and_is_available_to_every_role(api):
@@ -487,7 +470,7 @@ def test_ml_asset_mode_falls_back_to_rules_when_prediction_is_unavailable(api, m
 def test_scan_uses_catalog_description_when_live_lookup_is_offline(api, monkeypatch):
     seen = {}
     monkeypatch.setattr(
-        main,
+        cve_dataset,
         "lookup_catalog",
         lambda db, cve_id: {
             "cve_id": cve_id,

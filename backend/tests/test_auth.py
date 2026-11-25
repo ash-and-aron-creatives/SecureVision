@@ -150,6 +150,7 @@ def test_me_returns_the_authenticated_user(client):
         "id": 1,
         "username": "admin",
         "role": "admin",
+        "is_active": True,
         "priority_mode": main.PRIORITY_MODE,
         "ml_warmup_state": response_data["ml_warmup_state"],
     }

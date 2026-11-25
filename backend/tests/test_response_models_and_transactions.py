@@ -200,9 +200,9 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
         headers=headers,
     )
     assert user_response.status_code == 201
-    assert set(user_response.json()) == {"id", "username", "role"}
+    assert set(user_response.json()) == {"id", "username", "role", "is_active"}
     assert set(client.get("/users", headers=headers).json()[0]) == {
-        "id", "username", "role",
+        "id", "username", "role", "is_active",
     }
     audit = client.get("/audit", headers=headers).json()[0]
     assert set(audit) == {"id", "user", "action", "details", "timestamp"}
