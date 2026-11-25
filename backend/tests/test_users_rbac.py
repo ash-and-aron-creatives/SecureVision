@@ -216,6 +216,40 @@ def test_finding_detail_only_includes_audit_trail_for_admin(client, db_session):
     assert viewer_detail.json()["audit_trail"] == []
 
 
+def test_finding_detail_audit_trail_matches_exact_finding_ids(client, db_session):
+    admin = db_session.query(User).filter(User.username == "admin").first()
+    asset = db_session.query(Asset).first()
+    findings = [
+        Finding(id=finding_id, asset_id=asset.id, cve_id=f"CVE-2024-{finding_id:04d}", status="Open")
+        for finding_id in (1, 10, 11, 100)
+    ]
+    db_session.add_all(findings)
+    db_session.flush()
+    db_session.add_all(
+        [
+            AuditLog(user_id=admin.id, action="STATUS_UPDATE", details="finding_id=1 status changed"),
+            AuditLog(user_id=admin.id, action="SCAN_RUN", details="finding_id=10 Finding created"),
+            AuditLog(user_id=admin.id, action="STATUS_UPDATE", details="finding_id=100 status changed"),
+            AuditLog(user_id=admin.id, action="IMPORT", details="imported=2 skipped=0 finding_ids=10,11"),
+        ]
+    )
+    db_session.commit()
+
+    headers = _headers(client, "admin")
+    trails = {
+        finding_id: client.get(f"/findings/{finding_id}", headers=headers).json()["audit_trail"]
+        for finding_id in (1, 10, 11, 100)
+    }
+
+    assert [entry["details"] for entry in trails[1]] == ["finding_id=1 status changed"]
+    assert [entry["details"] for entry in trails[10]] == [
+        "imported=2 skipped=0 finding_ids=10,11",
+        "finding_id=10 Finding created",
+    ]
+    assert [entry["details"] for entry in trails[11]] == ["imported=2 skipped=0 finding_ids=10,11"]
+    assert [entry["details"] for entry in trails[100]] == ["finding_id=100 status changed"]
+
+
 def test_deactivate_user_with_audit_history_invalidates_login_and_tokens(client, db_session):
     target = db_session.query(User).filter_by(username="analyst1").one()
     target_headers = _headers(client, "analyst1")

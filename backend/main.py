@@ -906,25 +906,7 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_u
 
     related_logs = []
     if current_user.role == "admin":
-        related_logs = (
-            db.query(models.AuditLog)
-            .filter(models.AuditLog.details.contains(f"finding_id={f.id}"))
-            .order_by(models.AuditLog.id.desc())
-            .limit(20)
-            .all()
-        )
-        import_logs = (
-            db.query(models.AuditLog)
-            .filter(models.AuditLog.action == "IMPORT")
-            .order_by(models.AuditLog.id.desc())
-            .all()
-        )
-        for log in import_logs:
-            imported_ids = IMPORT_FINDING_IDS_PATTERN.search(log.details or "")
-            if imported_ids and str(f.id) in imported_ids.group(1).split(","):
-                related_logs.append(log)
-                break
-        related_logs = sorted(related_logs, key=lambda log: log.id, reverse=True)[:20]
+        related_logs = _audit_entries_for_finding(db, f.id)
 
     final_tier = f.final_priority or (latest.priority_tier if latest else "Unknown")
     return {
@@ -978,6 +960,39 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_db), current_u
             for l in related_logs
         ],
     }
+
+
+def _audit_entries_for_finding(db: Session, finding_id: int, limit: int = 20) -> list[models.AuditLog]:
+    finding_id = int(finding_id)
+    finding_pattern = re.compile(rf"(^|\s)finding_id={finding_id}(\s|$)")
+    import_pattern = re.compile(rf"finding_ids=(\d+,)*{finding_id}(,|$)")
+    related_pattern = finding_pattern.pattern
+    import_query_pattern = import_pattern.pattern
+
+    related_logs = (
+        db.query(models.AuditLog)
+        .filter(models.AuditLog.details.op("~")(related_pattern))
+        .order_by(models.AuditLog.id.desc())
+        .limit(limit)
+        .all()
+    )
+    import_log = (
+        db.query(models.AuditLog)
+        .filter(
+            models.AuditLog.action == "IMPORT",
+            models.AuditLog.details.op("~")(import_query_pattern),
+        )
+        .order_by(models.AuditLog.id.desc())
+        .limit(1)
+        .all()
+    )
+    matched_logs = {
+        log.id: log
+        for log in related_logs + import_log
+        if finding_pattern.search(log.details or "") or import_pattern.search(log.details or "")
+    }
+    return sorted(matched_logs.values(), key=lambda log: log.id, reverse=True)[:limit]
+
 
 @app.get("/audit", response_model=list[AuditEntryResponse])
 def get_audit_logs(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
