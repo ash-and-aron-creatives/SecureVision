@@ -241,7 +241,7 @@ The per-file counts below are the historical 501 baseline.
 | Alembic | 1.13.1 |
 | XGBoost | 2.0.3 |
 | scikit-learn | 1.4.1.post1 |
-| SHAP | 0.46.0 |
+| SHAP library | not used (native XGBoost TreeSHAP via pred_contribs) |
 | Next.js | 16.4.5 |
 
 Known limitations: no active scanning, auto-patching, LLM agents, or mobile
