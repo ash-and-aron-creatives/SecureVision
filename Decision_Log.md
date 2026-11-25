@@ -165,3 +165,9 @@
 * Only missing CVSS score, EPSS percentile, or description fields trigger live fallback.
 * **Scoring:** Keep the FIRST EPSS probability as `epss` and expose its percentile separately as `epss_percentile`; the rules thresholds and rationale use the percentile. A finding is known-exploited when the manual flag or catalog KEV flag is true.
 * **Catalog misses:** Preserve live-provider fallback and existing failure responses. A CVE missing from the catalog remains non-KEV unless the manual flag is set; an unavailable live lookup remains an explicit failure.
+
+### D-042: Sparse Train/Serve Feature Semantics
+* **Decision:** Preserve the frozen XGBoost model's sparse feature semantics at inference. The serving feature row is CSR so zero-valued features remain unstored/missing, matching the Validation 2025 training matrix. Keep the existing risk thresholds unchanged.
+* **Evidence:** On the 2,126-row Validation 2025 sample, reference and serving feature columns matched. Dense predictions had mean absolute difference `0.003077459064`, maximum difference `0.08256213616`, Spearman `-0.35120987`, and 2,125 rows over `1e-6`; CSR predictions matched all saved scores exactly (maximum difference `0`, Spearman `1.0`, zero rows over `1e-6`).
+* **Tier check:** After the fix, combined Internet/criticality-5, Internal/criticality-2, and Internal/criticality-3 shares were Critical `1.0008%`, High `9.0519%`, Medium `40.5180%`, and Low `49.4293%`; each is within 3 percentage points of the `1/9/40/50` reference.
+* **Disclosed parsing limitation:** The `CVSS_VECTOR_PATTERNS` patterns for `C` and `I` are unanchored: the required probe matched `C=L` from `AC:L` and `I=N` from `UI:N`, rather than the later `C:H` and `I:H`. The repository's `ml/run_pipeline_final.py` writer uses patterns for AV, AC, PR, and UI only, so it does not define the full runtime pattern set.

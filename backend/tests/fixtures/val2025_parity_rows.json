@@ -1,0 +1,42 @@
+[
+  {
+    "cve_id": "CVE-2024-40890",
+    "cvss_score": 8.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+    "cwe": "CWE-78",
+    "description": "**UNSUPPORTED WHEN ASSIGNED**\nA post-authentication command injection vulnerability in the CGI program of the legacy DSL CPE Zyxel VMG4325-B10A firmware version 1.00(AAFR.4)C0_20170615 could allow an authenticated attacker to execute operating system (OS) commands on an affected device by sending a crafted HTTP POST request.",
+    "expected_likelihood": 0.00671846279874444
+  },
+  {
+    "cve_id": "CVE-2011-10026",
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cwe": "CWE-78",
+    "description": "Spreecommerce versions prior to 0.50.x contain a remote command execution vulnerability in the API's search functionality. Improper input sanitation allows attackers to inject arbitrary shell commands via the search[instance_eval] parameter, which is dynamically invoked using Ruby's send method. This flaw enables unauthenticated attackers to execute commands on the server.",
+    "expected_likelihood": 0.002212338848039508
+  },
+  {
+    "cve_id": "CVE-2012-10057",
+    "cvss_score": null,
+    "cvss_vector": null,
+    "cwe": "CWE-121",
+    "description": "Lattice Semiconductor ispVM System v18.0.2 contains a buffer overflow vulnerability in its handling of .xcf project files. When parsing the version attribute of the ispXCF XML tag, the application fails to properly validate input length, allowing a specially crafted file to overwrite memory on the stack. This can result in arbitrary code execution under the context of the user who opens the file. The vulnerability is triggered locally by opening a malicious .xcf file and does not require elevated privileges.",
+    "expected_likelihood": 0.0010833988199010491
+  },
+  {
+    "cve_id": "CVE-2012-10058",
+    "cvss_score": null,
+    "cvss_vector": null,
+    "cwe": "CWE-121",
+    "description": "RabidHamster R4 v1.25 contains a stack-based buffer overflow vulnerability due to unsafe use of sprintf() when logging malformed HTTP requests. A remote attacker can exploit this flaw by sending a specially crafted URI, resulting in arbitrary code execution under the context of the web server process.",
+    "expected_likelihood": 0.0012909723445773125
+  },
+  {
+    "cve_id": "CVE-2013-10067",
+    "cvss_score": null,
+    "cvss_vector": null,
+    "cwe": "CWE-434",
+    "description": "Glossword versions 1.8.8 through 1.8.12 contain an authenticated arbitrary file upload vulnerability. When deployed as a standalone application, the administrative interface (gw_admin.php) allows users with administrator privileges to upload files to the gw_temp/a/ directory. Due to insufficient validation of file type and path, attackers can upload and execute PHP payloads, resulting in remote code execution.",
+    "expected_likelihood": 0.0013390100793913007
+  }
+]

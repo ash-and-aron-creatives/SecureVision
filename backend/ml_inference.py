@@ -163,6 +163,7 @@ def _feature_row(
     description: str,
 ):
     import numpy as np
+    from scipy.sparse import csr_matrix
 
     values = {feature: 0.0 for feature in features}
     values["cvss_score"] = (
@@ -195,7 +196,8 @@ def _feature_row(
     text_features = config["features"][-len(text_vector):]
     for feature, value in zip(text_features, text_vector, strict=True):
         values[feature] = float(value)
-    return np.asarray([[values[feature] for feature in features]], dtype=np.float32)
+    dense_row = np.asarray([[values[feature] for feature in features]], dtype=np.float32)
+    return csr_matrix(dense_row)
 
 
 def _feature_label(feature: str) -> str:
@@ -226,45 +228,28 @@ def _feature_label(feature: str) -> str:
 def _explanation_contributions(classifier: object, matrix: object, features: list[str]):
     import numpy as np
 
-    shap_started = time.perf_counter()
-    try:
-        import shap
-
-        values = shap.TreeExplainer(classifier).shap_values(matrix)
-        if isinstance(values, list):
-            values = values[-1]
-        values = np.asarray(values)
-        if values.ndim == 3:
-            values = values[:, :, -1]
-        if values.shape != (1, len(features)):
-            raise ValueError("SHAP returned an unexpected feature shape.")
-        _LOGGER.debug(
-            "ml.explanation method=shap elapsed_ms=%.3f",
-            (time.perf_counter() - shap_started) * 1000,
-        )
-        return values[0]
-    except Exception:
-        _LOGGER.debug(
-            "ml.explanation method=shap outcome=failed elapsed_ms=%.3f",
-            (time.perf_counter() - shap_started) * 1000,
-        )
-        _LOGGER.warning("SHAP explanation failed; trying native XGBoost contributions.", exc_info=True)
-
     native_started = time.perf_counter()
     try:
         from xgboost import DMatrix
 
-        values = classifier.get_booster().predict(
-            DMatrix(matrix, feature_names=features), pred_contribs=True
-        )[0][:-1]
-        if values.shape != (len(features),):
+        booster = classifier.get_booster()
+        dmatrix = DMatrix(matrix, feature_names=features)
+        contributions = np.asarray(
+            booster.predict(dmatrix, pred_contribs=True), dtype=float
+        )
+        margins = np.asarray(booster.predict(dmatrix, output_margin=True), dtype=float)
+        if contributions.shape != (1, len(features) + 1):
             raise ValueError("XGBoost returned an unexpected contribution shape.")
+        if margins.shape != (1,) or not np.isclose(
+            contributions[0].sum(), margins[0], rtol=0, atol=1e-4
+        ):
+            raise ValueError("XGBoost contributions do not sum to the booster margin.")
         _LOGGER.debug(
             "ml.explanation method=native_xgboost elapsed_ms=%.3f",
             (time.perf_counter() - native_started) * 1000,
         )
-        return values
-    except Exception:
+        return contributions[0, :-1]
+    except (ImportError, AttributeError, TypeError, ValueError, RuntimeError):
         _LOGGER.debug(
             "ml.explanation method=native_xgboost outcome=failed elapsed_ms=%.3f",
             (time.perf_counter() - native_started) * 1000,

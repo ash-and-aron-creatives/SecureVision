@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import argparse
 import json
 import math
 import random
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import scipy.sparse as sp
 from scipy.stats import spearmanr
 
 from backend.ml_inference import _feature_row, _load_bundle
@@ -207,7 +209,7 @@ def _compute_likelihoods(
         )
         for record in sample
     ]
-    matrix = np.concatenate(matrices, axis=0)
+    matrix = sp.vstack(matrices, format="csr")
     likelihoods = np.asarray(model.predict_proba(matrix)[:, 1], dtype=float)
     if likelihoods.shape != (len(sample),) or not np.isfinite(likelihoods).all():
         raise ValueError("Frozen model returned invalid validation likelihoods.")
@@ -497,6 +499,16 @@ def _markdown_report(data: dict[str, Any]) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output-suffix", default="")
+    args = parser.parse_args()
+    if args.output_suffix and not all(
+        character.isalnum() or character in "_-" for character in args.output_suffix
+    ):
+        parser.error("--output-suffix may contain only letters, numbers, '_' or '-'.")
+    suffix = f"_{args.output_suffix}" if args.output_suffix else ""
+    output_json_path = OUTPUT_DIRECTORY / f"ml_tier_diagnostic{suffix}.json"
+    output_markdown_path = OUTPUT_DIRECTORY / f"ml_tier_diagnostic{suffix}.md"
     started = time.perf_counter()
     sample, validation_rows, validation_negatives = _load_validation_sample(
         CVE_DATASET_PATH
@@ -526,7 +538,7 @@ def main() -> None:
 
     result: dict[str, Any] = {
         "analysis": "Validation-only ML tier parity and distribution diagnostic",
-        "dataset_path": str(CVE_DATASET_PATH),
+        "dataset_path": CVE_DATASET_PATH.relative_to(REPOSITORY_ROOT).as_posix(),
         "validation_date_range": ["2025-01-01", "2025-12-31"],
         "validation_rows": validation_rows,
         "validation_positives": validation_positives,
@@ -537,7 +549,9 @@ def main() -> None:
         "negative_weight": validation_negatives / NEGATIVE_SAMPLE_SIZE,
         "model_version": model_version,
         "saved_model_sha256": saved_model_sha256,
-        "saved_predictions_path": str(SAVED_PREDICTIONS_PATH),
+        "saved_predictions_path": SAVED_PREDICTIONS_PATH.relative_to(
+            REPOSITORY_ROOT
+        ).as_posix(),
         "parity": parity,
         "saved_prediction_tier_reference": saved_reference,
         "thresholds": dict(ML_RISK_THRESHOLDS),
@@ -562,11 +576,11 @@ def main() -> None:
     result["runtime_seconds"] = time.perf_counter() - started
 
     OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    OUTPUT_JSON_PATH.write_text(
+    output_json_path.write_text(
         json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n",
         encoding="utf-8",
     )
-    OUTPUT_MARKDOWN_PATH.write_text(_markdown_report(result), encoding="utf-8")
+    output_markdown_path.write_text(_markdown_report(result), encoding="utf-8")
 
     print(f"Validation rows: {validation_rows}")
     print(
@@ -587,8 +601,8 @@ def main() -> None:
         )
         print(f"{profile_name}: {shares}")
     print(f"Runtime: {result['runtime_seconds']:.3f} seconds")
-    print(f"Wrote {OUTPUT_MARKDOWN_PATH}")
-    print(f"Wrote {OUTPUT_JSON_PATH}")
+    print(f"Wrote {output_markdown_path.relative_to(REPOSITORY_ROOT).as_posix()}")
+    print(f"Wrote {output_json_path.relative_to(REPOSITORY_ROOT).as_posix()}")
 
 
 if __name__ == "__main__":
