@@ -6,11 +6,13 @@ import type { UserItem, UserRole } from "@/types";
 interface UserCardProps {
   user: UserItem;
   currentUser: string;
-  adminCount: number;
+  activeAdminCount: number;
   darkMode: boolean;
   headingColor: string;
   mutedText: string;
   subSurfaceCard: string;
+  onDeactivate: (user: UserItem) => Promise<void>;
+  onReactivate: (user: UserItem) => Promise<void>;
   onRoleChange: (userId: number, role: UserRole) => Promise<void>;
   onPasswordReset: (userId: number, password: string) => Promise<void>;
   onDelete: (user: UserItem) => Promise<void>;
@@ -20,11 +22,13 @@ interface UserCardProps {
 function UserCard({
   user,
   currentUser,
-  adminCount,
+  activeAdminCount,
   darkMode,
   headingColor,
   mutedText,
   subSurfaceCard,
+  onDeactivate,
+  onReactivate,
   onRoleChange,
   onPasswordReset,
   onDelete,
@@ -33,8 +37,9 @@ function UserCard({
   const [selectedRole, setSelectedRole] = useState<UserRole>(user.role);
   const [password, setPassword] = useState("");
   const isSelf = user.username === currentUser;
-  const isLastAdmin = user.role === "admin" && adminCount <= 1;
-  const cannotDemote = selectedRole !== "admin" && (isSelf || isLastAdmin);
+  const isLastActiveAdmin =
+    user.role === "admin" && user.is_active && activeAdminCount <= 1;
+  const cannotDemote = selectedRole !== "admin" && (isSelf || isLastActiveAdmin);
 
   return (
     <div
@@ -51,9 +56,14 @@ function UserCard({
             <p className={`text-[11px] ${mutedText}`}>JWT Authenticated</p>
           </div>
         </div>
-        <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold uppercase bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4]">
-          {user.role}
-        </span>
+        <div className="text-right">
+          <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold uppercase bg-[#8121D7]/15 text-[#8121D7] dark:text-[#00E5C4]">
+            {user.role}
+          </span>
+          <p className={`mt-2 text-[11px] ${user.is_active ? "text-emerald-500" : "text-amber-500"}`}>
+            Status: {user.is_active ? "Active" : "Inactive"}
+          </p>
+        </div>
       </div>
       <div className="space-y-3">
         <div className="flex gap-2">
@@ -83,7 +93,7 @@ function UserCard({
         </div>
         {cannotDemote && (
           <p className="text-[11px] text-amber-500">
-            {isSelf ? "You cannot demote your own account." : "At least one administrator must remain."}
+            {isSelf ? "You cannot demote your own account." : "At least one active administrator must remain."}
           </p>
         )}
         <form
@@ -112,17 +122,35 @@ function UserCard({
             Reset
           </button>
         </form>
+        {user.is_active ? (
+          <button
+            type="button"
+            disabled={isSelf || isLastActiveAdmin}
+            onClick={() => void onDeactivate(user)}
+            className="px-3 py-2 rounded-xl bg-amber-500/10 text-amber-600 text-xs font-bold disabled:opacity-40"
+          >
+            Deactivate
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void onReactivate(user)}
+            className="px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-600 text-xs font-bold"
+          >
+            Reactivate
+          </button>
+        )}
         <button
           type="button"
-          disabled={isSelf || isLastAdmin}
+          disabled={isSelf || isLastActiveAdmin}
           onClick={() => void onDelete(user)}
           className="px-3 py-2 rounded-xl bg-rose-500/10 text-rose-500 text-xs font-bold disabled:opacity-40"
         >
           Delete user
         </button>
-        {(isSelf || isLastAdmin) && (
+        {(isSelf || isLastActiveAdmin) && (
           <p className="text-[11px] text-amber-500">
-            {isSelf ? "You cannot delete your own account." : "At least one administrator must remain."}
+            {isSelf ? "You cannot delete your own account." : "At least one active administrator must remain."}
           </p>
         )}
       </div>
@@ -136,8 +164,9 @@ export function UsersView(props: SecureAppViewProps) {
     darkMode, subSurfaceCard, role, handleCreateUser, newUsername,
     setNewUsername, newPassword, setNewPassword, newRole, setNewRole,
     users, currentUser, handleUpdateUserRole, handleResetUserPassword, handleDeleteUser,
+    handleDeactivateUser, handleReactivateUser,
   } = props;
-  const adminCount = users.filter((user) => user.role === "admin").length;
+  const activeAdminCount = users.filter((user) => user.role === "admin" && user.is_active).length;
   return (activeTab === "users" && role === "admin" && (
           <div key={`users-${tabAnimKey}`} className={`rounded-3xl p-6 md:p-8 border space-y-6 sv-tab-transition ${surfaceCard}`}>
             <h2 className={`text-2xl font-extrabold ${headingColor}`}>
@@ -180,14 +209,16 @@ export function UsersView(props: SecureAppViewProps) {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {users.map((u, idx) => (
                 <UserCard
-                  key={`${u.id}-${u.role}`}
+                  key={`${u.id}-${u.role}-${u.is_active}`}
                   user={u}
                   currentUser={currentUser}
-                  adminCount={adminCount}
+                  activeAdminCount={activeAdminCount}
                   darkMode={darkMode}
                   headingColor={headingColor}
                   mutedText={mutedText}
                   subSurfaceCard={subSurfaceCard}
+                  onDeactivate={handleDeactivateUser}
+                  onReactivate={handleReactivateUser}
                   onRoleChange={handleUpdateUserRole}
                   onPasswordReset={handleResetUserPassword}
                   onDelete={handleDeleteUser}

@@ -25,6 +25,7 @@ class UserResponse(ResponseSchema):
     id: int
     username: str
     role: str
+    is_active: bool
 
 
 class CurrentUserResponse(UserResponse):

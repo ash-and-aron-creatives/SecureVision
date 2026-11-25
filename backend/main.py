@@ -210,7 +210,7 @@ def login_for_access_token(
     stored_hash = user.hashed_password if user else _DUMMY_PASSWORD_HASH
     rate_limited = not auth.login_attempt_allowed(form_data.username, client_ip)
     password_valid = not rate_limited and auth.verify_password(form_data.password, stored_hash)
-    if rate_limited or not user or not password_valid:
+    if rate_limited or not user or not user.is_active or not password_valid:
         db.add(models.AuditLog(
             user_id=None,
             action="LOGIN_FAILED",
@@ -248,6 +248,7 @@ def get_me(current_user: models.User = Depends(auth.get_current_user)):
         "id": current_user.id,
         "username": current_user.username,
         "role": current_user.role,
+        "is_active": current_user.is_active,
         "priority_mode": PRIORITY_MODE,
         "ml_warmup_state": get_warmup_state(),
     }

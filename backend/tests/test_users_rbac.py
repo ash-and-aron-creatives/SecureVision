@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.main import app
 from backend.database import Base, get_db
-from backend import auth, main
+from backend import auth, main, users
 from backend.models import Asset, AuditLog, Finding, User
 from backend.tests.db_helpers import create_test_engine
 
@@ -214,3 +214,106 @@ def test_finding_detail_only_includes_audit_trail_for_admin(client, db_session):
     assert analyst_detail.json()["audit_trail"] == []
     assert viewer_detail.status_code == 200
     assert viewer_detail.json()["audit_trail"] == []
+
+
+def test_deactivate_user_with_audit_history_invalidates_login_and_tokens(client, db_session):
+    target = db_session.query(User).filter_by(username="analyst1").one()
+    target_headers = _headers(client, "analyst1")
+
+    response = client.post(
+        f"/users/{target.id}/deactivate",
+        headers=_headers(client, "admin"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is False
+    assert (
+        db_session.query(AuditLog)
+        .filter_by(action="USER_DEACTIVATED")
+        .one()
+        .user_id
+        is not None
+    )
+    assert client.get("/me", headers=target_headers).status_code == 401
+    login = client.post(
+        "/token",
+        data={"username": "analyst1", "password": "password123"},
+    )
+    assert login.status_code == 401
+    assert login.json()["detail"] == "Incorrect credentials"
+
+
+def test_delete_user_with_audit_history_returns_409(client, db_session):
+    target = db_session.query(User).filter_by(username="analyst1").one()
+    _headers(client, "analyst1")
+
+    response = client.delete(
+        f"/users/{target.id}",
+        headers=_headers(client, "admin"),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "User has audit history; deactivate instead."
+
+
+def test_admin_cannot_deactivate_self_or_last_active_admin(client, db_session):
+    admin = db_session.query(User).filter_by(username="admin").one()
+    headers = _headers(client, "admin")
+
+    self_deactivation = client.post(
+        f"/users/{admin.id}/deactivate",
+        headers=headers,
+    )
+    assert self_deactivation.status_code == 409
+    assert self_deactivation.json()["detail"] == "Administrators cannot deactivate themselves."
+
+    app.dependency_overrides[users.require_admin] = lambda: User(
+        id=-1,
+        username="test-admin-override",
+        hashed_password="",
+        role="admin",
+        is_active=True,
+    )
+    try:
+        last_admin_deactivation = client.post(f"/users/{admin.id}/deactivate")
+    finally:
+        app.dependency_overrides.pop(users.require_admin, None)
+
+    assert last_admin_deactivation.status_code == 409
+    assert last_admin_deactivation.json()["detail"] == (
+        "At least one active administrator must remain."
+    )
+
+
+def test_reactivate_restores_login(client, db_session):
+    target = db_session.query(User).filter_by(username="analyst1").one()
+    admin_headers = _headers(client, "admin")
+    deactivated = client.post(
+        f"/users/{target.id}/deactivate",
+        headers=admin_headers,
+    )
+    assert deactivated.status_code == 200
+
+    failed_login = client.post(
+        "/token",
+        data={"username": "analyst1", "password": "password123"},
+    )
+    assert failed_login.status_code == 401
+    reactivated = client.post(
+        f"/users/{target.id}/reactivate",
+        headers=admin_headers,
+    )
+
+    assert reactivated.status_code == 200
+    assert reactivated.json()["is_active"] is True
+    assert (
+        db_session.query(AuditLog)
+        .filter_by(action="USER_REACTIVATED")
+        .first()
+        is not None
+    )
+    successful_login = client.post(
+        "/token",
+        data={"username": "analyst1", "password": "password123"},
+    )
+    assert successful_login.status_code == 200

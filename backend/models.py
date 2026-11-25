@@ -28,6 +28,7 @@ class User(Base):
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     role = Column(String, default='analyst')
+    is_active = Column(Boolean, nullable=False, default=True, server_default='true')
 
 class Asset(Base):
     __tablename__ = 'assets'

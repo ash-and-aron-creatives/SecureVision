@@ -116,6 +116,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except JWTError:
         raise credentials_exception
     user = db.query(models.User).filter(models.User.username == username).first()
-    if user is None:
+    if user is None or not user.is_active:
         raise credentials_exception
     return user

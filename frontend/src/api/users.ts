@@ -39,3 +39,23 @@ export function deleteUser(
     method: "DELETE",
   });
 }
+
+export function deactivateUser(
+  apiRequest: ApiRequester,
+  authToken: string,
+  userId: number,
+): Promise<UserItem> {
+  return apiRequest<UserItem>(`/users/${userId}/deactivate`, authToken, {
+    method: "POST",
+  });
+}
+
+export function reactivateUser(
+  apiRequest: ApiRequester,
+  authToken: string,
+  userId: number,
+): Promise<UserItem> {
+  return apiRequest<UserItem>(`/users/${userId}/reactivate`, authToken, {
+    method: "POST",
+  });
+}

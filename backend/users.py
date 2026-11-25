@@ -42,7 +42,15 @@ def list_users(
     admin: User = Depends(require_admin),
 ):
     users = db.query(User).order_by(User.id.asc()).all()
-    return [{"id": u.id, "username": u.username, "role": u.role} for u in users]
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "role": u.role,
+            "is_active": u.is_active,
+        }
+        for u in users
+    ]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
@@ -98,7 +106,12 @@ def create_user(
         db.rollback()
         raise
     db.refresh(user)
-    return {"id": user.id, "username": user.username, "role": user.role}
+    return {
+        "id": user.id,
+        "username": user.username,
+        "role": user.role,
+        "is_active": user.is_active,
+    }
 
 @router.patch("/{user_id}", response_model=UserResponse)
 @router.put("/{user_id}/role", response_model=UserResponse)
@@ -120,7 +133,11 @@ def update_user(
             if (
                 target.role == "admin"
                 and req.role != "admin"
-                and db.query(func.count(User.id)).filter(User.role == "admin").scalar() <= 1
+                and target.is_active
+                and db.query(func.count(User.id))
+                .filter(User.role == "admin", User.is_active.is_(True))
+                .scalar()
+                <= 1
             ):
                 raise HTTPException(status_code=400, detail="At least one administrator must remain.")
             if target.id == admin.id and req.role != "admin":
@@ -150,7 +167,89 @@ def update_user(
         db.rollback()
         raise
 
-    return {"id": target.id, "username": target.username, "role": target.role}
+    return {
+        "id": target.id,
+        "username": target.username,
+        "role": target.role,
+        "is_active": target.is_active,
+    }
+
+
+@router.post("/{user_id}/deactivate", response_model=UserResponse)
+def deactivate_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target.id == admin.id:
+        raise HTTPException(status_code=409, detail="Administrators cannot deactivate themselves.")
+    if (
+        target.role == "admin"
+        and target.is_active
+        and db.query(func.count(User.id))
+        .filter(User.role == "admin", User.is_active.is_(True))
+        .scalar()
+        <= 1
+    ):
+        raise HTTPException(status_code=409, detail="At least one active administrator must remain.")
+
+    if target.is_active:
+        try:
+            target.is_active = False
+            db.add(
+                AuditLog(
+                    user_id=admin.id,
+                    action="USER_DEACTIVATED",
+                    details=f"Deactivated user '{target.username}' (id={target.id})",
+                )
+            )
+            db.commit()
+            db.refresh(target)
+        except Exception:
+            db.rollback()
+            raise
+    return {
+        "id": target.id,
+        "username": target.username,
+        "role": target.role,
+        "is_active": target.is_active,
+    }
+
+
+@router.post("/{user_id}/reactivate", response_model=UserResponse)
+def reactivate_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if not target.is_active:
+        try:
+            target.is_active = True
+            db.add(
+                AuditLog(
+                    user_id=admin.id,
+                    action="USER_REACTIVATED",
+                    details=f"Reactivated user '{target.username}' (id={target.id})",
+                )
+            )
+            db.commit()
+            db.refresh(target)
+        except Exception:
+            db.rollback()
+            raise
+    return {
+        "id": target.id,
+        "username": target.username,
+        "role": target.role,
+        "is_active": target.is_active,
+    }
 
 @router.delete("/{user_id}", response_model=DeletedUserResponse)
 def delete_user(
@@ -163,11 +262,20 @@ def delete_user(
         raise HTTPException(status_code=404, detail="User not found.")
     if (
         target.role == "admin"
-        and db.query(func.count(User.id)).filter(User.role == "admin").scalar() <= 1
+        and target.is_active
+        and db.query(func.count(User.id))
+        .filter(User.role == "admin", User.is_active.is_(True))
+        .scalar()
+        <= 1
     ):
         raise HTTPException(status_code=400, detail="At least one administrator must remain.")
     if user_id == admin.id:
         raise HTTPException(status_code=400, detail="Administrators cannot delete themselves.")
+    if db.query(func.count(AuditLog.id)).filter(AuditLog.user_id == user_id).scalar():
+        raise HTTPException(
+            status_code=409,
+            detail="User has audit history; deactivate instead.",
+        )
 
     uname = target.username
     role = target.role

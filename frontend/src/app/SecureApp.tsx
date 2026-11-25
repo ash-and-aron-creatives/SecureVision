@@ -274,6 +274,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   const {
     newUsername, setNewUsername, newPassword, setNewPassword, newRole, setNewRole,
     handleCreateUser, handleUpdateUserRole, handleResetUserPassword, handleDeleteUser,
+    handleDeactivateUser, handleReactivateUser,
   } =
     useUsers(token, apiRequest, refreshAllData, setActionMessage);
   const {
@@ -364,6 +365,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     assetExposure, setAssetExposure, assetCrit, setAssetCrit, editingAssetId,
     role, currentUser, auditLogs, handleCreateUser, newUsername, setNewUsername, newPassword,
     setNewPassword, newRole, setNewRole, users, handleUpdateUserRole, handleResetUserPassword, handleDeleteUser,
+    handleDeactivateUser, handleReactivateUser,
     selectedFinding, setSelectedFinding,
   };
 

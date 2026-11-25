@@ -66,6 +66,7 @@ export interface UserItem {
   id: number;
   username: string;
   role: UserRole;
+  is_active: boolean;
 }
 
 export interface FindingsPage {
@@ -181,6 +182,7 @@ export interface CurrentUser {
   id: number;
   username: string;
   role: UserRole;
+  is_active: boolean;
   priority_mode: PriorityMode;
   ml_warmup_state: MlWarmupState;
 }

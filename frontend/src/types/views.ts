@@ -109,6 +109,8 @@ export interface SecureAppViewProps {
   handleUpdateUserRole: (userId: number, role: UserRole) => Promise<void>;
   handleResetUserPassword: (userId: number, password: string) => Promise<void>;
   handleDeleteUser: (user: UserItem) => Promise<void>;
+  handleDeactivateUser: (user: UserItem) => Promise<void>;
+  handleReactivateUser: (user: UserItem) => Promise<void>;
   selectedFinding: Finding | null;
   setSelectedFinding: Dispatch<SetStateAction<Finding | null>>;
 }
