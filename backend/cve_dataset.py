@@ -18,6 +18,7 @@ _CATALOG_FIELDS = {
     "epss_percentile": "percentile",
     "in_kev": "in_kev",
 }
+_REQUIRED_CATALOG_FIELDS = {"cvss", "epss_percentile", "description"}
 
 
 def _record(row: CVECatalog) -> dict:
@@ -56,7 +57,8 @@ async def lookup_cve_intel(
         else {
             field
             for field, catalog_field in _CATALOG_FIELDS.items()
-            if _is_missing(catalog.get(catalog_field))
+            if field in _REQUIRED_CATALOG_FIELDS
+            and _is_missing(catalog.get(catalog_field))
         }
     )
     live = await live_lookup(cve_id) if missing_fields else {}

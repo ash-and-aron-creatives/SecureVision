@@ -307,6 +307,93 @@ def test_csv_import_uses_catalog_kev_without_live_provider(monkeypatch):
     assert score.likelihood == 0.01
 
 
+@pytest.mark.parametrize(
+    ("percentile", "expected_calls", "expected_score"),
+    [
+        pytest.param(0.01, [], 0.01, id="optional-gaps"),
+        pytest.param(None, ["CVE-2025-9882"], 0.82, id="missing-percentile"),
+    ],
+)
+def test_csv_import_catalog_fallback_requires_percentile(
+    monkeypatch, percentile, expected_calls, expected_score
+):
+    engine = create_test_engine()
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+    db.add_all([
+        User(
+            username="csv-catalog-fallback-admin",
+            hashed_password=auth.get_password_hash("test-password"),
+            role="admin",
+        ),
+        Asset(name="CATALOG-FALLBACK-CSV-SRV", exposure="Internal", criticality=3),
+        CVECatalog(
+            cve_id="CVE-2025-9882",
+            description="Catalog CSV fallback test.",
+            cvss_score=5.0,
+            cvss_vector="CVSS:3.1/AV:L",
+            cwe=None,
+            kev_date_added=None,
+            epss=0.30,
+            percentile=percentile,
+            in_kev=False,
+        ),
+    ])
+    db.commit()
+    calls = []
+
+    async def live_provider(cve_id):
+        calls.append(cve_id)
+        return {
+            "cve_id": cve_id,
+            "epss": 0.30,
+            "epss_percentile": 0.82,
+            "cvss": 5.0,
+            "available": True,
+            "errors": [],
+        }
+
+    monkeypatch.setattr(main, "fetch_cve_data", live_provider)
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as client:
+            token = client.post(
+                "/token",
+                data={
+                    "username": "csv-catalog-fallback-admin",
+                    "password": "test-password",
+                },
+            ).json()["access_token"]
+            response = client.post(
+                "/imports/commit",
+                files={
+                    "file": (
+                        "catalog-fallback.csv",
+                        io.BytesIO(
+                            b"asset_name,cve_id,date_found\n"
+                            b"CATALOG-FALLBACK-CSV-SRV,CVE-2025-9882,2026-10-01\n"
+                        ),
+                        "text/csv",
+                    ),
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200
+        assert response.json()["imported"] == 1
+        assert calls == expected_calls
+        finding = db.query(Finding).filter_by(cve_id="CVE-2025-9882").one()
+        score = db.query(FindingScore).filter_by(finding_id=finding.id).one()
+        assert finding.in_kev is False
+        assert score.likelihood == expected_score
+    finally:
+        app.dependency_overrides.clear()
+        db.close()
+
+
 def test_error_report_blocks_formula_injection():
     rows, _ = run("asset_name,cve_id,date_found\n=HYPERLINK(\"http://x\"),CVE-2021-44228,2026-10-01\n")
     out = problems_to_csv(rows)

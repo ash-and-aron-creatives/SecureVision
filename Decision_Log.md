@@ -162,5 +162,6 @@
 
 ### D-041: Catalog-First CVE Enrichment and EPSS Percentile
 * **Decision:** Enrich scans and CSV imports from `CVECatalog` first, using its CVSS, vector, CWE, description, publication date, EPSS percentile, and KEV status. Request live intelligence only to fill catalog fields that are missing, or when the CVE is absent from the catalog.
+* Only missing CVSS score, EPSS percentile, or description fields trigger live fallback.
 * **Scoring:** Keep the FIRST EPSS probability as `epss` and expose its percentile separately as `epss_percentile`; the rules thresholds and rationale use the percentile. A finding is known-exploited when the manual flag or catalog KEV flag is true.
 * **Catalog misses:** Preserve live-provider fallback and existing failure responses. A CVE missing from the catalog remains non-KEV unless the manual flag is set; an unavailable live lookup remains an explicit failure.
