@@ -220,8 +220,9 @@ TFIDF_TRANSFORMER_FILENAME = "headline_tfidf_transformer.joblib"
 MODEL_RESULTS_DIRECTORY = REPOSITORY_ROOT / "docs" / "results"
 DECISION_LOG_PATH = REPOSITORY_ROOT / "Decision_Log.md"
 ML_EVALUATION_NOTE = (
-    "Offline evaluation: PR-AUC 0.0114 vs CVSS 0.0117; "
-    "this signal does not drive the tier."
+    "Experimental model: PR-AUC 0.0114 vs CVSS 0.0117 on the frozen 2026 test "
+    "(no improvement over CVSS). In ml_asset mode it drives the tier; in "
+    "deterministic mode it is advisory."
 )
 
 

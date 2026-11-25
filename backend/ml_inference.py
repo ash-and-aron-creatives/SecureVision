@@ -221,6 +221,11 @@ def _feature_label(feature: str) -> str:
     ):
         prefix = f"{metric}_"
         if feature.startswith(prefix):
+            if metric in {"C", "I"}:
+                return (
+                    f"the CVSS vector component {metric}="
+                    f"{feature[len(prefix):]} (as encoded by the frozen model)"
+                )
             return f"the {label} value {feature[len(prefix):]}"
     return f"the description term '{feature}'"
 
