@@ -45,6 +45,10 @@ versions, hashes and console log are in the adjacent JSON. The new run's PR
 and top-K charts are included alongside the report; the historical 2026-11-14
 charts can be regenerated with `python ml/render_val2025_charts.py`.
 
+`scripts/priority_distribution.py` samples 2026 CVEs and their KEV flags only
+to illustrate tier distributions and was not used for any threshold or model
+decision; thresholds come from Validation 2025 quantiles.
+
 ## Offline deliverables checklist
 
 1. **Completed:** a versioned, reproducible evaluation package for XGBoost, Random Forest, and
@@ -67,12 +71,14 @@ charts can be regenerated with `python ml/render_val2025_charts.py`.
 
 ## Scope and frozen-model caveat
 
-The comparison did not open the 2026 test partition, did not modify
-`frozen_config.json`, `docs/results/`, or any `headline_*` artifact, and used
-the recorded train and validation hashes. The existing frozen XGBoost model
-was read-only; its sigmoid calibration had already been fit on Validation 2025,
-which is disclosed in the generated report. New LR/RF artifacts have dated
-names and are not used by live scan inference.
+The new Validation 2025 comparison did not open the 2026 test partition; that
+partition was opened once for the frozen XGBoost-vs-CVSS comparison. The
+comparison did not modify `frozen_config.json`, `docs/results/`, or any
+`headline_*` artifact, and used the recorded train and validation hashes. The
+existing frozen XGBoost model was read-only; its sigmoid calibration had
+already been fit on Validation 2025, which is disclosed in the generated
+report. New LR/RF artifacts have dated names and are not used by live scan
+inference.
 
 ## Offline model comparison: rules for Random Forest and Logistic Regression runs
 
