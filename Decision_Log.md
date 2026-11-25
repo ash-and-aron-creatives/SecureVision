@@ -181,3 +181,19 @@
 ### D-044: Guard Legacy Scripts and Restrict Distribution Sampling
 * **Decision:** Guard the root SQLite-era seed, initialization, deduplication, administrator-update and role-update scripts, and redirect supported workflows to PostgreSQL/backend alternatives. Make the priority distribution sampler use only Validation 2025 by default; require `--allow-test-period` for samples from 2026 or later.
 * **Rationale:** Prevent destructive or schema-incompatible legacy scripts from being run accidentally and keep default distribution diagnostics out of the frozen test period.
+
+### D-045: Exact Finding Audit Trails
+* **Decision:** Match finding audit records with exact identifier boundaries, query only the newest matching rows plus the newest matching IMPORT row, and re-check SQL matches before returning them.
+* **Rationale:** Prevent prefix collisions such as finding 1 matching finding 10 while avoiding loading every IMPORT audit row into application memory.
+
+### D-046: SQL Findings and Dashboard Queries
+* **Decision:** Filter, sort, count and paginate the findings list in SQL using the latest score per finding; restrict dashboard audit actions and read only each finding's latest score.
+* **Evidence:** Added a test-only old-algorithm reference comparison across sorting, filtering, literal wildcard characters, counts and pagination. The database-backed equivalence and dashboard tests were not run in this environment.
+
+### D-047: Report Ordering and NVD Resilience
+* **Decision:** Sort unscored report findings after scored findings for EPSS order, support the optional `NVD_API_KEY`, and retry one NVD 429/503 response after two seconds without synthesizing scores on failure.
+* **Evidence:** Mocked pure-Python threat-intel tests passed; the database-backed report ordering test was written but not run.
+
+### D-048: Draft Local TLS Overlay
+* **Decision:** Add a Caddy 2 `docker-compose.tls.yml` overlay for HTTPS on localhost, with the frontend API build argument and backend CORS origin set for the proxy.
+* **Validation:** Compose syntax passed `docker compose config --quiet`; Caddy runtime, browser trust and production TLS behavior remain unvalidated.
