@@ -37,9 +37,9 @@ known-exploited findings. The runtime default is now proposal-aligned
   absent from this checkout; obtain them before claiming verbatim criterion or
   viva-question sign-off.
 - The manual browser/UI checklist has not been completed.
-- The Compose configuration does not provide TLS termination. External
-  deployments still require a configured TLS reverse proxy; no such deployment
-  has been validated here.
+- A draft `docker-compose.tls.yml` overlay provides local HTTPS but is
+  unvalidated. Production still requires a real certificate and deployment
+  validation.
 - Full PostgreSQL suite: 529 passed, 0 failed (pytest -v via the Docker
   `postgres-tests` profile, 2026-11-25, commit 7b38e1d, with the working-tree
   `backend/` and `alembic/` mounted). Earlier recorded counts (501) predate

@@ -1,0 +1,27 @@
+services:
+  backend:
+    environment:
+      CORS_ORIGINS: https://localhost
+
+  frontend:
+    build:
+      args:
+        NEXT_PUBLIC_API_BASE: https://localhost/api
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "127.0.0.1:443:443"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+
+volumes:
+  caddy_data:
+  caddy_config:

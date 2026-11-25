@@ -51,10 +51,10 @@ contains three hard-coded demonstration lookup fixtures; they are not
 authoritative current NVD/FIRST scores. Other live lookups require provider
 network access.
 
-The Compose demo binds its services to loopback and does not terminate TLS.
-External deployments must provide TLS termination at a suitably configured
-reverse proxy; this repository does not configure or verify that deployment
-layer.
+The default Compose demo binds its services to loopback and does not terminate
+TLS. A draft local HTTPS overlay is described below. External deployments must
+provide TLS termination with a real certificate and validate that deployment
+layer independently.
 
 The backend runs only with the app-role `DATABASE_URL`; it receives no owner
 URL or owner password. A one-shot `migrate` service runs Alembic as
@@ -65,6 +65,26 @@ prepared CVE CSV and all databases. CVE lookups use the indexed PostgreSQL
 unavailability explicitly if that provider also misses.
 Synthetic seeding is enabled only in the Compose demo and does not delete or
 overwrite existing records.
+
+## HTTPS for local or demo use
+
+With the normal Compose environment configured, start the draft TLS overlay
+from the repository root:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up --build
+```
+
+Open `https://localhost`; stop the stack with:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.tls.yml down
+```
+
+The frontend API URL is a build-time value, so `--build` is required when using
+this overlay. The browser may warn that Caddy's local CA is not trusted; this
+overlay is for local/demo use only. Production requires a real certificate and
+has not been validated here.
 
 ## Setup
 
