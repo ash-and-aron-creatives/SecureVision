@@ -20,24 +20,23 @@ does not perform active network discovery or vulnerability scanning.
 
 ### How is the operational priority determined?
 
-`PRIORITY_MODE=deterministic` is the current code default and stores the
-rule-matrix result as `final_priority`. `PRIORITY_MODE=ml_asset` uses the
-successful model priority. The proposal-target `ml_asset` default was recorded
-in D-038 and superseded by D-039; this is a documented deviation. The recorded
-test PR-AUC is negative relative to CVSS
+`PRIORITY_MODE=ml_asset` is the current code default and stores the successful
+model priority as `final_priority`, falling back to the rule-matrix tier when
+ML is unavailable. `PRIORITY_MODE=deterministic` remains selectable. The recorded test PR-AUC is lower than CVSS
 (0.0114 vs 0.0117), so the Model Results screen preserves that evidence and the
 finding drawer shows the active mode and rule-matrix cross-check. The ML tier is
 calculated from likelihood × exposure × criticality with 2025 validation
 percentile cutoffs, and falls back to the rule tier when ML is unavailable.
 The rule-matrix tier remains visible as a cross-check. In ML mode, KEV applies
-after prediction as a rules-layer High floor; if it changes the tier,
+after prediction as a documented rules-layer High floor; if it changes the tier,
 `priority_source` is `ml+kev_floor`. KEV and EPSS are never model features.
 
 ### What is the ML contribution, and does it improve results?
 
-The calibrated XGBoost model is experimental. SHAP 0.46.0
-`TreeExplainer` explains its underlying estimator; failed SHAP explanations
-fall back to XGBoost native `pred_contribs`, then to unavailable.
+The calibrated XGBoost model is experimental. Native XGBoost
+`pred_contribs` supplies TreeSHAP contributions; contributions plus bias are
+checked against the booster margin. Serving uses CSR rows to preserve sparse
+zero/missing semantics, matching the Validation 2025 training matrix (D-042).
 Publication-time CVSS/vector/CWE/description features are used; KEV and EPSS
 are excluded from the feature set.
 
@@ -57,8 +56,8 @@ training scores separately select its threshold. Random Forest was tuned by
 remains in `docs/results_offline/2026-11-14/`; the tuned run and CV scores are
 in `docs/results_offline/2026-11-15/`. XGBoost's frozen sigmoid calibrator was
 fit on Validation 2025, a disclosed exception. Neither run changes the prior
-Test 2026 result; the negative test result is why deterministic mode remains
-the code default.
+Test 2026 result. Despite the negative test result, `ml_asset` is now the
+proposal-aligned default; it is still experimental.
 The tuned LR achieved Validation 2025 PR-AUC `0.021292` (precision `0.041096`,
 recall `0.047619`, F1 `0.044118`, ROC-AUC `0.845647`), versus historical fixed
 LR PR-AUC `0.020851` (precision `0.032967`, recall `0.047619`, F1 `0.038961`,
@@ -109,8 +108,8 @@ and refresh tokens are not implemented.
 - **Synthetic assets:** demo records, asset names, values, and dates are
   synthetic. They are not customer assets, scanner output, or performance
   evidence.
-- **Rules layer:** the 320-rule matrix is a design choice and the default
-  priority mode; it is not shown to be universally optimal.
+- **Rules layer:** the 320-rule matrix is a visible cross-check and deterministic
+  fallback; it is not shown to be universally optimal.
 - **Synthetic distribution:** the fixed demo findings have no descriptions/model
   outputs, so ML mode falls back to the rule tier; the two modes have the same
   distribution on those fixed rows. The separate 80-scenario offline sample

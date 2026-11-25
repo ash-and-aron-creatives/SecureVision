@@ -7,6 +7,7 @@ import type {
   ImportPreview,
   MlWarmupState,
   PriorityMode,
+  ScanResult,
   UserItem,
   UserRole,
 } from "./index";
@@ -69,6 +70,7 @@ export interface SecureAppViewProps {
   setScanEpss: Dispatch<SetStateAction<string>>;
   scanKev: boolean;
   setScanKev: Dispatch<SetStateAction<boolean>>;
+  scanResult: ScanResult | null;
   handleCsvPreview: FormEventHandler<HTMLFormElement>;
   setCsvFile: Dispatch<SetStateAction<File | null>>;
   createMissingAssets: boolean;

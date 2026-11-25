@@ -22,11 +22,11 @@ flowchart TD
     Intel --> Rules[calculate_priority<br/>deterministic tier / 320-case matrix cross-check]
     Intel --> Warmup{ML warm-up state}
     Warmup -->|startup thread; bundle-load lock| Bundle[Verify frozen_config and model SHA-256<br/>load 152-feature XGBoost + train-fitted TF-IDF]
-    Bundle --> ML[Probability and asset risk<br/>SHAP; native XGBoost contributions fallback]
+    Bundle --> ML[Probability and asset risk<br/>native XGBoost TreeSHAP contributions]
     Rules --> Select{PRIORITY_MODE}
     ML --> Select
-    Select -->|deterministic default| RuleResult[Final priority = rule tier]
-    Select -->|ml_asset and ML available| MLResult[Final priority = ML asset tier]
+    Select -->|ml_asset default and ML available| MLResult[Final priority = ML asset tier]
+    Select -->|deterministic or ML unavailable| RuleResult[Final priority = rule tier]
     MLResult --> KevFloor{in_kev and below High?}
     KevFloor -->|yes| Floor[Apply CISA KEV High floor]
     KevFloor -->|no| Persist
@@ -43,10 +43,10 @@ flowchart TD
   `_WARMUP_STATE_LOCK`. A failed warm-up leaves an explicit unavailable reason.
 - `backend/ml_inference.py` checks the frozen model hash, feature count/order,
   TF-IDF vocabulary and excludes feature names containing KEV or EPSS. It builds
-  a 152-value feature row and obtains explanation contributions from SHAP, with
-  native XGBoost contributions as the fallback.
-- The default in `backend/rules_config.py` is `deterministic`. ML inference is
-  advisory in this mode. `ml_asset` selects the ML asset-risk tier when the
+  a 152-feature CSR row to preserve sparse zero/missing semantics and obtains
+  explanations from native XGBoost TreeSHAP contributions (`pred_contribs`).
+- The default in `backend/rules_config.py` is `ml_asset`; deterministic mode
+  remains selectable. `ml_asset` selects the ML asset-risk tier when the
   prediction is available; if the finding is in KEV, the result cannot be lower
   than High. An unavailable ML prediction falls back to the deterministic tier.
 - The deterministic implementation is the branch logic in
@@ -255,7 +255,7 @@ audit-log access.
 | `backend/schemas.py` | Pydantic request/response shapes, field validation and role/mode literals. |
 | `backend/scoring_engine.py` | Rule-based CVE/asset tier, score explanation and final-priority selection with optional ML/KEV floor. |
 | `backend/rules_config.py` | Runtime priority mode, band thresholds, defaults, model/config/catalog paths and risk-action constants. |
-| `backend/ml_inference.py` | Lock-protected frozen model load and validation, 152-feature assembly, likelihood/risk, SHAP/native contributions and warm-up state. |
+| `backend/ml_inference.py` | Lock-protected frozen model load and validation, 152-feature CSR assembly, likelihood/risk, native XGBoost TreeSHAP contributions and warm-up state. |
 | `backend/threat_intel.py` | FIRST EPSS and NVD HTTP lookups, response validation, errors and three explicit demonstration cache fixtures. No live KEV request. |
 | `backend/cve_dataset.py` | Indexed `cve_catalog` lookup and bounded CVE/description search. |
 | `backend/csv_import.py` | CSV format/header parsing, row validation, duplicates, size/row caps and safe problem CSV output. |

@@ -258,6 +258,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
   });
   const {
     scanCve, setScanCve, scanAssetId, setScanAssetId, scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev,
+    scanResult,
     handleCreateScan, handleLookupIntel, intelMessage, isLookingUpIntel,
   } = useScan(token, apiRequest, setActionMessage, refreshAllData, switchTab);
   const {
@@ -358,7 +359,8 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     completionPct, totalCount, resolvedCount, displayFindings, setTierFilter, tierFilter, exportPriorityCsv, filteredFindings,
     toggleFindingStatus, handleCreateScan, handleLookupIntel, intelMessage, isLookingUpIntel,
     scanCve, setScanCve, scanAssetId, setScanAssetId, assets,
-    scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev, handleCsvPreview, setCsvFile,
+    scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev, scanResult,
+    handleCsvPreview, setCsvFile,
     createMissingAssets, setCreateMissingAssets, dateOrder, setDateOrder,
     importPreview, setImportPreview, handleCsvCommit, handleSaveAsset, handleEditAsset,
     handleCancelAssetEdit, handleDeleteAsset, assetHost, setAssetHost, assetType, setAssetType,

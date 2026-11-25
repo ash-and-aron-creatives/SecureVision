@@ -7,7 +7,7 @@ export function ScanView(props: SecureAppViewProps) {
     darkMode, handleCreateScan, handleLookupIntel, intelMessage, isLookingUpIntel,
     scanCve, setScanCve, scanAssetId,
     setScanAssetId, assets, scanCvss, setScanCvss, scanEpss,
-    setScanEpss, scanKev, setScanKev,
+    setScanEpss, scanKev, setScanKev, scanResult,
   } = props;
   return (activeTab === "scan" && (role === "admin" || role === "analyst") && (
           <div key={`scan-${tabAnimKey}`} className={`rounded-3xl p-6 md:p-8 border max-w-2xl sv-tab-transition ${surfaceCard}`}>
@@ -104,6 +104,56 @@ export function ScanView(props: SecureAppViewProps) {
                 Score with backend
               </button>
             </form>
+            {scanResult && (
+              <section className="mt-6 rounded-2xl border border-[#00E5C4]/25 bg-[#00E5C4]/5 p-5">
+                <h3 className="text-sm font-extrabold text-[#00E5C4]">Scan result evidence</h3>
+                <dl className="mt-4 grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <dt className="text-white/50">Final priority</dt>
+                    <dd className="font-bold">{scanResult.final_priority}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-white/50">Priority source</dt>
+                    <dd>{scanResult.priority_source}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-white/50">ML likelihood</dt>
+                    <dd>{scanResult.ml_likelihood === null
+                      ? "Unavailable"
+                      : `${(scanResult.ml_likelihood * 100).toFixed(2)}%`}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-white/50">ML tier</dt>
+                    <dd>{scanResult.ml_priority ?? "Unavailable"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-white/50">Rule tier (cross-check)</dt>
+                    <dd>{scanResult.rule_priority_tier}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-white/50">Recommended action</dt>
+                    <dd>{scanResult.recommended_action}</dd>
+                  </div>
+                </dl>
+                <div className="mt-4">
+                  <p className="text-xs font-bold text-white/70">Top 3 model factors</p>
+                  {scanResult.ml_top_reasons?.length ? (
+                    <ol className="mt-2 list-decimal list-inside space-y-1 text-xs text-white/80">
+                      {scanResult.ml_top_reasons.slice(0, 3).map((reason) => (
+                        <li key={reason}>{reason}</li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="mt-2 text-xs text-white/55">
+                      {scanResult.ml_unavailable_reason ?? "Unavailable"}
+                    </p>
+                  )}
+                </div>
+                <p className="mt-4 border-t border-white/10 pt-3 text-[11px] text-white/55">
+                  Experimental model. It did not beat CVSS on the frozen 2026 test; see Model Results.
+                </p>
+              </section>
+            )}
           </div>
         ));
 }

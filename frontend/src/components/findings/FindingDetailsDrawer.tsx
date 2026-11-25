@@ -41,9 +41,16 @@ export function FindingDetailsDrawer(props: SecureAppViewProps) {
                     </span>
                   </div>
                   <p className="text-sm text-white/75 mt-1">{selectedFinding.asset_name}</p>
-                  <span className="mt-3 inline-flex text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#E5007D]/25 text-pink-200 border border-[#E5007D]/40">
-                    Final priority: {selectedFinding.final_priority}
-                  </span>
+                  <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                    <div className="rounded-lg bg-white/5 p-2.5">
+                      <dt className="text-white/50">Final priority</dt>
+                      <dd className="font-bold text-pink-200">{selectedFinding.final_priority}</dd>
+                    </div>
+                    <div className="rounded-lg bg-white/5 p-2.5">
+                      <dt className="text-white/50">Priority source</dt>
+                      <dd className="font-bold">{selectedFinding.priority_source}</dd>
+                    </div>
+                  </dl>
                   {priorityMode && (
                     <span className="ml-2 mt-3 inline-flex text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-white/10 text-white/75 border border-white/15">
                       Mode: {priorityMode}
@@ -117,7 +124,7 @@ export function FindingDetailsDrawer(props: SecureAppViewProps) {
                     {selectedFinding.ml_recommended_action ?? "Unavailable"}
                   </p>
                   <p className="mt-4 border-t border-white/10 pt-3 text-[11px] leading-relaxed text-white/55">
-                    Priority source: {selectedFinding.priority_source}. Offline test PR-AUC was 0.0114 vs CVSS 0.0117; validation PR-AUC was 0.0352.
+                    Experimental model. It did not beat CVSS on the frozen 2026 test; see Model Results.
                   </p>
                 </section>
               </div>

@@ -672,7 +672,7 @@ export default function LandingFlow() {
                 <span className="text-[10px] font-mono uppercase px-2 py-1 bg-white/10 rounded text-[#FFB340]">RESEARCH / OFFLINE ONLY</span>
                 <h4 className="text-lg font-bold mt-4 mb-2">Experimental ML Priority Input</h4>
                 <p className="text-white/60 text-xs leading-relaxed">
-                  `PRIORITY_MODE` selects `deterministic` (default) or `ml_asset`. ML mode uses likelihood × exposure × criticality with validation percentiles, then applies the High known-exploited floor. The model remains experimental: test PR-AUC 0.0114 vs CVSS 0.0117; validation PR-AUC 0.0352.
+                  `PRIORITY_MODE` selects `ml_asset` (default) or `deterministic`. The experimental model uses likelihood × exposure × criticality with validation percentiles, then applies the documented High known-exploited floor. It did not beat CVSS on the frozen 2026 test: PR-AUC 0.0114 vs 0.0117; validation PR-AUC 0.0352.
                 </p>
               </div>
               <p className="mt-6 text-xs text-white/50">See README: Research: offline ML evaluation.</p>

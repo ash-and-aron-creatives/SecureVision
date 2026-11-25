@@ -140,7 +140,7 @@ PostgreSQL Alembic head: `0005_cve_catalog`.
 5. Predict CVE exploitation likelihood with the frozen calibrated XGBoost model when available.
 6. Compute ML risk as likelihood x exposure factor x criticality factor.
 7. Map ML risk to Critical/High/Medium/Low using configured validation-derived thresholds.
-8. Default `PRIORITY_MODE` is `deterministic`: persist the rule tier in `final_priority` and `priority_source=rules`.
+8. Default `PRIORITY_MODE` is `ml_asset`: persist the ML tier when available; otherwise fall back to the rule tier and source `rules`.
 9. In `ml_asset` mode, use ML tier when available; otherwise fall back to the rule tier and source `rules`.
 10. In `ml_asset` mode only, raise a KEV ML tier below High to High (`ml+kev_floor`); persist the finding and score history.
 
@@ -245,8 +245,9 @@ lookups depend on external NVD/FIRST availability. Asset search and exposure,
 environment, and review-status filters are client-side in `AssetsView`.
 The optional prepared catalog loader handles 384,522 rows in about 33 minutes;
 on a fresh clone, uncached single-CVE lookups fall back to the live provider.
-The deterministic mode is the code default. The proposal-target default and
-High KEV floor are documented decisions (D-038, D-039, and D-033).
+`ml_asset` is the code default; deterministic mode remains selectable. The
+known-exploited High floor is retained as a documented proposal deviation
+(D-043).
 
 The current collection count is 501 tests: four per-tier finding-detail cases
 were added for rule-only final-tier action templates. Finding list, detail, and

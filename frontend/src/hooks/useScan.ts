@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { lookupIntel } from "../api/intel";
 import { createScan } from "../api/scan";
 import type { ApiRequester } from "../api/types";
+import type { ScanResult } from "../types";
 
 export function useScan(
   token: string | null,
@@ -16,6 +17,7 @@ export function useScan(
   const [scanCvss, setScanCvss] = useState("");
   const [scanEpss, setScanEpss] = useState("");
   const [scanKev, setScanKev] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [intelMessage, setIntelMessage] = useState("");
   const [isLookingUpIntel, setIsLookingUpIntel] = useState(false);
 
@@ -76,6 +78,7 @@ export function useScan(
       return;
     }
     setActionMessage("");
+    setScanResult(null);
     try {
       const result = await createScan(apiRequest, token, {
         asset_id: Number(scanAssetId),
@@ -86,9 +89,12 @@ export function useScan(
       });
       const findingLabel = result.action === "updated" ? "Finding updated" : "Finding created";
       const reopenedLabel = result.reopened ? " (reopened)" : "";
-      setActionMessage(`${findingLabel}: ${result.priority_tier} (score ${result.score}/4): ${result.explanation.summary}${reopenedLabel}`);
+      setScanResult(result);
+      setActionMessage(
+        `${findingLabel}: ${result.final_priority} (${result.priority_source})${reopenedLabel}`,
+      );
       await refreshAllData(token);
-      switchTab("dashboard");
+      switchTab("scan");
     } catch (scanError) {
       setActionMessage(scanError instanceof Error ? scanError.message : "Backend scan failed.");
     }
@@ -105,6 +111,7 @@ export function useScan(
     setScanEpss,
     scanKev,
     setScanKev,
+    scanResult,
     intelMessage,
     isLookingUpIntel,
     handleLookupIntel,
