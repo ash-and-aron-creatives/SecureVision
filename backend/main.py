@@ -12,10 +12,10 @@ from fastapi import (
 )
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func
+from sqlalchemy import case, func, or_
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 import hashlib
@@ -686,77 +686,109 @@ def get_findings(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    findings = db.query(models.Finding).all()
-    all_rows = []
+    latest_score_ids = (
+        db.query(
+            models.FindingScore.finding_id.label("finding_id"),
+            func.max(models.FindingScore.id).label("score_id"),
+        )
+        .group_by(models.FindingScore.finding_id)
+        .subquery()
+    )
+    LatestScore = aliased(models.FindingScore)
+    tier = func.coalesce(
+        func.nullif(models.Finding.final_priority, ""),
+        func.coalesce(func.nullif(LatestScore.priority_tier, ""), "Low"),
+    )
+    status_value = func.coalesce(models.Finding.status, "Open")
+    cvss_value = func.coalesce(models.Finding.cvss_score, 0)
+    likelihood_value = func.coalesce(LatestScore.likelihood, 0)
+    query = (
+        db.query(models.Finding, LatestScore, models.Asset)
+        .outerjoin(models.Asset, models.Finding.asset_id == models.Asset.id)
+        .outerjoin(latest_score_ids, latest_score_ids.c.finding_id == models.Finding.id)
+        .outerjoin(LatestScore, LatestScore.id == latest_score_ids.c.score_id)
+    )
     open_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
 
-    for f in findings:
-        latest = (
-            db.query(models.FindingScore)
-            .filter(models.FindingScore.finding_id == f.id)
-            .order_by(models.FindingScore.id.desc())
-            .first()
-        )
-        rule_tier = latest.priority_tier if latest and latest.priority_tier else "Low"
-        tier = f.final_priority or rule_tier
-        likelihood = float(latest.likelihood) if (latest and latest.likelihood is not None) else 0.0
-        explanation = _stored_explanation(latest, f, f.asset)
-        cvss_val = float(f.cvss_score) if f.cvss_score is not None else 0.0
+    for count_tier, count in (
+        query.with_entities(tier, func.count(models.Finding.id))
+        .filter(models.Finding.status == "Open")
+        .group_by(tier)
+        .all()
+    ):
+        if count_tier in open_counts:
+            open_counts[count_tier] = count
 
-        if f.status == "Open" and tier in open_counts:
-            open_counts[tier] += 1
-
-        all_rows.append({
-            "id": int(f.id),
-            "cve_id": str(f.cve_id or "UNKNOWN"),
-            "asset_id": int(f.asset_id) if f.asset_id is not None else 0,
-            "asset_name": f.asset.name if f.asset else "Unknown",
-            "exposure": f.asset.exposure if f.asset else "Internal",
-            "criticality": int(f.asset.criticality) if (f.asset and f.asset.criticality is not None) else 1,
-            "cvss_score": cvss_val,
-            "epss": likelihood,
-            "in_kev": bool(f.in_kev),
-            "priority_tier": tier,
-            "final_priority": tier,
-            "recommended_action": recommended_action_for_priority(tier),
-            "priority_source": f.priority_source or "rules",
-            "rule_priority_tier": rule_tier,
-            "score": TIER_SCORES.get(tier, 0),
-            "status": str(f.status or "Open"),
-            "date_found": str(f.date_found) if f.date_found else None,
-            "explanation": explanation,
-            **_ml_score_fields(latest),
-        })
-
-    filtered = all_rows
+    filtered_query = query
     if priority:
-        filtered = [r for r in filtered if r["priority_tier"].lower() == priority.strip().lower()]
+        filtered_query = filtered_query.filter(func.lower(tier) == priority.strip().lower())
     if status:
-        filtered = [r for r in filtered if r["status"].lower() == status.strip().lower()]
+        filtered_query = filtered_query.filter(func.lower(status_value) == status.strip().lower())
     if asset_id is not None:
-        filtered = [r for r in filtered if r["asset_id"] == asset_id]
+        filtered_query = filtered_query.filter(models.Finding.asset_id == asset_id)
     if q:
         needle = q.strip().lower()
-        filtered = [
-            r for r in filtered
-            if needle in r["cve_id"].lower()
-            or needle in r["asset_name"].lower()
-            or needle in str(r["explanation"].get("summary", "")).lower()
-        ]
+        escaped_needle = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped_needle}%"
+        explanation_summary = LatestScore.provenance["scoring_explanation"]["summary"].as_string()
+        explanation_text = func.coalesce(explanation_summary, LatestScore.explanation, "")
+        filtered_query = filtered_query.filter(
+            or_(
+                func.coalesce(models.Finding.cve_id, "UNKNOWN").ilike(pattern, escape="\\"),
+                func.coalesce(models.Asset.name, "Unknown").ilike(pattern, escape="\\"),
+                explanation_text.ilike(pattern, escape="\\"),
+            )
+        )
 
     if sort == "cvss":
-        filtered.sort(key=lambda r: (r["cvss_score"], r["id"]), reverse=True)
+        ordered_query = filtered_query.order_by(cvss_value.desc(), models.Finding.id.desc())
     elif sort == "epss":
-        filtered.sort(key=lambda r: (r["epss"], r["id"]), reverse=True)
+        ordered_query = filtered_query.order_by(likelihood_value.desc(), models.Finding.id.desc())
     elif sort == "newest":
-        filtered.sort(key=lambda r: r["id"], reverse=True)
+        ordered_query = filtered_query.order_by(models.Finding.id.desc())
     else:
-        filtered.sort(key=lambda r: (TIER_RANK.get(r["priority_tier"], 0), r["cvss_score"], r["epss"], r["id"]), reverse=True)
+        tier_rank = case(
+            (tier == "Critical", 4),
+            (tier == "High", 3),
+            (tier == "Medium", 2),
+            (tier == "Low", 1),
+            else_=0,
+        )
+        ordered_query = filtered_query.order_by(
+            tier_rank.desc(),
+            cvss_value.desc(),
+            likelihood_value.desc(),
+            models.Finding.id.desc(),
+        )
 
-    total = len(filtered)
+    total = filtered_query.order_by(None).with_entities(func.count(models.Finding.id)).scalar() or 0
     pages = max(1, (total + page_size - 1) // page_size)
-    start = (page - 1) * page_size
-    items = filtered[start : start + page_size]
+    rows = ordered_query.offset((page - 1) * page_size).limit(page_size).all()
+    items = []
+    for finding, latest, asset in rows:
+        final_tier = finding.final_priority or (latest.priority_tier if latest and latest.priority_tier else "Low")
+        rule_tier = latest.priority_tier if latest and latest.priority_tier else "Low"
+        items.append({
+            "id": int(finding.id),
+            "cve_id": str(finding.cve_id or "UNKNOWN"),
+            "asset_id": int(finding.asset_id) if finding.asset_id is not None else 0,
+            "asset_name": asset.name if asset else "Unknown",
+            "exposure": asset.exposure if asset else "Internal",
+            "criticality": int(asset.criticality) if (asset and asset.criticality is not None) else 1,
+            "cvss_score": float(finding.cvss_score) if finding.cvss_score is not None else 0.0,
+            "epss": float(latest.likelihood) if latest and latest.likelihood is not None else 0.0,
+            "in_kev": bool(finding.in_kev),
+            "priority_tier": final_tier,
+            "final_priority": final_tier,
+            "recommended_action": recommended_action_for_priority(final_tier),
+            "priority_source": finding.priority_source or "rules",
+            "rule_priority_tier": rule_tier,
+            "score": TIER_SCORES.get(final_tier, 0),
+            "status": str(finding.status or "Open"),
+            "date_found": str(finding.date_found) if finding.date_found else None,
+            "explanation": _stored_explanation(latest, finding, asset),
+            **_ml_score_fields(latest),
+        })
 
     return {
         "items": items,

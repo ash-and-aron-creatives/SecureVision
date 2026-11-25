@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
-from backend import auth
+from backend import auth, main
 from backend.database import Base, get_db
 from backend.main import app
 from backend.models import Asset, Finding, FindingScore, User
@@ -63,6 +63,156 @@ def get_auth_headers(client):
     res = client.post("/token", data={"username": "admin", "password": "password123"})
     assert res.status_code == 200
     return {"Authorization": f"Bearer {res.json()['access_token']}"}
+
+
+def _reference_findings_page(db_session, params):
+    rows = []
+    counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
+    for finding in db_session.query(Finding).all():
+        latest = (
+            db_session.query(FindingScore)
+            .filter(FindingScore.finding_id == finding.id)
+            .order_by(FindingScore.id.desc())
+            .first()
+        )
+        rule_tier = latest.priority_tier if latest and latest.priority_tier else "Low"
+        tier = finding.final_priority or rule_tier
+        explanation = main._stored_explanation(latest, finding, finding.asset)
+        if finding.status == "Open" and tier in counts:
+            counts[tier] += 1
+        rows.append({
+            "id": finding.id,
+            "cve_id": str(finding.cve_id or "UNKNOWN"),
+            "asset_id": finding.asset_id or 0,
+            "asset_name": finding.asset.name if finding.asset else "Unknown",
+            "priority_tier": tier,
+            "status": str(finding.status or "Open"),
+            "cvss_score": float(finding.cvss_score) if finding.cvss_score is not None else 0.0,
+            "epss": float(latest.likelihood) if latest and latest.likelihood is not None else 0.0,
+            "explanation": explanation,
+        })
+
+    priority = params.get("priority")
+    status = params.get("status")
+    asset_id = params.get("asset_id")
+    needle = params.get("q", "").strip().lower()
+    if priority:
+        rows = [row for row in rows if row["priority_tier"].lower() == priority.strip().lower()]
+    if status:
+        rows = [row for row in rows if row["status"].lower() == status.strip().lower()]
+    if asset_id is not None:
+        rows = [row for row in rows if row["asset_id"] == int(asset_id)]
+    if params.get("q"):
+        rows = [
+            row for row in rows
+            if needle in row["cve_id"].lower()
+            or needle in row["asset_name"].lower()
+            or needle in str(row["explanation"].get("summary", "")).lower()
+        ]
+
+    sort = params.get("sort", "priority")
+    if sort == "cvss":
+        rows.sort(key=lambda row: (row["cvss_score"], row["id"]), reverse=True)
+    elif sort == "epss":
+        rows.sort(key=lambda row: (row["epss"], row["id"]), reverse=True)
+    elif sort == "newest":
+        rows.sort(key=lambda row: row["id"], reverse=True)
+    else:
+        rows.sort(
+            key=lambda row: (
+                main.TIER_RANK.get(row["priority_tier"], 0),
+                row["cvss_score"],
+                row["epss"],
+                row["id"],
+            ),
+            reverse=True,
+        )
+
+    page = int(params.get("page", 1))
+    page_size = int(params.get("page_size", 7))
+    start = (page - 1) * page_size
+    return {
+        "ids": [row["id"] for row in rows[start : start + page_size]],
+        "total": len(rows),
+        "pages": max(1, (len(rows) + page_size - 1) // page_size),
+        "counts": counts,
+    }
+
+
+def _add_findings_reference_dataset(db_session):
+    assets = [
+        Asset(name="percent%_app", exposure="Internet", criticality=4),
+        Asset(name="gateway_2", exposure="Internal", criticality=2),
+        Asset(name="search-node", exposure="Internet", criticality=3),
+    ]
+    db_session.add_all(assets)
+    db_session.flush()
+    tiers = ("Critical", "High", "Medium", "Low", "Unknown")
+    statuses = ("Open", "In Progress", "Resolved", None)
+    findings = []
+    for index in range(32):
+        finding = Finding(
+            asset_id=assets[index % len(assets)].id,
+            cve_id="CVE-2025-10%_special" if index == 4 else f"CVE-2025-{2000 + index}",
+            cvss_score=None if index % 6 == 0 else float((index * 7) % 101) / 10,
+            final_priority="" if index % 9 == 0 else tiers[index % len(tiers)],
+            status=statuses[index % len(statuses)],
+            date_found=f"2025-01-{index % 28 + 1:02d}",
+        )
+        db_session.add(finding)
+        db_session.flush()
+        findings.append(finding)
+        if index % 6 != 0:
+            db_session.add(FindingScore(
+                finding_id=finding.id,
+                provider_id=1,
+                likelihood=None if index % 5 == 0 else float(index % 10) / 10,
+                priority_tier=tiers[(index + 1) % len(tiers)],
+                provenance={},
+                explanation=f"Explanation {index} searchable",
+            ))
+            if index == 2:
+                db_session.add(FindingScore(
+                    finding_id=finding.id,
+                    provider_id=1,
+                    likelihood=0.99,
+                    priority_tier="High",
+                    provenance={},
+                    explanation="Latest explanation with final_marker",
+                ))
+    db_session.commit()
+    return assets
+
+
+def test_findings_sql_pagination_matches_reference(client, db_session):
+    assets = _add_findings_reference_dataset(db_session)
+    headers = get_auth_headers(client)
+    cases = [{"sort": sort} for sort in ("priority", "cvss", "epss", "newest")]
+    cases.extend([
+        {"priority": "hIgH"},
+        {"status": "rEsOlVeD"},
+        {"asset_id": assets[1].id},
+        {"q": "CVE-2025-20"},
+        {"q": "%"},
+        {"q": "_"},
+        {"priority": "Critical", "status": "Open", "asset_id": assets[0].id, "q": "CVE"},
+    ])
+    cases.extend(
+        {"sort": sort, "page": page}
+        for sort in ("priority", "cvss", "epss", "newest")
+        for page in (1, 3, 5)
+    )
+
+    for params in cases:
+        request_params = {"page_size": 7, **params}
+        response = client.get("/findings", params=request_params, headers=headers)
+        assert response.status_code == 200
+        actual = response.json()
+        expected = _reference_findings_page(db_session, request_params)
+        assert [item["id"] for item in actual["items"]] == expected["ids"]
+        assert actual["total"] == expected["total"]
+        assert actual["pages"] == expected["pages"]
+        assert actual["counts"] == expected["counts"]
 
 
 def test_findings_list_and_counts(client):
