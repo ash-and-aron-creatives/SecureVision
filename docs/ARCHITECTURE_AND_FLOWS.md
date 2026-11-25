@@ -271,6 +271,7 @@ audit-log access.
 | `alembic/versions/0003_postgres_uniqueness_and_app_privileges.py` | Duplicate checks, asset case-insensitive unique index, finding uniqueness and app-role grants. |
 | `alembic/versions/0004_final_priority.py` | Adds and backfills finding final-priority and source fields; hardens grants. |
 | `alembic/versions/0005_cve_catalog.py` | Creates the reference catalog with app-role SELECT-only permissions. |
+| `alembic/versions/0006_user_deactivation.py` | Adds `users.is_active` for audited user deactivation/reactivation. |
 | `scripts/load_cve_catalog.py` | Owner-only explicit streaming/upsert loader; not run automatically during startup. |
 | `ml/features_splits.py` | Historical dated raw-data preprocessing and chronological train/validation/test CSV generation; its 2,000-token encoder is not the frozen production feature transformer. |
 | `ml/run_pipeline.py` | Historical frozen 152-feature XGBoost evaluation pipeline and validation reference; also contains the prior test evaluation. Do not rerun its test path for this comparison. |

@@ -1,5 +1,21 @@
 # Offline ML comparison
 
+## Serving parity and feature parsing caveats
+
+D-042 records a Validation 2025-only train/serve parity check. The serving
+feature columns matched the reference; dense rows did not preserve the frozen
+model's sparse zero/missing semantics, while CSR inference matched the saved
+scores exactly on all 2,126 checked rows (maximum absolute difference `0`,
+Spearman `1.0`). This diagnostic did not read the 2026 test split or modify
+the frozen model/configuration or protected results.
+
+The same investigation confirmed a separate CVSS vector parsing limitation:
+the runtime `C` and `I` patterns are unanchored, and the probe matched `C=L`
+from `AC:L` and `I=N` from `UI:N` instead of the later `C:H` and `I:H`. The
+repository's `ml/run_pipeline_final.py` writer parses AV/AC/PR/UI, not C/I, so
+it does not define the full runtime pattern set. Treat this as a disclosed
+limitation, not a claim that all vector fields have train/serve parity.
+
 ## What is recorded here
 
 The historical logs below remain useful context, but the dated comparison now

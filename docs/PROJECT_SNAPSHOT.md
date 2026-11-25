@@ -104,11 +104,11 @@ their prefixes in `backend/users.py` and `backend/reports.py`.
 ## Database schema
 
 Columns are taken from `backend/models.py`; the Alembic chain head is
-`0005_cve_catalog`.
+`0006_user_deactivation`.
 
 | Table | Columns |
 |---|---|
-| `users` | `id`, `username`, `hashed_password`, `role` |
+| `users` | `id`, `username`, `hashed_password`, `role`, `is_active` |
 | `assets` | `id`, `name`, `type`, `ip_or_domain`, `owner`, `environment`, `exposure`, `criticality`, `needs_review` |
 | `cves` | `cve_id`, `data` |
 | `cve_catalog` | `cve_id`, `published_date`, `description`, `cvss_score`, `cvss_vector`, `cwe`, `kev_date_added`, `epss`, `percentile`, `in_kev` |
@@ -119,7 +119,7 @@ Columns are taken from `backend/models.py`; the Alembic chain head is
 Named uniqueness/index constraints include `uq_assets_name_ci`,
 `uq_findings_asset_cve`, `ix_users_username`, `ix_findings_final_priority`,
 `ix_assets_name`, `ix_findings_asset_id`, and `ix_findings_cve_id`.
-PostgreSQL Alembic head: `0005_cve_catalog`.
+PostgreSQL Alembic head: `0006_user_deactivation`.
 
 ## Environment variable names
 
@@ -213,8 +213,11 @@ configuration file was not re-read for this snapshot.
 
 ## Test collection, dependencies, and limitations
 
-Root `pytest --collect-only -q` in the `postgres-tests` profile collected 501
-tests from these files:
+The historical 2026-11-15 snapshot collected 501 tests with root
+`pytest --collect-only -q` in the `postgres-tests` profile. The table records
+that baseline, not the current count; additional tests have since been added.
+The current full PostgreSQL suite and collection count are pending re-run after
+the commits of this session.
 
 | Test file | Count | Test file | Count |
 |---|---:|---|---:|
@@ -249,7 +252,7 @@ on a fresh clone, uncached single-CVE lookups fall back to the live provider.
 known-exploited High floor is retained as a documented proposal deviation
 (D-043).
 
-The current collection count is 501 tests: four per-tier finding-detail cases
-were added for rule-only final-tier action templates. Finding list, detail, and
-scan responses derive `recommended_action` from `final_priority`; the separate
+The historical 501-test baseline included four per-tier finding-detail cases
+for rule-only final-tier action templates. Finding list, detail, and scan
+responses derive `recommended_action` from `final_priority`; the separate
 ML-specific action remains unchanged.

@@ -22,8 +22,8 @@ does not perform active network discovery or vulnerability scanning.
 
 `PRIORITY_MODE=ml_asset` is the current code default and stores the successful
 model priority as `final_priority`, falling back to the rule-matrix tier when
-ML is unavailable. `PRIORITY_MODE=deterministic` remains selectable. The recorded test PR-AUC is lower than CVSS
-(0.0114 vs 0.0117), so the Model Results screen preserves that evidence and the
+ML is unavailable. `PRIORITY_MODE=deterministic` remains selectable. The
+recorded test PR-AUC is lower than CVSS (0.0114 vs 0.0117), so the Model Results screen preserves that evidence and the
 finding drawer shows the active mode and rule-matrix cross-check. The ML tier is
 calculated from likelihood × exposure × criticality with 2025 validation
 percentile cutoffs, and falls back to the rule tier when ML is unavailable.
