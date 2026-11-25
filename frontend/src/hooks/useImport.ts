@@ -13,6 +13,7 @@ export function useImport(
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [createMissingAssets, setCreateMissingAssets] = useState(false);
+  const [dateOrder, setDateOrder] = useState<"dmy" | "mdy">("dmy");
 
   const handleCsvPreview = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -21,7 +22,13 @@ export function useImport(
       return;
     }
     try {
-      const result = await previewImport(apiRequest, token, csvFile, createMissingAssets);
+      const result = await previewImport(
+        apiRequest,
+        token,
+        csvFile,
+        createMissingAssets,
+        dateOrder,
+      );
       setImportPreview(result);
       setActionMessage(`Preview ready (${result.detected_format}): ${result.summary.ok} valid, ${result.summary.error} errors, ${result.summary.duplicate} duplicates.`);
     } catch (importError) {
@@ -32,8 +39,17 @@ export function useImport(
   const handleCsvCommit = async () => {
     if (!csvFile || !token || !importPreview || importPreview.summary.ok === 0) return;
     try {
-      const result = await commitImport(apiRequest, token, csvFile, createMissingAssets);
-      setActionMessage(`Backend imported ${result.imported} findings; ${result.skipped} skipped.`);
+      const result = await commitImport(
+        apiRequest,
+        token,
+        csvFile,
+        createMissingAssets,
+        dateOrder,
+      );
+      setActionMessage(
+        `Backend imported ${result.imported} findings; ${result.skipped} skipped. ` +
+        `${result.ambiguous_date_rows} ambiguous date rows interpreted as ${dateOrder.toUpperCase()}.`,
+      );
       await refreshAllData(token);
       setImportPreview(null);
       setCsvFile(null);
@@ -47,6 +63,8 @@ export function useImport(
     setCsvFile,
     createMissingAssets,
     setCreateMissingAssets,
+    dateOrder,
+    setDateOrder,
     importPreview,
     setImportPreview,
     handleCsvPreview,

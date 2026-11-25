@@ -147,6 +147,7 @@ export interface ModelResults {
 
 export interface ImportPreview {
   detected_format: string;
+  ambiguous_date_rows: number;
   summary: {
     total: number;
     ok: number;
@@ -169,6 +170,7 @@ export interface ImportCommit {
   imported: number;
   skipped: number;
   problems_csv: string;
+  ambiguous_date_rows: number;
 }
 
 export interface LoginResponse {

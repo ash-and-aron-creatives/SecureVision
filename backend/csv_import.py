@@ -64,18 +64,36 @@ def detect_format(headers: list[str]) -> str:
     return "Generic"
 
 
-def _date_value(value: str) -> dt.date:
+def _date_value(value: str, date_order: str = "dmy") -> tuple[dt.date, bool]:
     value = value.strip()
     try:
-        return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+        return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).date(), False
     except ValueError:
         pass
 
-    for date_format in ("%d/%m/%Y", "%m/%d/%Y"):
+    if date_order not in {"dmy", "mdy"}:
+        raise ValueError("date_order must be 'dmy' or 'mdy'.")
+
+    parsed_dates = {}
+    for order, date_format in (
+        ("dmy", "%d/%m/%Y"),
+        ("mdy", "%m/%d/%Y"),
+    ):
         try:
-            return dt.datetime.strptime(value, date_format).date()
+            parsed_dates[order] = dt.datetime.strptime(value, date_format).date()
         except ValueError:
-            continue
+            parsed_dates[order] = None
+
+    dmy_date = parsed_dates["dmy"]
+    mdy_date = parsed_dates["mdy"]
+    if dmy_date is not None and mdy_date is not None:
+        if dmy_date != mdy_date:
+            return (dmy_date if date_order == "dmy" else mdy_date), True
+        return dmy_date, False
+    if dmy_date is not None:
+        return dmy_date, False
+    if mdy_date is not None:
+        return mdy_date, False
     raise ValueError("invalid date")
 
 
@@ -85,7 +103,10 @@ def parse_and_validate(
     existing_pairs: set[tuple[int, str]],
     today: dt.date | None = None,
     allow_missing_assets: bool = False,
+    date_order: str = "dmy",
 ) -> tuple[list[RowResult], dict]:
+    if date_order not in {"dmy", "mdy"}:
+        raise ValueError("date_order must be 'dmy' or 'mdy'.")
     today = today or dt.date.today()
     if len(data) > MAX_BYTES:
         raise ImportFileError("The file is larger than 5 MB.")
@@ -126,6 +147,7 @@ def parse_and_validate(
     seen: set[tuple[str, str]] = set()
     results: list[RowResult] = []
     row_count = 0
+    ambiguous_source_lines: set[int] = set()
 
     for source_row in reader:
         if not source_row:
@@ -174,7 +196,9 @@ def parse_and_validate(
         parsed_date: dt.date | None = None
         date_error = ""
         try:
-            parsed_date = _date_value(date_raw)
+            parsed_date, ambiguous_date = _date_value(date_raw, date_order)
+            if ambiguous_date:
+                ambiguous_source_lines.add(line)
             if parsed_date > today:
                 date_error = "date_found cannot be in the future."
         except ValueError:
@@ -231,6 +255,7 @@ def parse_and_validate(
     summary = {"total": len(results)}
     for key in ("ok", "error", "duplicate"):
         summary[key] = sum(1 for result in results if result.status == key)
+    summary["ambiguous_date_rows"] = len(ambiguous_source_lines)
     return results, summary
 
 

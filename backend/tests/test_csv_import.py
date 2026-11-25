@@ -25,12 +25,24 @@ from backend.csv_import import (
 ASSETS = {"Payment-DB": 1, "Public Website": 2}
 TODAY = dt.date(2026, 10, 12)
 
-def run(text, existing=None):
-    return parse_and_validate(text.encode("utf-8"), ASSETS, existing or set(), TODAY)
+def run(text, existing=None, date_order="dmy"):
+    return parse_and_validate(
+        text.encode("utf-8"),
+        ASSETS,
+        existing or set(),
+        TODAY,
+        date_order=date_order,
+    )
 
 def test_valid_rows_and_normalisation():
     rows, s = run("asset_name,cve_id,date_found\npayment-db, cve-2021-44228 ,2026-10-01\n")
-    assert s == {"total": 1, "ok": 1, "error": 0, "duplicate": 0}
+    assert s == {
+        "total": 1,
+        "ok": 1,
+        "error": 0,
+        "duplicate": 0,
+        "ambiguous_date_rows": 0,
+    }
     assert rows[0].asset_id == 1 and rows[0].cve_id == "CVE-2021-44228"
 
 
@@ -133,7 +145,13 @@ def test_multi_cve_rows_and_multiple_validation_errors():
     assert "Unknown asset" in rows[2].reason
     assert "cve_id" in rows[2].reason
     assert "date_found" in rows[2].reason
-    assert summary == {"total": 3, "ok": 2, "error": 1, "duplicate": 0}
+    assert summary == {
+        "total": 3,
+        "ok": 2,
+        "error": 1,
+        "duplicate": 0,
+        "ambiguous_date_rows": 0,
+    }
 
 
 def test_no_cve_is_reported_clearly_and_missing_asset_can_be_previewed():
@@ -168,6 +186,102 @@ def test_no_cve_is_reported_clearly_and_missing_asset_can_be_previewed():
 def test_flexible_dates(date_text, expected):
     rows, _ = run(f"asset_name,cve_id,date_found\nPayment-DB,CVE-2021-44228,{date_text}\n")
     assert rows[0].date_found == expected
+
+
+@pytest.mark.parametrize(
+    ("date_order", "expected"),
+    [
+        ("dmy", "2026-04-03"),
+        ("mdy", "2026-03-04"),
+    ],
+)
+def test_ambiguous_slash_dates_follow_selected_order_and_count_source_rows(
+    date_order, expected
+):
+    rows, summary = run(
+        "asset_name,cve_id,date_found\n"
+        "Payment-DB,CVE-2021-44228;CVE-2022-12345,03/04/2026\n",
+        date_order=date_order,
+    )
+
+    assert [row.date_found for row in rows] == [expected, expected]
+    assert summary["ambiguous_date_rows"] == 1
+
+
+def test_unambiguous_slash_dates_ignore_selected_order_and_same_dates_are_not_counted():
+    rows, summary = run(
+        "asset_name,cve_id,date_found\n"
+        "Payment-DB,CVE-2021-44228,13/04/2026\n"
+        "Payment-DB,CVE-2022-12345,04/04/2026\n",
+        date_order="mdy",
+    )
+
+    assert [row.date_found for row in rows] == ["2026-04-13", "2026-04-04"]
+    assert summary["ambiguous_date_rows"] == 0
+
+
+def test_import_preview_rejects_invalid_date_order_and_reports_ambiguous_rows():
+    engine = create_test_engine()
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+    db.add(
+        User(
+            username="csv-date-order-admin",
+            hashed_password=auth.get_password_hash("test-password"),
+            role="admin",
+        )
+    )
+    db.commit()
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as client:
+            token = client.post(
+                "/token",
+                data={"username": "csv-date-order-admin", "password": "test-password"},
+            ).json()["access_token"]
+            headers = {"Authorization": f"Bearer {token}"}
+            response = client.post(
+                "/imports/preview",
+                data={"date_order": "mdy"},
+                files={
+                    "file": (
+                        "date-order.csv",
+                        io.BytesIO(
+                            b"asset_name,cve_id,date_found\n"
+                            b"Payment-DB,CVE-2021-44228,03/04/2026\n"
+                        ),
+                        "text/csv",
+                    ),
+                },
+                headers=headers,
+            )
+            invalid = client.post(
+                "/imports/preview",
+                data={"date_order": "invalid"},
+                files={
+                    "file": (
+                        "date-order.csv",
+                        io.BytesIO(
+                            b"asset_name,cve_id,date_found\n"
+                            b"Payment-DB,CVE-2021-44228,03/04/2026\n"
+                        ),
+                        "text/csv",
+                    ),
+                },
+                headers=headers,
+            )
+        assert response.status_code == 200
+        assert response.json()["ambiguous_date_rows"] == 1
+        assert response.json()["rows"][0]["date_found"] == "2026-03-04"
+        assert invalid.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+        db.close()
+        engine.dispose()
 
 
 def test_utf8_bom_and_quoted_fields():
@@ -235,6 +349,7 @@ def test_accepts_csv_at_exact_byte_and_row_limits():
         "ok": 1,
         "error": 0,
         "duplicate": MAX_ROWS - 1,
+        "ambiguous_date_rows": 0,
     }
 
 

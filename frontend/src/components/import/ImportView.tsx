@@ -5,6 +5,7 @@ export function ImportView(props: SecureAppViewProps) {
   const {
     activeTab, tabAnimKey, surfaceCard, headingColor, mutedText, role,
     subSurfaceCard, handleCsvPreview, setCsvFile, createMissingAssets, setCreateMissingAssets,
+    dateOrder, setDateOrder,
     setImportPreview, importPreview,
     handleCsvCommit,
   } = props;
@@ -43,6 +44,22 @@ export function ImportView(props: SecureAppViewProps) {
                 />
                 Create missing assets (Internal, criticality 3; needs review)
               </label>
+              <label className={`flex items-center gap-2 text-xs ${mutedText}`}>
+                Day/month order:
+                <select
+                  value={dateOrder}
+                  onChange={(event) => {
+                    if (event.target.value === "dmy" || event.target.value === "mdy") {
+                      setDateOrder(event.target.value);
+                      setImportPreview(null);
+                    }
+                  }}
+                  className="px-2 py-1 rounded-lg border"
+                >
+                  <option value="dmy">DD/MM (default)</option>
+                  <option value="mdy">MM/DD</option>
+                </select>
+              </label>
               <button
                 type="submit"
                 className="px-6 py-3 rounded-full bg-gradient-to-r from-[#8121D7] to-[#1ABDD6] text-white font-bold text-xs shadow-md hover:scale-105 transition-all cursor-pointer"
@@ -58,6 +75,12 @@ export function ImportView(props: SecureAppViewProps) {
                 <p className={`text-sm font-bold ${headingColor}`}>
                   {importPreview.summary.total} rows: {importPreview.summary.ok} valid, {importPreview.summary.error} errors, {importPreview.summary.duplicate} duplicates
                 </p>
+                {importPreview.ambiguous_date_rows > 0 && (
+                  <p className={`text-xs ${mutedText}`} role="status">
+                    {importPreview.ambiguous_date_rows} rows had ambiguous slashed dates; interpreted as{" "}
+                    {dateOrder === "dmy" ? "DD/MM" : "MM/DD"}.
+                  </p>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead className={mutedText}>

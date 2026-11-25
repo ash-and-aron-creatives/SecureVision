@@ -261,7 +261,8 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     handleCreateScan, handleLookupIntel, intelMessage, isLookingUpIntel,
   } = useScan(token, apiRequest, setActionMessage, refreshAllData, switchTab);
   const {
-    setCsvFile, createMissingAssets, setCreateMissingAssets, importPreview, setImportPreview,
+    setCsvFile, createMissingAssets, setCreateMissingAssets, dateOrder, setDateOrder,
+    importPreview, setImportPreview,
     handleCsvPreview, handleCsvCommit,
   } = useImport(token, apiRequest, setActionMessage, refreshAllData);
   const {
@@ -358,7 +359,7 @@ export function SecureApp({ onBackToHome }: { onBackToHome?: () => void } = {}) 
     toggleFindingStatus, handleCreateScan, handleLookupIntel, intelMessage, isLookingUpIntel,
     scanCve, setScanCve, scanAssetId, setScanAssetId, assets,
     scanCvss, setScanCvss, scanEpss, setScanEpss, scanKev, setScanKev, handleCsvPreview, setCsvFile,
-    createMissingAssets, setCreateMissingAssets,
+    createMissingAssets, setCreateMissingAssets, dateOrder, setDateOrder,
     importPreview, setImportPreview, handleCsvCommit, handleSaveAsset, handleEditAsset,
     handleCancelAssetEdit, handleDeleteAsset, assetHost, setAssetHost, assetType, setAssetType,
     assetAddress, setAssetAddress, assetOwner, setAssetOwner, assetEnvironment, setAssetEnvironment,

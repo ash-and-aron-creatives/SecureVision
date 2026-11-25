@@ -999,11 +999,14 @@ def get_audit_logs(db: Session = Depends(get_db), current_user: models.User = De
 async def preview_csv(
     file: UploadFile = File(...),
     create_missing_assets: bool = Form(False),
+    date_order: str = Form("dmy"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
     if current_user.role == "viewer":
         raise HTTPException(403, "Viewers cannot import findings.")
+    if date_order not in {"dmy", "mdy"}:
+        raise HTTPException(422, "date_order must be 'dmy' or 'mdy'.")
     data = await file.read(MAX_BYTES + 1)
     if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(400, "Upload a .csv file.")
@@ -1011,26 +1014,35 @@ async def preview_csv(
     pairs = {(a, c) for a, c in db.query(models.Finding.asset_id, models.Finding.cve_id).all()}
     try:
         rows, summary = parse_and_validate(
-            data, assets, pairs, allow_missing_assets=create_missing_assets
+            data,
+            assets,
+            pairs,
+            allow_missing_assets=create_missing_assets,
+            date_order=date_order,
         )
     except ImportFileError as exc:
         raise HTTPException(400, str(exc))
     reader = csv.reader(io.StringIO(data.decode("utf-8-sig"), newline=""))
+    ambiguous_date_rows = summary.pop("ambiguous_date_rows", 0)
     return {
         "detected_format": detect_format(next(reader, [])),
         "summary": summary,
         "rows": [r.as_dict() for r in rows],
+        "ambiguous_date_rows": ambiguous_date_rows,
     }
 
 @app.post("/imports/commit", response_model=ImportCommitResponse)
 async def commit_csv(
     file: UploadFile = File(...),
     create_missing_assets: bool = Form(False),
+    date_order: str = Form("dmy"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
     if current_user.role == "viewer":
         raise HTTPException(403, "Viewers cannot import findings.")
+    if date_order not in {"dmy", "mdy"}:
+        raise HTTPException(422, "date_order must be 'dmy' or 'mdy'.")
     data = await file.read(MAX_BYTES + 1)
     if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(400, "Upload a .csv file.")
@@ -1038,8 +1050,12 @@ async def commit_csv(
     assets = _asset_identifier_map(all_assets)
     pairs = {(a, c) for a, c in db.query(models.Finding.asset_id, models.Finding.cve_id).all()}
     try:
-        rows, _ = parse_and_validate(
-            data, assets, pairs, allow_missing_assets=create_missing_assets
+        rows, summary = parse_and_validate(
+            data,
+            assets,
+            pairs,
+            allow_missing_assets=create_missing_assets,
+            date_order=date_order,
         )
     except ImportFileError as exc:
         raise HTTPException(400, str(exc))
@@ -1170,4 +1186,9 @@ async def commit_csv(
         db.rollback()
         raise
 
-    return {"imported": imported, "skipped": skipped, "problems_csv": problems_to_csv(rows)}
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "problems_csv": problems_to_csv(rows),
+        "ambiguous_date_rows": summary.get("ambiguous_date_rows", 0),
+    }

@@ -73,6 +73,8 @@ export interface SecureAppViewProps {
   setCsvFile: Dispatch<SetStateAction<File | null>>;
   createMissingAssets: boolean;
   setCreateMissingAssets: Dispatch<SetStateAction<boolean>>;
+  dateOrder: "dmy" | "mdy";
+  setDateOrder: Dispatch<SetStateAction<"dmy" | "mdy">>;
   setImportPreview: Dispatch<SetStateAction<ImportPreview | null>>;
   importPreview: ImportPreview | null;
   handleCsvCommit: () => Promise<void>;

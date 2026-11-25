@@ -344,9 +344,11 @@ class ImportPreviewResponse(ResponseSchema):
     detected_format: str
     summary: ImportSummaryResponse
     rows: list[ImportRowResponse]
+    ambiguous_date_rows: int = 0
 
 
 class ImportCommitResponse(ResponseSchema):
     imported: int
     skipped: int
     problems_csv: str
+    ambiguous_date_rows: int = 0
