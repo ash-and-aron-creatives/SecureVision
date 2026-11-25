@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response, StreamingResponse
 from fpdf import FPDF
 from sqlalchemy import case, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from backend.database import get_db
 from backend.auth import get_current_user
@@ -20,11 +20,12 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 
 TIERS = ["Critical", "High", "Medium", "Low"]
 _tier_rank = case({t: i for i, t in enumerate(TIERS)}, value=Finding.final_priority, else_=99)
+_LatestFindingScore = aliased(FindingScore)
 
 SORTS = {
     "priority": [_tier_rank.asc(), Finding.cvss_score.desc()],
     "cvss": [Finding.cvss_score.desc()],
-    "epss": [FindingScore.likelihood.desc()],
+    "epss": [_LatestFindingScore.likelihood.desc()],
     "newest": [Finding.id.desc()],
     "date": [Finding.date_found.desc()],
     "asset": [Asset.name.asc()],
@@ -40,11 +41,24 @@ def _safe_cell(v):
     return v
 
 
+def _latest_score_ids(db: Session):
+    return (
+        db.query(
+            FindingScore.finding_id.label("finding_id"),
+            func.max(FindingScore.id).label("score_id"),
+        )
+        .group_by(FindingScore.finding_id)
+        .subquery()
+    )
+
+
 def _filtered_query(db: Session, priority, status, asset_id, q, sort):
+    latest_scores = _latest_score_ids(db)
     qry = (
-        db.query(Finding, Asset, FindingScore)
+        db.query(Finding, Asset, _LatestFindingScore)
         .join(Asset, Finding.asset_id == Asset.id)
-        .outerjoin(FindingScore, FindingScore.finding_id == Finding.id)
+        .outerjoin(latest_scores, latest_scores.c.finding_id == Finding.id)
+        .outerjoin(_LatestFindingScore, _LatestFindingScore.id == latest_scores.c.score_id)
     )
     if asset_id is not None:
         qry = qry.filter(Finding.asset_id == asset_id)
@@ -172,10 +186,12 @@ def export_executive_pdf(
     )
     total_findings = db.query(func.count(Finding.id)).scalar() or 0
 
+    latest_scores = _latest_score_ids(db)
     top = (
         db.query(Finding, Asset)
         .join(Asset, Finding.asset_id == Asset.id)
-        .join(FindingScore, FindingScore.finding_id == Finding.id)
+        .join(latest_scores, latest_scores.c.finding_id == Finding.id)
+        .join(_LatestFindingScore, _LatestFindingScore.id == latest_scores.c.score_id)
         .filter(Finding.final_priority == "Critical")
         .order_by(Finding.in_kev.desc(), Finding.cvss_score.desc(), Finding.id.asc())
         .limit(10)

@@ -1,4 +1,6 @@
+import csv
 import hashlib
+import io
 import json
 import re
 import zlib
@@ -145,6 +147,68 @@ def test_csv_export_basic(client, auth_headers, seeded):
     assert len(lines) == 1 + 3
 
 
+def test_csv_exports_only_latest_score_for_rescanned_finding(
+    client, auth_headers, seeded, db_session
+):
+    finding = db_session.query(Finding).filter_by(cve_id="CVE-2099-0001").one()
+    db_session.add_all(
+        [
+            FindingScore(
+                finding_id=finding.id,
+                provider_id=2,
+                likelihood=0.6,
+                priority_tier="High",
+                provenance={"source": "rescan"},
+                explanation="older rescan",
+            ),
+            FindingScore(
+                finding_id=finding.id,
+                provider_id=3,
+                likelihood=0.91,
+                priority_tier="Critical",
+                provenance={"source": "latest"},
+                explanation="latest rescan",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get("/reports/findings.csv", headers=auth_headers)
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    finding_rows = [row for row in rows if row["cve_id"] == finding.cve_id]
+
+    assert len(finding_rows) == 1
+    assert finding_rows[0]["likelihood"] == "0.91"
+    assert finding_rows[0]["rule_priority_tier"] == "Critical"
+
+    epss_sorted = client.get("/reports/findings.csv?sort=epss", headers=auth_headers)
+    epss_rows = list(csv.DictReader(io.StringIO(epss_sorted.text)))
+    assert epss_rows[0]["cve_id"] == finding.cve_id
+
+
+def test_csv_exports_finding_without_scores(client, auth_headers, db_session):
+    asset = Asset(name="RPT-NO-SCORE", exposure="Internal", criticality=2)
+    db_session.add(asset)
+    db_session.flush()
+    finding = Finding(
+        asset_id=asset.id,
+        cve_id="CVE-2099-0099",
+        cvss_score=3.0,
+        final_priority="Low",
+        status="Open",
+    )
+    db_session.add(finding)
+    db_session.commit()
+
+    response = client.get("/reports/findings.csv", headers=auth_headers)
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    finding_rows = [row for row in rows if row["cve_id"] == finding.cve_id]
+
+    assert len(finding_rows) == 1
+    assert finding_rows[0]["likelihood"] == ""
+    assert finding_rows[0]["rule_priority_tier"] == ""
+
+
 def test_csv_filters_applied(client, auth_headers, seeded):
     r = client.get("/reports/findings.csv?priority=Critical", headers=auth_headers)
     assert "CVE-2099-0001" in r.text
@@ -197,6 +261,41 @@ def test_pdf_export_header_and_audit(client, auth_headers, seeded, db_session):
     row, d = _last_export(db_session)
     assert d["format"] == "pdf"
     assert d["sha256"] == hashlib.sha256(r.content).hexdigest()
+
+
+def test_pdf_top_critical_lists_rescanned_finding_once(
+    client, auth_headers, seeded, db_session
+):
+    finding = db_session.query(Finding).filter_by(cve_id="CVE-2099-0001").one()
+    db_session.add_all(
+        [
+            FindingScore(
+                finding_id=finding.id,
+                provider_id=2,
+                likelihood=0.6,
+                priority_tier="High",
+                provenance={"source": "rescan"},
+                explanation="older rescan",
+            ),
+            FindingScore(
+                finding_id=finding.id,
+                provider_id=3,
+                likelihood=0.91,
+                priority_tier="Critical",
+                provenance={"source": "latest"},
+                explanation="latest rescan",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get("/reports/executive.pdf", headers=auth_headers)
+    pdf_text = _extract_pdf_text(response.content)
+    top_critical = pdf_text.split("Top critical findings", 1)[1].split(
+        "Recommended actions", 1
+    )[0]
+
+    assert top_critical.count(finding.cve_id) == 1
 
 
 def test_reports_require_auth(client):
