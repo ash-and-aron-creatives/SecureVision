@@ -45,6 +45,7 @@ def dispose_test_engines(start_index):
             admin_engine = create_engine(os.environ["MIGRATION_DATABASE_URL"])
             try:
                 with admin_engine.begin() as connection:
+                    connection.exec_driver_sql("SET LOCAL lock_timeout = '30s'")
                     connection.exec_driver_sql(f'DROP SCHEMA "{schema}" CASCADE')
             finally:
                 admin_engine.dispose()

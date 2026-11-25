@@ -293,18 +293,17 @@ def test_csv_import_uses_catalog_kev_without_live_provider(monkeypatch):
                 },
                 headers={"Authorization": f"Bearer {token}"},
             )
+        assert response.status_code == 200
+        assert response.json()["imported"] == 1
+        finding = db.query(Finding).filter_by(cve_id="CVE-2025-9881").one()
+        score = db.query(FindingScore).filter_by(finding_id=finding.id).one()
+        assert finding.in_kev is True
+        assert finding.final_priority in ("High", "Critical")
+        assert score.priority_tier == "High"
+        assert score.likelihood == 0.01
     finally:
         app.dependency_overrides.clear()
         db.close()
-
-    assert response.status_code == 200
-    assert response.json()["imported"] == 1
-    finding = db.query(Finding).filter_by(cve_id="CVE-2025-9881").one()
-    score = db.query(FindingScore).filter_by(finding_id=finding.id).one()
-    assert finding.in_kev is True
-    assert finding.final_priority in ("High", "Critical")
-    assert score.priority_tier == "High"
-    assert score.likelihood == 0.01
 
 
 @pytest.mark.parametrize(
