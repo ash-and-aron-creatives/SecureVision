@@ -214,7 +214,7 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
         headers=headers,
     )
     assert preview.status_code == 200
-    assert set(preview.json()) == {"detected_format", "summary", "rows"}
+    assert set(preview.json()) == {"detected_format", "summary", "rows", "ambiguous_date_rows"}
     assert set(preview.json()["summary"]) == {"total", "ok", "error", "duplicate"}
     assert set(preview.json()["rows"][0]) == {
         "line", "asset_name", "cve_id", "date_found", "status", "reason", "asset_id",
@@ -243,7 +243,7 @@ def test_response_models_have_consistent_shapes(api, monkeypatch):
         headers=headers,
     )
     assert committed.status_code == 200
-    assert set(committed.json()) == {"imported", "skipped", "problems_csv"}
+    assert set(committed.json()) == {"imported", "skipped", "problems_csv", "ambiguous_date_rows"}
     assert committed.json()["imported"] == 1
 
 
