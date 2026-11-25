@@ -42,9 +42,9 @@ blueprint before treating this as final criterion-by-criterion sign-off.
 
 ## Verification evidence
 
-Earlier isolated PostgreSQL suite results are historical; the full PostgreSQL
-suite is pending re-run after the commits of this session. The manual browser
-checklist remains unverified. External deployment still requires TLS
+Earlier isolated PostgreSQL suite results are historical. The full PostgreSQL
+suite passed on 2026-11-25 at commit 7b38e1d (529 passed, 0 failed). The manual
+browser checklist remains unverified. External deployment still requires TLS
 termination at a configured reverse proxy; that deployment is not part of this
 repository's Compose verification. Passing automated checks does not remove
 the limitations above or establish model effectiveness.

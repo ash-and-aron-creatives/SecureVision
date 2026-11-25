@@ -1,6 +1,7 @@
 # SecureVision Project Snapshot
 
-Generated from the checked-out source and recorded artifacts on 2026-11-15.
+Generated from the checked-out source and recorded artifacts on 2026-11-15;
+routes, test status and priority-mode text updated 2026-11-25.
 Environment variable names are listed without values. The frozen test split and
 protected `docs/results/p5` outputs were not opened; the Test 2026 table below
 contains only values already transcribed in repository documentation.
@@ -97,7 +98,9 @@ their prefixes in `backend/users.py` and `backend/reports.py`.
 | POST | `/users` | Admin | `UserResponse` (HTTP 201) |
 | PATCH | `/users/{user_id}` | Admin | `UserResponse` |
 | PUT | `/users/{user_id}/role` | Admin | `UserResponse` |
-| DELETE | `/users/{user_id}` | Admin | `DeletedUserResponse` |
+| POST | `/users/{user_id}/deactivate` | Admin | `UserResponse` |
+| POST | `/users/{user_id}/reactivate` | Admin | `UserResponse` |
+| DELETE | `/users/{user_id}` | Admin | `DeletedUserResponse` (HTTP 409 if the user has audit history) |
 | GET | `/reports/findings.csv` | Authenticated | `StreamingResponse` (`text/csv`); no Pydantic response model |
 | GET | `/reports/executive.pdf` | Authenticated | PDF `Response`; no Pydantic response model |
 
@@ -216,8 +219,8 @@ configuration file was not re-read for this snapshot.
 The historical 2026-11-15 snapshot collected 501 tests with root
 `pytest --collect-only -q` in the `postgres-tests` profile. The table records
 that baseline, not the current count; additional tests have since been added.
-The current full PostgreSQL suite and collection count are pending re-run after
-the commits of this session.
+Current full PostgreSQL suite (2026-11-25, commit 7b38e1d): 529 passed, 0 failed.
+The per-file counts below are the historical 501 baseline.
 
 | Test file | Count | Test file | Count |
 |---|---:|---|---:|
