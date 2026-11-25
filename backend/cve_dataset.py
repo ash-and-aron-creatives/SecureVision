@@ -65,10 +65,18 @@ async def lookup_cve_intel(
 
     merged = dict(live)
     for field, catalog_field in _CATALOG_FIELDS.items():
-        if catalog is not None and field not in missing_fields:
-            merged[field] = catalog[catalog_field]
+        if catalog is not None:
+            catalog_value = catalog.get(catalog_field)
+            if (
+                field == "in_kev"
+                or not _is_missing(catalog_value)
+                or field not in merged
+            ):
+                merged[field] = catalog_value
     if "epss_percentile" not in merged and "percentile" in merged:
         merged["epss_percentile"] = merged["percentile"]
+    for field in ("cvss", "epss", "epss_percentile"):
+        merged.setdefault(field, None)
 
     errors = list(live.get("errors", []))
     for field, message in (

@@ -488,12 +488,12 @@ async def scan_vulnerability(req: ScanRequest, db: Session = Depends(get_db), cu
     intel = await lookup_cve_intel(db, cve_clean, fetch_cve_data)
     cvss_score = req.cvss_score
     epss_percentile = req.epss_percentile
-    in_kev = bool(req.in_kev or intel["in_kev"])
+    in_kev = bool(req.in_kev or intel.get("in_kev"))
     if cvss_score is None or epss_percentile is None:
         if cvss_score is None:
-            cvss_score = intel["cvss"]
+            cvss_score = intel.get("cvss")
         if epss_percentile is None:
-            epss_percentile = intel["epss_percentile"]
+            epss_percentile = intel.get("epss_percentile")
         if cvss_score is None or epss_percentile is None:
             raise HTTPException(
                 status_code=503,
@@ -1087,7 +1087,7 @@ async def commit_csv(
             r.asset_id = asset.id
             internet_facing = (asset.exposure.lower() == "internet")
             in_kev = bool(info.get("in_kev", False))
-            epss_val = info["epss_percentile"]
+            epss_val = info.get("epss_percentile")
             scoring = calculate_priority(in_kev, internet_facing, asset.criticality, epss_val, cvss_val)
             ml_assessment = predict_exploit_likelihood(
                 cvss_score=cvss_val,
