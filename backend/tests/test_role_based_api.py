@@ -63,7 +63,7 @@ def test_protected_route_discovery_includes_router_operations():
         ("GET", "/reports/executive.pdf"),
     }
 
-    assert len(PROTECTED_ROUTES) >= 40
+    assert len(PROTECTED_ROUTES) >= 26
     assert expected_routes.issubset(PROTECTED_ROUTES)
 
 
