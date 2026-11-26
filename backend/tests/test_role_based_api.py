@@ -1,7 +1,6 @@
 import io
 
 import pytest
-from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
@@ -11,33 +10,61 @@ from backend.models import Asset, AuditLog, Finding, User
 from backend.tests.db_helpers import create_test_engine
 
 
-def _has_auth_dependency(dependency):
-    return dependency.call is auth.get_current_user or any(
-        _has_auth_dependency(child) for child in dependency.dependencies
-    )
-
-
 def _protected_route_cases():
     cases = []
-    for route in main.app.routes:
-        if not isinstance(route, APIRoute) or not _has_auth_dependency(route.dependant):
-            continue
-        path = route.path
-        for parameter, value in (
-            ("{asset_id}", "1"),
-            ("{finding_id}", "1"),
-            ("{user_id}", "1"),
-            ("{cve_id}", "CVE-2025-1234"),
-        ):
-            path = path.replace(parameter, value)
-        if path == "/cves":
-            path += "?search=CVE-2025-1234"
-        for method in route.methods - {"HEAD", "OPTIONS"}:
-            cases.append((method, path))
-    return cases
+    for path, path_item in main.app.openapi()["paths"].items():
+        for method, operation in path_item.items():
+            if method in {"parameters", "head", "options"}:
+                continue
+            if not operation.get("security"):
+                continue
+            sample_path = path
+            for parameter, value in (
+                ("{asset_id}", "1"),
+                ("{finding_id}", "1"),
+                ("{user_id}", "1"),
+                ("{cve_id}", "CVE-2025-1234"),
+            ):
+                sample_path = sample_path.replace(parameter, value)
+            if sample_path == "/cves":
+                sample_path += "?search=CVE-2025-1234"
+            cases.append((method.upper(), sample_path))
+    return sorted(cases)
 
 
 PROTECTED_ROUTES = _protected_route_cases()
+PUBLIC_ROUTES = {("POST", "/token")}
+
+
+def test_every_non_public_route_is_protected():
+    unprotected_routes = []
+    for path, path_item in main.app.openapi()["paths"].items():
+        for method, operation in path_item.items():
+            if method in {"parameters", "head", "options"}:
+                continue
+            route = (method.upper(), path)
+            if not operation.get("security") and route not in PUBLIC_ROUTES:
+                unprotected_routes.append(route)
+
+    assert not unprotected_routes, (
+        "OpenAPI operations are neither protected nor explicitly public: "
+        f"{sorted(unprotected_routes)}"
+    )
+
+
+def test_protected_route_discovery_includes_router_operations():
+    expected_routes = {
+        ("GET", "/users"),
+        ("POST", "/users"),
+        ("POST", "/users/1/deactivate"),
+        ("POST", "/users/1/reactivate"),
+        ("DELETE", "/users/1"),
+        ("GET", "/reports/findings.csv"),
+        ("GET", "/reports/executive.pdf"),
+    }
+
+    assert len(PROTECTED_ROUTES) >= 40
+    assert expected_routes.issubset(PROTECTED_ROUTES)
 
 
 @pytest.fixture
