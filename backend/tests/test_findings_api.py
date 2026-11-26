@@ -147,7 +147,7 @@ def _add_findings_reference_dataset(db_session):
     ]
     db_session.add_all(assets)
     db_session.flush()
-    tiers = ("Critical", "High", "Medium", "Low", "Unknown")
+    tiers = ("Critical", "High", "Medium", "Low")
     statuses = ("Open", "In Progress", "Resolved", None)
     findings = []
     for index in range(32):
