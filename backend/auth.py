@@ -5,7 +5,7 @@ import threading
 import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
-from jose import jwt, JWTError
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from backend.database import get_db
@@ -100,6 +100,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(data: dict):
     to_encode = data.copy()
+    if "sub" in to_encode:
+        to_encode["sub"] = str(to_encode["sub"])
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, _get_secret_key(), algorithm=ALGORITHM)
@@ -113,7 +115,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         username: str = payload.get("sub")
         if username is None:
             raise credentials_exception
-    except JWTError:
+    except jwt.PyJWTError:
         raise credentials_exception
     user = db.query(models.User).filter(models.User.username == username).first()
     if user is None or not user.is_active:
