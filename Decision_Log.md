@@ -197,3 +197,7 @@
 ### D-048: Draft Local TLS Overlay
 * **Decision:** Add a Caddy 2 `docker-compose.tls.yml` overlay for HTTPS on localhost, with the frontend API build argument and backend CORS origin set for the proxy.
 * **Validation:** Compose syntax passed `docker compose config --quiet`; Caddy runtime, browser trust and production TLS behavior remain unvalidated.
+
+### D-049: Framework and Library Upgrades
+* **Decision:** Pin FastAPI 0.165.0, Starlette 1.10.0, Requests 2.34.2, Certifi 2026.11.20 and pytest 9.2.0; add PyJWT 2.15.1, annotated-doc 0.0.7, opentelemetry-api 1.45.2 and Pygments 2.21.0. Replace python-jose with PyJWT, removing ecdsa, rsa and pyasn1 and their advisories. Drop the unused SHAP-era packages cloudpickle, numba, llvmlite and slicer.
+* **Compatibility:** Deliberately keep scikit-learn 1.4.1.post1 because the frozen model and TF-IDF artifacts are pickles built with it. Advisory PYSEC-2024-110 concerns stop-word data exposure in TfidfVectorizer; the bundled vectorizer contains only public training text.

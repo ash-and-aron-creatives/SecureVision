@@ -236,7 +236,15 @@ The per-file counts below are the historical 501 baseline.
 
 | Dependency | Pinned version |
 |---|---|
-| FastAPI | 0.110.0 |
+| FastAPI | 0.165.0 |
+| Starlette | 1.10.0 |
+| PyJWT | 2.15.1 |
+| Requests | 2.34.2 |
+| Certifi | 2026.11.20 |
+| pytest | 9.2.0 |
+| annotated-doc | 0.0.7 |
+| opentelemetry-api | 1.45.2 |
+| Pygments | 2.21.0 |
 | SQLAlchemy | 2.0.29 |
 | Alembic | 1.13.1 |
 | XGBoost | 2.0.3 |
